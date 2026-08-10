@@ -125,6 +125,9 @@ class PaperStrategySleeveStorage:
     def sleeve_executions_path(self, sleeve_id: str) -> Path:
         return self.sleeve_dir(sleeve_id) / "executions.jsonl"
 
+    def demoted_path(self, sleeve_id: str) -> Path:
+        return self.sleeve_dir(sleeve_id) / "demoted.json"
+
     def execution_journal_dir(self, sleeve_id: str) -> Path:
         return self.sleeve_dir(sleeve_id) / "execution_journal"
 
@@ -240,6 +243,21 @@ class PaperStrategySleeveStorage:
             StrategySleeve.model_validate(json.loads(path.read_text(encoding="utf-8")))
             for path in sorted(self.sleeves_dir.glob("*/sleeve.pending.json"))
         ]
+
+    def load_demoted_state(self, sleeve_id: str) -> dict[str, Any] | None:
+        path = self.demoted_path(sleeve_id)
+        if not path.exists():
+            return None
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("demoted state must be a JSON object")
+        return payload
+
+    def save_demoted_state(self, sleeve_id: str, payload: dict[str, Any]) -> Path:
+        path = self.demoted_path(sleeve_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self._write_json_atomic(path, payload)
+        return path
 
     def count_pending_sleeve_files(self) -> int:
         """Count pending sleeve files without parsing or reconciling them."""

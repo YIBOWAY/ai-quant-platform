@@ -350,8 +350,13 @@ class SubprocessPaperIntakeVerificationPort:
                 retryable=False,
             )
         payload_ref = normalize_payload_ref(command.payload_ref)
+        endpoint = self.cli_settings.endpoint_document()
+        endpoint["timeout_seconds"] = min(
+            float(self.cli_settings.timeout_seconds),
+            30.0,
+        )
         request = {
-            "endpoint": self.cli_settings.endpoint_document(),
+            "endpoint": endpoint,
             "owner_id": STORE_OWNER_ID,
             "workspace_id": self.workspace_id,
             "platform_session_id": command.platform_session_id,

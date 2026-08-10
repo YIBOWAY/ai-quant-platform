@@ -42,6 +42,11 @@ class StrategySleeveStatus(StrEnum):
     RUNNING = "running"
     PAUSED = "paused"
     STOPPED = "stopped"
+    QUARANTINED_HOLD = "quarantined_hold"
+    FLATTENED = "flattened"
+    TRANSFERRED = "transferred"
+    MANUALLY_ACCEPTED = "manually_accepted"
+    DEMOTED_COMPLETE = "demoted_complete"
 
 
 class SignalStatus(StrEnum):
@@ -334,8 +339,8 @@ class StrategySignal(BaseModel):
         metadata: dict[str, Any] | None = None,
     ) -> StrategySignal:
         blocked_reason = execution_blocked_reason
-        if sleeve.status == StrategySleeveStatus.PAUSED and blocked_reason is None:
-            blocked_reason = "sleeve_paused"
+        if sleeve.status != StrategySleeveStatus.RUNNING and blocked_reason is None:
+            blocked_reason = f"sleeve_{sleeve.status.value}"
         return cls(
             signal_id=f"signal-{uuid.uuid4().hex[:12]}",
             sleeve_id=sleeve.sleeve_id,
@@ -507,8 +512,11 @@ class PaperStrategySleeveService:
         return sleeve
 
     def pause_sleeve(self, sleeve: StrategySleeve) -> StrategySleeve:
-        if sleeve.status == StrategySleeveStatus.STOPPED:
-            raise ValueError("stopped sleeves cannot be paused")
+        if sleeve.status not in {
+            StrategySleeveStatus.RUNNING,
+            StrategySleeveStatus.PAUSED,
+        }:
+            raise ValueError("only running sleeves can be paused")
         sleeve.status = StrategySleeveStatus.PAUSED
         sleeve.paused_at = _utc_now_iso()
         sleeve.updated_at = sleeve.paused_at
@@ -516,8 +524,8 @@ class PaperStrategySleeveService:
         return sleeve
 
     def resume_sleeve(self, sleeve: StrategySleeve) -> StrategySleeve:
-        if sleeve.status == StrategySleeveStatus.STOPPED:
-            raise ValueError("stopped sleeves cannot be resumed")
+        if sleeve.status != StrategySleeveStatus.PAUSED:
+            raise ValueError("only paused sleeves can be resumed")
         sleeve.status = StrategySleeveStatus.RUNNING
         sleeve.paused_at = None
         sleeve.updated_at = _utc_now_iso()
@@ -537,6 +545,46 @@ class PaperStrategySleeveService:
         self.storage.save_sleeve(sleeve)
         return sleeve
 
+    def quarantine_sleeve(
+        self,
+        sleeve: StrategySleeve,
+        *,
+        reason: str,
+    ) -> StrategySleeve:
+        if sleeve.status == StrategySleeveStatus.DEMOTED_COMPLETE:
+            raise ValueError("completed demotions cannot be quarantined")
+        now = _utc_now_iso()
+        sleeve.status = StrategySleeveStatus.QUARANTINED_HOLD
+        sleeve.stopped_at = sleeve.stopped_at or now
+        sleeve.updated_at = now
+        sleeve.stop_reason = reason
+        sleeve.metadata["quarantine_reason"] = reason
+        sleeve.metadata["quarantined_at"] = now
+        self.storage.save_sleeve(sleeve)
+        return sleeve
+
+    def complete_demote(
+        self,
+        sleeve: StrategySleeve,
+        *,
+        outcome: StrategySleeveStatus,
+    ) -> StrategySleeve:
+        if sleeve.status != StrategySleeveStatus.QUARANTINED_HOLD:
+            raise ValueError("only quarantined sleeves can complete demote")
+        if outcome not in {
+            StrategySleeveStatus.FLATTENED,
+            StrategySleeveStatus.TRANSFERRED,
+            StrategySleeveStatus.MANUALLY_ACCEPTED,
+        }:
+            raise ValueError("invalid demote outcome")
+        now = _utc_now_iso()
+        sleeve.metadata["demote_outcome"] = outcome.value
+        sleeve.metadata["demote_outcome_at"] = now
+        sleeve.status = StrategySleeveStatus.DEMOTED_COMPLETE
+        sleeve.updated_at = now
+        self.storage.save_sleeve(sleeve)
+        return sleeve
+
     def create_execution_plan(
         self,
         account: PaperAccount,
@@ -549,10 +597,8 @@ class PaperStrategySleeveService:
     ) -> StrategyExecutionPlan:
         if sleeve.mode == StrategySleeveMode.SIGNAL_ONLY:
             raise StrategyExecutionPlanError("signal_only_no_execution")
-        if sleeve.status == StrategySleeveStatus.PAUSED:
-            raise StrategyExecutionPlanError("sleeve_paused")
-        if sleeve.status == StrategySleeveStatus.STOPPED:
-            raise StrategyExecutionPlanError("sleeve_stopped")
+        if sleeve.status != StrategySleeveStatus.RUNNING:
+            raise StrategyExecutionPlanError(f"sleeve_{sleeve.status.value}")
         if sleeve.account_id != account.account_id:
             raise StrategyExecutionPlanError("account_sleeve_mismatch")
         if signal.sleeve_id != sleeve.sleeve_id:

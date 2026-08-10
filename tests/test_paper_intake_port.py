@@ -68,7 +68,12 @@ def _accepted(command: HermesCommand) -> dict[str, object]:
     }
 
 
-def _port(tmp_path: Path, runner) -> SubprocessPaperIntakeVerificationPort:
+def _port(
+    tmp_path: Path,
+    runner,
+    *,
+    timeout_seconds: float = 5.0,
+) -> SubprocessPaperIntakeVerificationPort:
     python = tmp_path / "python"
     python.touch(mode=0o700)
     hqa_root = tmp_path / "hqa"
@@ -79,7 +84,7 @@ def _port(tmp_path: Path, runner) -> SubprocessPaperIntakeVerificationPort:
             hqa_root=hqa_root,
             base_url="http://127.0.0.1:8642",
             api_key="stdin-secret",
-            timeout_seconds=5.0,
+            timeout_seconds=timeout_seconds,
         ),
         workspace_id="ws-local-main",
         runner=runner,
@@ -199,6 +204,21 @@ def test_subprocess_port_accepts_exact_body_free_receipt(tmp_path: Path) -> None
     assert request["owner_id"] == "owner-local-root"
     assert request["command_id"] == str(command.command_id)
     assert request["endpoint"]["api_key"] == "stdin-secret"
+
+
+def test_subprocess_port_clamps_transcript_endpoint_timeout(tmp_path: Path) -> None:
+    command = _command()
+    captured: dict[str, object] = {}
+
+    def runner(argv, **kwargs):
+        captured["request"] = json.loads(kwargs["input"])
+        return subprocess.CompletedProcess(
+            argv, 0, stdout=json.dumps(_accepted(command)).encode(), stderr=b""
+        )
+
+    _port(tmp_path, runner, timeout_seconds=120).verify(command, _observation(command))
+
+    assert captured["request"]["endpoint"]["timeout_seconds"] == 30.0
 
 
 def test_subprocess_port_maps_typed_nonretryable_rejection(tmp_path: Path) -> None:
