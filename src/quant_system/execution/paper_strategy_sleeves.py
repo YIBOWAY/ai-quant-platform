@@ -481,6 +481,7 @@ class PaperStrategySleeveService:
         account_id: str = DEFAULT_ACCOUNT_ID,
         allocated_cash: float = 0.0,
         metadata: dict[str, Any] | None = None,
+        sleeve_id: str | None = None,
     ) -> StrategySleeve:
         return StrategySleeve.create(
             config=config,
@@ -488,6 +489,7 @@ class PaperStrategySleeveService:
             account_id=account_id,
             allocated_cash=allocated_cash,
             metadata=metadata,
+            sleeve_id=sleeve_id,
         )
 
     def create_sleeve(
@@ -498,6 +500,7 @@ class PaperStrategySleeveService:
         mode: StrategySleeveMode,
         allocated_cash: float = 0.0,
         metadata: dict[str, Any] | None = None,
+        sleeve_id: str | None = None,
     ) -> StrategySleeve:
         self._ensure_manual_cash_book(account)
         sleeve = self.build_sleeve(
@@ -506,6 +509,7 @@ class PaperStrategySleeveService:
             account_id=account.account_id,
             allocated_cash=allocated_cash,
             metadata=metadata,
+            sleeve_id=sleeve_id,
         )
         if mode == StrategySleeveMode.ALLOCATED:
             self._allocate_cash(account, sleeve)
@@ -615,6 +619,44 @@ class PaperStrategySleeveService:
             raise StrategyExecutionPlanError("unsupported_execution_window")
         if not signal.proposed_orders:
             raise StrategyExecutionPlanError("no_proposed_orders")
+        if sleeve.metadata.get("automation_managed") is True:
+            from quant_system.execution.factor_automation_safety import (
+                FactorAutomationLimitError,
+                validate_auto_execution_orders,
+            )
+
+            reference_prices = {
+                str(order.get("symbol", "")).upper(): float(
+                    order.get("reference_price", 0.0)
+                )
+                for order in signal.proposed_orders
+                if order.get("symbol") and order.get("reference_price")
+            }
+            account_prices = {
+                symbol: reference_prices.get(symbol, position.avg_cost)
+                for symbol, position in account.positions.items()
+            }
+            aggregate_symbol_values = {
+                symbol: position.market_value(account_prices[symbol])
+                for symbol, position in account.positions.items()
+            }
+            lots = self.storage.load_sleeve_lots(sleeve.sleeve_id)
+            sleeve_equity = sleeve.cash + sum(
+                lot.quantity
+                * reference_prices.get(lot.symbol.upper(), lot.avg_cost)
+                for lot in lots
+            )
+            try:
+                validate_auto_execution_orders(
+                    orders=signal.proposed_orders,
+                    sleeve_equity=sleeve_equity,
+                    nav=account.equity(account_prices),
+                    aggregate_symbol_values=aggregate_symbol_values,
+                )
+            except FactorAutomationLimitError as exc:
+                raise StrategyExecutionPlanError(
+                    f"automation_{exc.code}"
+                ) from exc
         existing = self.storage.latest_execution_for_signal(
             sleeve.sleeve_id,
             signal.signal_id,

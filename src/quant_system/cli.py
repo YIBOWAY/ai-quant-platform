@@ -2475,6 +2475,24 @@ def _require_auto_land_flags() -> None:
         raise typer.Exit(code=1)
 
 
+def _automatic_promotion_status(promotion_id: str) -> dict[str, Any]:
+    from quant_system.agent.promotion_workspace import (
+        default_promotion_root,
+        promotion_status,
+        resolve_managed_worktree_root,
+        resolve_platform_repo,
+    )
+
+    agent_root = resolve_agent_output_dir()
+    return promotion_status(
+        promotion_id=promotion_id,
+        agent_output_dir=agent_root,
+        promotion_root=default_promotion_root(agent_root),
+        worktree_root=resolve_managed_worktree_root(),
+        repo_dir=resolve_platform_repo(),
+    )
+
+
 @agent_app.command("promote-auto-commit")
 def agent_promote_auto_commit(
     promotion_id: Annotated[str, typer.Option("--promotion-id")],
@@ -2537,6 +2555,175 @@ def agent_promote_auto_land(
         typer.echo(f"auto_promotion_refused reason={exc}")
         raise typer.Exit(code=1) from exc
     _emit_json(result)
+
+
+@agent_app.command("factor-automation-authorize-land")
+def factor_automation_authorize_land_command(
+    automation_id: Annotated[str, typer.Option("--automation-id")],
+    promotion_id: Annotated[str, typer.Option("--promotion-id")],
+    policy_digest: Annotated[str, typer.Option("--policy-digest")],
+    intake_contract_digest: Annotated[
+        str, typer.Option("--intake-contract-digest")
+    ],
+    gate1_digest: Annotated[str, typer.Option("--gate1-digest")],
+    gate2_digest: Annotated[str, typer.Option("--gate2-digest")],
+) -> None:
+    """Consume the DB daily quota after exact automatic Gate-3 commit review."""
+    from dataclasses import asdict
+
+    from quant_system.execution.factor_automation_activation import (
+        AutomaticLandAuthorizationRequest,
+        FactorAutomationActivationError,
+        authorize_automatic_land,
+    )
+    from quant_system.execution.factor_automation_authority import (
+        FactorAutomationAuthorityError,
+    )
+
+    _require_auto_land_flags()
+    settings = reload_settings()
+    try:
+        lineage, receipt = authorize_automatic_land(
+            settings,
+            AutomaticLandAuthorizationRequest(
+                automation_id=automation_id,
+                promotion_id=promotion_id,
+                automation_policy_digest=policy_digest,
+                intake_contract_digest=intake_contract_digest,
+                gate1_digest=gate1_digest,
+                gate2_digest=gate2_digest,
+            ),
+            promotion_status=_automatic_promotion_status(promotion_id),
+        )
+    except (FactorAutomationActivationError, FactorAutomationAuthorityError) as exc:
+        typer.echo(f"factor_automation_refused reason={exc}")
+        raise typer.Exit(code=1) from exc
+    _emit_json(
+        {
+            "state": "land_authorized",
+            "lineage": asdict(lineage),
+            "audit": {
+                "event_seq": receipt.event_seq,
+                "event_day": receipt.event_day.isoformat(),
+                "idempotent_replay": receipt.idempotent_replay,
+            },
+        }
+    )
+
+
+@agent_app.command("factor-automation-activate-sleeve")
+def factor_automation_activate_sleeve_command(
+    automation_id: Annotated[str, typer.Option("--automation-id")],
+    promotion_id: Annotated[str, typer.Option("--promotion-id")],
+    candidate_id: Annotated[str, typer.Option("--candidate-id")],
+    candidate_digest: Annotated[str, typer.Option("--candidate-digest")],
+    factor_id: Annotated[str, typer.Option("--factor-id")],
+    manifest_digest: Annotated[str, typer.Option("--manifest-digest")],
+    policy_digest: Annotated[str, typer.Option("--policy-digest")],
+    intake_contract_digest: Annotated[
+        str, typer.Option("--intake-contract-digest")
+    ],
+    gate1_digest: Annotated[str, typer.Option("--gate1-digest")],
+    gate2_digest: Annotated[str, typer.Option("--gate2-digest")],
+    gate3_digest: Annotated[str, typer.Option("--gate3-digest")],
+    commit_sha: Annotated[str, typer.Option("--commit-sha")],
+    symbols: Annotated[list[str], typer.Option("--symbol")],
+    provider: Annotated[Literal["futu", "tiingo"], typer.Option("--provider")],
+) -> None:
+    """Create one deterministic allocated paper sleeve after local ff-land."""
+    from quant_system.execution.account_repository_factory import (
+        build_paper_account_repository,
+    )
+    from quant_system.execution.account_snapshot import resolve_account_quotes
+    from quant_system.execution.factor_automation_activation import (
+        AccountValuation,
+        AutomaticSleeveRequest,
+        FactorAutomationActivationError,
+        create_automatic_paper_sleeve,
+    )
+    from quant_system.execution.factor_automation_authority import (
+        FactorAutomationAuthorityError,
+        FactorAutomationLineage,
+    )
+    from quant_system.execution.paper_strategy_sleeve_storage import (
+        PaperStrategySleeveStorage,
+    )
+
+    _require_auto_land_flags()
+    settings = reload_settings()
+    status = _automatic_promotion_status(promotion_id)
+    if (
+        status.get("status") != "landed"
+        or status.get("reviewed_commit") != commit_sha
+        or status.get("candidate_id") != candidate_id
+        or status.get("candidate_digest") != candidate_digest
+        or status.get("manifest_sha256") != manifest_digest
+        or status.get("patch_sha256") != gate3_digest
+    ):
+        typer.echo("factor_automation_refused reason=landed_status_mismatch")
+        raise typer.Exit(code=1)
+    api_runs_dir = settings.data.data_dir / "api_runs"
+    account_storage = build_paper_account_repository(
+        api_runs_dir,
+        settings=settings,
+    )
+    account = account_storage.load()
+    if account is None:
+        typer.echo("factor_automation_refused reason=paper_account_missing")
+        raise typer.Exit(code=1)
+    try:
+        quotes = resolve_account_quotes(account, settings=settings)
+        prices = {symbol: quote.price for symbol, quote in quotes.items()}
+        valuation = AccountValuation(
+            account_id=account.account_id,
+            account_updated_at=account.updated_at,
+            nav=account.equity(prices),
+            prices=prices,
+            price_metadata={
+                symbol: {"kind": quote.price_kind, "as_of": quote.as_of}
+                for symbol, quote in quotes.items()
+            },
+        )
+        sleeve, receipt = create_automatic_paper_sleeve(
+            settings,
+            AutomaticSleeveRequest(
+                lineage=FactorAutomationLineage(
+                    automation_id=automation_id,
+                    candidate_id=candidate_id,
+                    candidate_digest=candidate_digest,
+                    factor_id=factor_id,
+                    manifest_digest=manifest_digest,
+                    automation_policy_digest=policy_digest,
+                    intake_contract_digest=intake_contract_digest,
+                    gate1_digest=gate1_digest,
+                    gate2_digest=gate2_digest,
+                    gate3_digest=gate3_digest,
+                    commit_sha=commit_sha,
+                ),
+                promotion_id=promotion_id,
+                universe=tuple(symbol.upper() for symbol in symbols),
+                provider=provider,
+            ),
+            valuation=valuation,
+            account_storage=account_storage,
+            sleeve_storage=PaperStrategySleeveStorage(api_runs_dir),
+        )
+    except (FactorAutomationActivationError, FactorAutomationAuthorityError) as exc:
+        typer.echo(f"factor_automation_refused reason={exc}")
+        raise typer.Exit(code=1) from exc
+    _emit_json(
+        {
+            "state": "sleeve_created",
+            "sleeve_id": sleeve.sleeve_id,
+            "allocated_cash": sleeve.initial_allocated_cash,
+            "promotion_scope": sleeve.metadata.get("promotion_scope"),
+            "audit": {
+                "event_seq": receipt.event_seq,
+                "event_day": receipt.event_day.isoformat(),
+                "idempotent_replay": receipt.idempotent_replay,
+            },
+        }
+    )
 
 
 @agent_app.command("promotion-status")

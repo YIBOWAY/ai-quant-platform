@@ -1401,7 +1401,10 @@ def commit_automatic_promotion(
             worktree_root=worktree_root,
             repo_dir=repo_dir,
         )
-        if observed["status"] == "reviewed" and observed["reviewed_commit"]:
+        if (
+            observed["status"] in {"reviewed", "landed"}
+            and observed["reviewed_commit"]
+        ):
             return observed
         if observed["status"] != "awaiting_human_commit":
             raise PromotionWorkspaceError(

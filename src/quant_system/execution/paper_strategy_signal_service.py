@@ -205,7 +205,13 @@ class PaperStrategySignalService:
         if not targets:
             return {}, str(latest_ts)
         return (
-            {target.symbol.upper(): float(target.target_weight) for target in targets},
+            {
+                target.symbol.upper(): min(
+                    float(target.target_weight),
+                    float(config.max_weight_per_symbol),
+                )
+                for target in targets
+            },
             str(latest_ts),
         )
 
