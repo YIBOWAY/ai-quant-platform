@@ -444,6 +444,12 @@ def test_legitimate_httpx_import_not_false_positive(tmp_path):
     assert binding.factor_id == "wiring_test_factor"
 
 
+def test_future_annotations_import_is_allowed_for_generated_factor(tmp_path):
+    src = "from __future__ import annotations\n" + _FACTOR_SRC
+    binding = _load_approved_source(tmp_path, "cand-future-annotations", src)
+    assert binding.factor_id == "wiring_test_factor"
+
+
 def test_disallowed_module_import_is_blocked(tmp_path):
     # a non-allowlisted module (e.g. 'requests') is rejected even though it is
     # a clean, non-obfuscated import statement.
@@ -744,4 +750,3 @@ class PropertyFactor(BaseFactor):
     assert binding.factor_id == "property_override_factor"
     assert "property_override_factor" in registry.factor_ids()
     assert "property" in promotion._make_safe_builtins()
-

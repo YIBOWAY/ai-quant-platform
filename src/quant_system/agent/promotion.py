@@ -39,6 +39,7 @@ from quant_system.factors.registry import FactorRegistry
 # or numpy.linalg can work without opening unrelated platform modules.
 _ALLOWED_IMPORT_ROOTS: frozenset[str] = frozenset(
     {
+        "__future__",
         "math",
         "statistics",
         "datetime",
