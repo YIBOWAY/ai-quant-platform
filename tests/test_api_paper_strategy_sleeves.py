@@ -409,7 +409,9 @@ def test_strategy_sleeve_signal_api_generates_and_persists_daily_signal(
     signal = response.json()["signal"]
     assert signal["status"] == "generated"
     assert signal["data_provider"] == "futu"
-    assert signal["target_weights"] == {"AAPL": pytest.approx(1.0)}
+    assert signal["target_weights"] == {
+        "AAPL": pytest.approx(_config_payload()["max_weight_per_symbol"])
+    }
     assert signal["proposed_orders"][0]["symbol"] == "AAPL"
     assert signal["proposed_orders"][0]["side"] == "buy"
 
