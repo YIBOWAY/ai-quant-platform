@@ -107,6 +107,15 @@ def test_auto_review_writes_auto_policy_and_intake_bound_lock(tmp_path: Path) ->
     )
     assert CandidatePool(tmp_path).get(artifact.candidate_id).approval_binding == "approved"
 
+    repeated = _invoke(
+        tmp_path,
+        artifact.candidate_id,
+        str(artifact.manifest_digest),
+        enabled=True,
+    )
+    assert repeated.exit_code == 0, repeated.output
+    assert json.loads(repeated.output.splitlines()[-1]) == payload
+
 
 def test_auto_review_rejects_bad_digest_before_lock_write(tmp_path: Path) -> None:
     artifact = _pending_candidate(tmp_path)

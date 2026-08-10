@@ -2259,6 +2259,7 @@ def agent_auto_review(
     off and binds both versioned policy and paper-intake contract digests into
     the immutable approval lock note.
     """
+    from quant_system.agent.candidate_manifest import load_verified_candidate_snapshot
     from quant_system.agent.candidate_pool import (
         CandidateIntegrityError,
         CandidateMigrationRequiredError,
@@ -2289,11 +2290,39 @@ def agent_auto_review(
             expected_status=expected_status,
             reviewer="auto",
         )
+    except CandidateReviewStateStaleError:
+        try:
+            snapshot = load_verified_candidate_snapshot(
+                agent_output_dir=resolve_agent_output_dir(agent_output_dir),
+                candidate_id=candidate_id,
+            )
+            recovered = snapshot.review_record
+            if (
+                snapshot.approval_binding != "approved"
+                or snapshot.manifest_digest != expected_manifest_digest
+                or recovered is None
+                or recovered.candidate_id != candidate_id
+                or recovered.decision != "approve"
+                or recovered.manifest_digest != expected_manifest_digest
+                or recovered.reviewer != "auto"
+                or recovered.note != note
+            ):
+                raise CandidateIntegrityError(
+                    "existing decision does not match automation lineage"
+                )
+            record = recovered
+        except (
+            CandidateIntegrityError,
+            CandidateMigrationRequiredError,
+            CandidateStaleError,
+            FileNotFoundError,
+        ) as recovery_exc:
+            typer.echo(f"auto_review_refused reason={recovery_exc}")
+            raise typer.Exit(code=1) from recovery_exc
     except (
         CandidateIntegrityError,
         CandidateMigrationRequiredError,
         CandidateStaleError,
-        CandidateReviewStateStaleError,
         FileNotFoundError,
     ) as exc:
         typer.echo(f"auto_review_refused reason={exc}")
