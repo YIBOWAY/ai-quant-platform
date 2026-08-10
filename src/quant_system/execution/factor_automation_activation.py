@@ -6,6 +6,7 @@ import hashlib
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from datetime import date
 from typing import Any
 
 from quant_system.config.settings import Settings
@@ -15,12 +16,19 @@ from quant_system.execution.factor_automation_authority import (
     FactorAutomationLineage,
     append_factor_automation_event,
 )
-from quant_system.execution.factor_automation_safety import admit_auto_sleeve
+from quant_system.execution.factor_automation_demote import (
+    FactorAutomationDemoteService,
+)
+from quant_system.execution.factor_automation_safety import (
+    admit_auto_sleeve,
+    evaluate_auto_sleeve_health,
+)
 from quant_system.execution.paper_strategy_sleeves import (
     PaperStrategySleeveService,
     StrategyConfig,
     StrategySleeve,
     StrategySleeveMode,
+    StrategySleeveStatus,
 )
 from quant_system.factors.registry import build_factor_registry
 
@@ -358,6 +366,156 @@ def create_automatic_paper_sleeve(
     return sleeve, receipt
 
 
+def _lineage_from_sleeve(sleeve: StrategySleeve) -> FactorAutomationLineage:
+    values = {
+        "automation_id": sleeve.metadata.get("automation_id"),
+        "candidate_id": sleeve.metadata.get("candidate_id"),
+        "candidate_digest": sleeve.metadata.get("candidate_digest"),
+        "factor_id": sleeve.metadata.get("factor_id"),
+        "manifest_digest": sleeve.metadata.get("manifest_digest"),
+        "automation_policy_digest": sleeve.metadata.get(
+            "automation_policy_digest"
+        ),
+        "intake_contract_digest": sleeve.metadata.get("intake_contract_digest"),
+        "gate1_digest": sleeve.metadata.get("gate1_digest"),
+        "gate2_digest": sleeve.metadata.get("gate2_digest"),
+        "gate3_digest": sleeve.metadata.get("gate3_digest"),
+        "commit_sha": sleeve.metadata.get("commit_sha"),
+    }
+    if any(not isinstance(value, str) for value in values.values()):
+        raise FactorAutomationActivationError("sleeve_lineage_invalid")
+    return FactorAutomationLineage(**values)  # type: ignore[arg-type]
+
+
+def maintain_automatic_paper_sleeves(
+    settings: Settings,
+    *,
+    valuation: AccountValuation,
+    account_storage: Any,
+    sleeve_storage: Any,
+    workspace_id: str = "local-default",
+    event_writer: EventWriter = append_factor_automation_event,
+) -> dict[str, int]:
+    """Apply machine pause/quarantine rules and append their durable events."""
+
+    _require_enabled(settings)
+    account = account_storage.load()
+    if account is None:
+        raise FactorAutomationActivationError("paper_account_missing")
+    if (
+        valuation.account_id != account.account_id
+        or valuation.account_updated_at != account.updated_at
+    ):
+        raise FactorAutomationActivationError("account_valuation_stale")
+    registered = set(build_factor_registry(purpose="paper").factor_ids())
+    paused = 0
+    quarantined = 0
+    checked = 0
+    day = date.today().isoformat()
+
+    for observed in sleeve_storage.list_sleeves():
+        if observed.metadata.get("automation_managed") is not True:
+            continue
+        checked += 1
+        lineage = _lineage_from_sleeve(observed)
+        if lineage.factor_id not in registered:
+            request_id = "factor-missing:" + hashlib.sha256(
+                f"{observed.sleeve_id}:{lineage.manifest_digest}".encode()
+            ).hexdigest()
+            event_writer(
+                settings,
+                FactorAutomationEventRequest(
+                    event_id=f"demote:{observed.sleeve_id}:factor-missing",
+                    workspace_id=workspace_id,
+                    event_type="demote_started",
+                    lineage=lineage,
+                    lifecycle_state="quarantined_hold",
+                    sleeve_id=observed.sleeve_id,
+                    details={"reason": "factor_missing", "request_id": request_id},
+                ),
+            )
+            current = FactorAutomationDemoteService(sleeve_storage).demote(
+                observed,
+                request_id=request_id,
+                reason="factor_missing",
+            )
+            event_writer(
+                settings,
+                FactorAutomationEventRequest(
+                    event_id=f"quarantine:{observed.sleeve_id}:factor-missing",
+                    workspace_id=workspace_id,
+                    event_type="quarantined_hold",
+                    lineage=lineage,
+                    lifecycle_state="quarantined_hold",
+                    sleeve_id=observed.sleeve_id,
+                    details={"reason": "factor_missing", "request_id": request_id},
+                ),
+            )
+            if current.status == StrategySleeveStatus.QUARANTINED_HOLD:
+                quarantined += 1
+            continue
+        if observed.status != StrategySleeveStatus.RUNNING:
+            continue
+
+        with sleeve_storage.mutation_lock():
+            current = sleeve_storage.load_sleeve(observed.sleeve_id)
+            if current.status != StrategySleeveStatus.RUNNING:
+                continue
+            lots = sleeve_storage.load_sleeve_lots(current.sleeve_id)
+            equity = current.cash + sum(
+                lot.quantity
+                * float(valuation.prices.get(lot.symbol.upper(), lot.avg_cost))
+                for lot in lots
+            )
+            prior_day = current.metadata.get("automation_health_day")
+            if prior_day == day:
+                day_start = float(
+                    current.metadata.get("automation_day_start_equity", equity)
+                )
+            else:
+                day_start = equity
+            peak = max(
+                float(current.metadata.get("automation_peak_equity", equity)),
+                equity,
+            )
+            breaches = evaluate_auto_sleeve_health(
+                equity=equity,
+                peak_equity=peak,
+                daily_pnl=equity - day_start,
+            )
+            current.metadata.update(
+                {
+                    "automation_health_day": day,
+                    "automation_day_start_equity": day_start,
+                    "automation_peak_equity": peak,
+                    "automation_last_equity": equity,
+                }
+            )
+            if breaches:
+                event_writer(
+                    settings,
+                    FactorAutomationEventRequest(
+                        event_id=f"pause:{current.sleeve_id}:{day}",
+                        workspace_id=workspace_id,
+                        event_type="sleeve_paused",
+                        lineage=lineage,
+                        lifecycle_state="paused",
+                        sleeve_id=current.sleeve_id,
+                        details={
+                            "reasons": list(breaches),
+                            "equity": equity,
+                            "peak_equity": peak,
+                            "daily_pnl": equity - day_start,
+                        },
+                    ),
+                )
+                PaperStrategySleeveService(sleeve_storage).pause_sleeve(current)
+                paused += 1
+            else:
+                sleeve_storage.save_sleeve(current)
+    return {"checked": checked, "paused": paused, "quarantined": quarantined}
+
+
 __all__ = [
     "AccountValuation",
     "AutomaticLandAuthorizationRequest",
@@ -365,4 +523,5 @@ __all__ = [
     "FactorAutomationActivationError",
     "authorize_automatic_land",
     "create_automatic_paper_sleeve",
+    "maintain_automatic_paper_sleeves",
 ]

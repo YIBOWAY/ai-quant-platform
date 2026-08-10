@@ -2726,6 +2726,60 @@ def factor_automation_activate_sleeve_command(
     )
 
 
+@agent_app.command("factor-automation-maintain")
+def factor_automation_maintain_command() -> None:
+    """Pause breached sleeves and quarantine automation factors missing from paper."""
+    from quant_system.execution.account_repository_factory import (
+        build_paper_account_repository,
+    )
+    from quant_system.execution.account_snapshot import resolve_account_quotes
+    from quant_system.execution.factor_automation_activation import (
+        AccountValuation,
+        FactorAutomationActivationError,
+        maintain_automatic_paper_sleeves,
+    )
+    from quant_system.execution.factor_automation_authority import (
+        FactorAutomationAuthorityError,
+    )
+    from quant_system.execution.paper_strategy_sleeve_storage import (
+        PaperStrategySleeveStorage,
+    )
+
+    _require_auto_land_flags()
+    settings = reload_settings()
+    api_runs_dir = settings.data.data_dir / "api_runs"
+    account_storage = build_paper_account_repository(
+        api_runs_dir,
+        settings=settings,
+    )
+    account = account_storage.load()
+    if account is None:
+        typer.echo("factor_automation_refused reason=paper_account_missing")
+        raise typer.Exit(code=1)
+    try:
+        quotes = resolve_account_quotes(account, settings=settings)
+        prices = {symbol: quote.price for symbol, quote in quotes.items()}
+        result = maintain_automatic_paper_sleeves(
+            settings,
+            valuation=AccountValuation(
+                account_id=account.account_id,
+                account_updated_at=account.updated_at,
+                nav=account.equity(prices),
+                prices=prices,
+                price_metadata={
+                    symbol: {"kind": quote.price_kind, "as_of": quote.as_of}
+                    for symbol, quote in quotes.items()
+                },
+            ),
+            account_storage=account_storage,
+            sleeve_storage=PaperStrategySleeveStorage(api_runs_dir),
+        )
+    except (FactorAutomationActivationError, FactorAutomationAuthorityError) as exc:
+        typer.echo(f"factor_automation_refused reason={exc}")
+        raise typer.Exit(code=1) from exc
+    _emit_json({"state": "maintained", **result})
+
+
 @agent_app.command("promotion-status")
 def agent_promotion_status(
     promotion_id: Annotated[

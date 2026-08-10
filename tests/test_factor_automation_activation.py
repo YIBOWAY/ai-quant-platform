@@ -14,6 +14,7 @@ from quant_system.execution.factor_automation_activation import (
     FactorAutomationActivationError,
     authorize_automatic_land,
     create_automatic_paper_sleeve,
+    maintain_automatic_paper_sleeves,
 )
 from quant_system.execution.factor_automation_authority import (
     FactorAutomationEventReceipt,
@@ -22,6 +23,7 @@ from quant_system.execution.factor_automation_authority import (
 from quant_system.execution.paper_strategy_sleeve_storage import (
     PaperStrategySleeveStorage,
 )
+from quant_system.execution.paper_strategy_sleeves import StrategySleeveStatus
 
 
 def _settings(monkeypatch, tmp_path, *, enabled: bool = True):
@@ -199,3 +201,106 @@ def test_activation_flags_off_prevents_all_writes(tmp_path, monkeypatch) -> None
             ),
             promotion_status=_promotion_status(),
         )
+
+
+def test_maintenance_pauses_breached_sleeve_and_audits_before_state_change(
+    tmp_path, monkeypatch
+) -> None:
+    settings = _settings(monkeypatch, tmp_path)
+    api_runs = tmp_path / "api_runs"
+    account_storage = PaperAccountStorage(api_runs)
+    sleeve_storage = PaperStrategySleeveStorage(api_runs)
+    account = PaperAccount.open_new(initial_cash=1_000_000)
+    account_storage.save(account)
+    lineage = FactorAutomationLineage(
+        automation_id="automation-0123456789abcdef",
+        candidate_id="candidate-1",
+        candidate_digest="5" * 64,
+        factor_id="auto_factor",
+        manifest_digest="3" * 64,
+        automation_policy_digest="8" * 64,
+        intake_contract_digest="9" * 64,
+        gate1_digest="a" * 64,
+        gate2_digest="b" * 64,
+        gate3_digest="4" * 64,
+        commit_sha="2" * 40,
+    )
+    monkeypatch.setattr(
+        "quant_system.execution.factor_automation_activation._verify_resident_factor",
+        lambda _lineage: None,
+    )
+    request = AutomaticSleeveRequest(
+        lineage=lineage,
+        promotion_id="promo-" + ("1" * 32),
+        universe=("SPY", "QQQ"),
+        provider="futu",
+    )
+    current = account_storage.load()
+    assert current is not None
+    valuation = AccountValuation(
+        account_id=current.account_id,
+        account_updated_at=current.updated_at,
+        nav=current.cash,
+        prices={},
+        price_metadata={},
+    )
+    sleeve, _ = create_automatic_paper_sleeve(
+        settings,
+        request,
+        valuation=valuation,
+        account_storage=account_storage,
+        sleeve_storage=sleeve_storage,
+        event_writer=lambda *_args: FactorAutomationEventReceipt(
+            1, date.today(), False
+        ),
+    )
+    sleeve.cash = 9_700
+    sleeve.metadata.update(
+        {
+            "automation_health_day": date.today().isoformat(),
+            "automation_day_start_equity": 10_000.0,
+            "automation_peak_equity": 10_000.0,
+        }
+    )
+    sleeve_storage.save_sleeve(sleeve)
+
+    class Registry:
+        @staticmethod
+        def factor_ids():
+            return ["auto_factor"]
+
+    monkeypatch.setattr(
+        "quant_system.execution.factor_automation_activation.build_factor_registry",
+        lambda **_kwargs: Registry(),
+    )
+    events = []
+
+    def writer(_settings, event):
+        assert sleeve_storage.load_sleeve(sleeve.sleeve_id).status == (
+            StrategySleeveStatus.RUNNING
+        )
+        events.append(event)
+        return FactorAutomationEventReceipt(2, date.today(), False)
+
+    persisted_account = account_storage.load()
+    assert persisted_account is not None
+    result = maintain_automatic_paper_sleeves(
+        settings,
+        valuation=AccountValuation(
+            account_id=persisted_account.account_id,
+            account_updated_at=persisted_account.updated_at,
+            nav=persisted_account.cash,
+            prices={},
+            price_metadata={},
+        ),
+        account_storage=account_storage,
+        sleeve_storage=sleeve_storage,
+        event_writer=writer,
+    )
+
+    assert result == {"checked": 1, "paused": 1, "quarantined": 0}
+    assert events[0].event_type == "sleeve_paused"
+    assert events[0].details["reasons"] == ["max_daily_loss"]
+    assert sleeve_storage.load_sleeve(sleeve.sleeve_id).status == (
+        StrategySleeveStatus.PAUSED
+    )
