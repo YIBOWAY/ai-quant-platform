@@ -151,6 +151,7 @@ install_platform_jobs() {
   bash "$ROOT/scripts/install_agent_v02_stack_launchagents.sh"
   bash "$ROOT/scripts/install_agent_v02_connector_launchagent.sh"
   bash "$ROOT/scripts/install_factor_automation_launchagent.sh"
+  bash "$ROOT/scripts/install_asia_radar_refresh_launchagent.sh"
 }
 
 ensure_hermes_job() {
@@ -240,6 +241,7 @@ bootout_job() {
 }
 
 stop_stack() {
+  bootout_job com.aiquant.asia-radar-refresh
   bootout_job com.aiquant.factor-automation
   bootout_job com.aiquant.agent-v02-connector
   bootout_job com.aiquant.frontend
@@ -279,6 +281,7 @@ status_stack() {
   print_job_status com.aiquant.frontend
   print_job_status com.aiquant.agent-v02-connector
   print_job_status com.aiquant.factor-automation
+  print_job_status com.aiquant.asia-radar-refresh
   for endpoint in \
     "hermes=http://127.0.0.1:8642/health" \
     "backend=http://127.0.0.1:8765/api/health" \
@@ -300,6 +303,7 @@ show_logs() {
   echo "frontend_log=$ROOT/data/_runtime/logs/frontend-next.launchd.log"
   echo "connector_log=$ROOT/data/_runtime/logs/agent-v02-connector.launchd.out.log"
   echo "factor_automation_log=$ROOT/data/_runtime/logs/factor-automation.launchd.out.log"
+  echo "asia_radar_refresh_log=$ROOT/data/_runtime/logs/asia-radar-refresh.launchd.out.log"
 }
 
 usage() {
