@@ -179,15 +179,6 @@ class SubprocessHermesRunLifecyclePort:
                         "paper intake dispatch contract is incomplete",
                         retryable=False,
                     )
-                metadata.update(
-                    {
-                        "execution_contract": "hqa.paper_intake/v1",
-                        "execution_contract_digest": (
-                            resolved.execution_contract_digest
-                        ),
-                        "research_claim_digest": resolved.research_claim_digest,
-                    }
-                )
                 request_body["instructions"] = resolved.execution_instructions
             document = self._invoke(
                 "submit",

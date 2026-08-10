@@ -347,7 +347,7 @@ def test_submit_receipt_preserves_conversation_root_and_run_tip(
     assert result.hermes_run_id == "run_compressed_1"
 
 
-def test_paper_intake_submit_binds_contract_instructions_and_digest_metadata(
+def test_paper_intake_submit_keeps_platform_context_closed_and_sends_instructions(
     tmp_path: Path,
 ) -> None:
     python = tmp_path / "python"
@@ -409,9 +409,15 @@ def test_paper_intake_submit_binds_contract_instructions_and_digest_metadata(
     assert isinstance(body, dict)
     assert body["input"] == "private paper prompt"
     assert body["instructions"] == "This run is governed by hqa.paper_intake/v1."
-    assert body["metadata"]["execution_contract"] == "hqa.paper_intake/v1"
-    assert body["metadata"]["execution_contract_digest"] == "d" * 64
-    assert body["metadata"]["research_claim_digest"] == "e" * 64
+    assert body["metadata"] == {
+        "command_id": "00000000-0000-4000-8000-000000000001",
+        "kind": "research_chat",
+        "client_request_id": "client-action-1",
+        "platform_session_id": "wm_registry_only",
+        "canonical_request_digest": "a" * 64,
+        "payload_ref": "hqa-payload:sha256:" + ("b" * 64),
+        "source": "platform.hqa_hermes_run_port",
+    }
 
 
 def test_observe_requires_gapless_replay_and_returns_terminal_evidence(
