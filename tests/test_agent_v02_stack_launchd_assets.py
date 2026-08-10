@@ -9,6 +9,22 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_local_mac_stack_propagates_system_proxy_before_gateway_bootstrap() -> None:
+    script = (ROOT / "scripts" / "local_mac_stack.sh").read_text(encoding="utf-8")
+
+    assert 'SCUTIL_BIN="/usr/sbin/scutil"' in script
+    assert '"$LAUNCHCTL_BIN" setenv HTTPS_PROXY "$proxy_url"' in script
+    assert '"$LAUNCHCTL_BIN" setenv HTTP_PROXY "$proxy_url"' in script
+    assert (
+        '"$LAUNCHCTL_BIN" setenv NO_PROXY "127.0.0.1,localhost,::1"'
+        in script
+    )
+    assert '"$LAUNCHCTL_BIN" unsetenv HTTPS_PROXY' in script
+    assert script.index("configure_hermes_proxy_environment") < script.index(
+        "ensure_hermes_job"
+    )
+
+
 def _copy_script(tmp_path: Path, name: str) -> tuple[Path, Path]:
     release_root = tmp_path / "release"
     scripts_dir = release_root / "scripts"

@@ -10,6 +10,7 @@ FRONTEND_DIR="$ROOT/src/frontend"
 DOMAIN="gui/$(id -u)"
 DATABASE_CONTAINER="${QS_LOCAL_POSTGRES_CONTAINER:-quantplatform-db}"
 HERMES_PLIST="$HOME/Library/LaunchAgents/ai.hermes.gateway.plist"
+SCUTIL_BIN="/usr/sbin/scutil"
 
 fail() {
   echo "local_stack_error=$1" >&2
@@ -84,6 +85,58 @@ start_database() {
     sleep 1
   done
   fail "postgres_not_ready"
+}
+
+unset_hermes_proxy_environment() {
+  "$LAUNCHCTL_BIN" unsetenv HTTPS_PROXY
+  "$LAUNCHCTL_BIN" unsetenv HTTP_PROXY
+  "$LAUNCHCTL_BIN" unsetenv NO_PROXY
+}
+
+configure_hermes_proxy_environment() {
+  local proxy_dump proxy_enable proxy_host proxy_port proxy_url
+  if [[ ! -x "$SCUTIL_BIN" ]] || ! proxy_dump="$($SCUTIL_BIN --proxy 2>/dev/null)"; then
+    unset_hermes_proxy_environment
+    return
+  fi
+  proxy_enable="$(
+    printf '%s\n' "$proxy_dump" |
+      /usr/bin/awk '$1 == "HTTPSEnable" && $2 == ":" {print $3; exit}'
+  )"
+  proxy_host="$(
+    printf '%s\n' "$proxy_dump" |
+      /usr/bin/awk '$1 == "HTTPSProxy" && $2 == ":" {print $3; exit}'
+  )"
+  proxy_port="$(
+    printf '%s\n' "$proxy_dump" |
+      /usr/bin/awk '$1 == "HTTPSPort" && $2 == ":" {print $3; exit}'
+  )"
+  if [[ "$proxy_enable" != "1" ]]; then
+    proxy_enable="$(
+      printf '%s\n' "$proxy_dump" |
+        /usr/bin/awk '$1 == "HTTPEnable" && $2 == ":" {print $3; exit}'
+    )"
+    proxy_host="$(
+      printf '%s\n' "$proxy_dump" |
+        /usr/bin/awk '$1 == "HTTPProxy" && $2 == ":" {print $3; exit}'
+    )"
+    proxy_port="$(
+      printf '%s\n' "$proxy_dump" |
+        /usr/bin/awk '$1 == "HTTPPort" && $2 == ":" {print $3; exit}'
+    )"
+  fi
+  if [[ "$proxy_enable" != "1" \
+    || ! "$proxy_host" =~ ^[A-Za-z0-9.-]+$ \
+    || ! "$proxy_port" =~ ^[0-9]{1,5}$ \
+    || "$proxy_port" -lt 1 \
+    || "$proxy_port" -gt 65535 ]]; then
+    unset_hermes_proxy_environment
+    return
+  fi
+  proxy_url="http://$proxy_host:$proxy_port"
+  "$LAUNCHCTL_BIN" setenv HTTPS_PROXY "$proxy_url"
+  "$LAUNCHCTL_BIN" setenv HTTP_PROXY "$proxy_url"
+  "$LAUNCHCTL_BIN" setenv NO_PROXY "127.0.0.1,localhost,::1"
 }
 
 build_stack() {
@@ -170,6 +223,7 @@ wait_for_url() {
 start_stack() {
   start_database
   build_stack
+  configure_hermes_proxy_environment
   ensure_hermes_job
   install_platform_jobs
   wait_for_url "hermes_ready" "http://127.0.0.1:8642/health"
