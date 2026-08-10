@@ -207,3 +207,26 @@ def test_candidate_binding_is_persisted_in_config_and_agent_summary(tmp_path) ->
     )
     assert persisted_config["candidate_binding"] == binding.model_dump()
     assert agent_summary["candidate_binding"] == binding.model_dump()
+
+
+def test_automation_experiment_persists_observed_sample_and_holdout_evidence(
+    tmp_path,
+) -> None:
+    config = ExperimentConfig.model_validate(
+        {
+            "experiment_name": "automation-evidence",
+            "symbols": ["SPY", "QQQ"],
+            "start": "2024-01-02",
+            "end": "2024-04-15",
+            "factor_blend": {"factors": [{"factor_id": "momentum"}]},
+            "automation_evidence": {"holdout_days": 30},
+        }
+    )
+
+    result = run_experiment(config, output_dir=tmp_path)
+
+    summary = json.loads(result.agent_summary_path.read_text(encoding="utf-8"))
+    observed = summary["data"]["automation_evidence"]
+    assert observed["sample_rows"] > observed["out_of_sample_rows"] > 0
+    assert observed["data_coverage_ratio"] == 1.0
+    assert observed["holdout_days"] == 30

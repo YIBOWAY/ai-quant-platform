@@ -44,6 +44,12 @@ class CandidateResearchBinding(BaseModel):
     factor_id: str
 
 
+class AutomationEvidenceConfig(BaseModel):
+    """Observed-data evidence requested by the paper automation verifier."""
+
+    holdout_days: int = Field(gt=0, le=3_650)
+
+
 class ExperimentConfig(BaseModel):
     experiment_name: str = "phase4-experiment"
     symbols: list[str]
@@ -57,6 +63,7 @@ class ExperimentConfig(BaseModel):
     candidate_binding: CandidateResearchBinding | None = None
     sweep: dict[str, list[int | float | str]] = Field(default_factory=dict)
     walk_forward: WalkForwardConfig = Field(default_factory=WalkForwardConfig)
+    automation_evidence: AutomationEvidenceConfig | None = None
 
 
 class ParameterCombination(BaseModel):

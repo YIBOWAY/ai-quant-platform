@@ -156,6 +156,7 @@ def run_experiment(
             config=config,
             runs=runs,
             data_source=data_source,
+            ohlcv=ohlcv,
         ),
         filename="agent_summary.json",
     )
@@ -396,8 +397,22 @@ def _build_agent_summary(
     config: ExperimentConfig,
     runs: list[ExperimentRunSummary],
     data_source: str,
+    ohlcv: pd.DataFrame,
 ) -> dict[str, Any]:
     best_run = max(runs, key=lambda run: run.sharpe, default=None)
+    data_summary: dict[str, Any] = {
+        "source": data_source,
+        "symbols": config.symbols,
+        "start": config.start,
+        "end": config.end,
+    }
+    if config.automation_evidence is not None:
+        data_summary["automation_evidence"] = _automation_data_evidence(
+            ohlcv,
+            symbols=config.symbols,
+            end=config.end,
+            holdout_days=config.automation_evidence.holdout_days,
+        )
     return {
         "experiment_id": experiment_id,
         "experiment_name": config.experiment_name,
@@ -408,12 +423,7 @@ def _build_agent_summary(
             "paper_trading": False,
             "auto_promotion": False,
         },
-        "data": {
-            "source": data_source,
-            "symbols": config.symbols,
-            "start": config.start,
-            "end": config.end,
-        },
+        "data": data_summary,
         "walk_forward": config.walk_forward.model_dump(mode="json"),
         "candidate_binding": (
             config.candidate_binding.model_dump(mode="json")
@@ -427,6 +437,33 @@ def _build_agent_summary(
             "Backtests execute on tradeable timestamps only.",
             "This summary is for AI-assisted review, not automatic deployment.",
         ],
+    }
+
+
+def _automation_data_evidence(
+    ohlcv: pd.DataFrame,
+    *,
+    symbols: list[str],
+    end: str,
+    holdout_days: int,
+) -> dict[str, int | float]:
+    observed = ohlcv.loc[:, ["symbol", "timestamp"]].copy()
+    observed["symbol"] = observed["symbol"].astype(str).str.upper().str.strip()
+    observed["timestamp"] = pd.to_datetime(observed["timestamp"], utc=True)
+    observed = observed[
+        observed["symbol"].isin(symbols)
+    ].drop_duplicates(subset=["symbol", "timestamp"])
+    timestamps = observed["timestamp"].drop_duplicates()
+    sample_rows = int(timestamps.size)
+    expected_pairs = sample_rows * len(symbols)
+    coverage = float(len(observed) / expected_pairs) if expected_pairs else 0.0
+    holdout_start = pd.Timestamp(end, tz="UTC") - pd.Timedelta(days=holdout_days)
+    out_of_sample_rows = int((timestamps >= holdout_start).sum())
+    return {
+        "holdout_days": holdout_days,
+        "sample_rows": sample_rows,
+        "out_of_sample_rows": out_of_sample_rows,
+        "data_coverage_ratio": coverage,
     }
 
 
