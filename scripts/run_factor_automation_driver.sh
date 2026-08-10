@@ -9,6 +9,15 @@ fail() {
   exit 78
 }
 
+COMMAND=(run-once)
+if [[ "$#" -eq 0 ]]; then
+  :
+elif [[ "$#" -eq 3 && "$1" == "enqueue" && "$2" == "--request-file" && -n "$3" ]]; then
+  COMMAND=("$@")
+else
+  fail "operation_invalid"
+fi
+
 [[ -f "$ENV_FILE" && ! -L "$ENV_FILE" ]] || fail "backend_env_not_regular"
 metadata="$(stat -f '%u %Lp' "$ENV_FILE" 2>/dev/null || stat -c '%u %a' "$ENV_FILE")" ||
   fail "backend_env_stat_failed"
@@ -33,4 +42,4 @@ esac
 export HQA_AIQP_DIR="$ROOT"
 export HQA_QUANT_SYSTEM_BIN="$ROOT/ai-quant/bin/quant-system"
 cd "$HQA_ROOT"
-exec "$HQA_PYTHON" -m hqa.factor_automation_cli run-once
+exec "$HQA_PYTHON" -m hqa.factor_automation_cli "${COMMAND[@]}"
