@@ -17,12 +17,8 @@ import {
   getFactors,
   getBriefIssueList,
   getLatestBriefIssue,
-  getMarketDataHistory,
   getNewsItems,
   getOptionsDailyScanStatus,
-  getPaperAccount,
-  getPaperAccountEquityCurve,
-  getPaperAccountPerformance,
   getPaperRuns,
   getRecentRuns,
   getSymbols,
@@ -45,9 +41,16 @@ import {
   buildBriefPerformanceSnapshot,
   parseBriefPerformanceRange,
   resolveBriefArchiveBlockedReason,
+  selectBriefPerformanceResponse,
   type BriefPerformanceRange,
 } from "@/lib/briefPerformance";
-import { getCachedSettings } from "@/lib/serverApi";
+import {
+  getCachedBriefMarketDataHistory,
+  getCachedBriefPaperAccount,
+  getCachedBriefPaperAccountEquityCurve,
+  getCachedBriefPaperAccountPerformance,
+  getCachedSettings,
+} from "@/lib/serverApi";
 import { getServerLocale } from "@/lib/serverLocale";
 
 const copy = {
@@ -659,11 +662,6 @@ type BriefPageProps = {
 export default async function BriefPage({ searchParams }: BriefPageProps) {
   const query = await searchParams;
   const selectedRange = parseBriefPerformanceRange(query?.range);
-  const selectedPerformanceRequest = getPaperAccountPerformance(selectedRange);
-  const masterPerformanceRequest =
-    selectedRange === "3m"
-      ? selectedPerformanceRequest
-      : getPaperAccountPerformance("3m");
   const today = new Date();
   const marketStart = new Date(today.getTime() - 14 * 24 * 60 * 60 * 1000);
   const locale = await getServerLocale();
@@ -675,7 +673,6 @@ export default async function BriefPage({ searchParams }: BriefPageProps) {
     paperRuns,
     paperAccount,
     paperEquityCurve,
-    selectedPerformance,
     masterPerformance,
     recentRuns,
     candidates,
@@ -693,21 +690,24 @@ export default async function BriefPage({ searchParams }: BriefPageProps) {
     getFactors(),
     getBacktests(),
     getPaperRuns(),
-    getPaperAccount(),
-    getPaperAccountEquityCurve(7),
-    selectedPerformanceRequest,
-    masterPerformanceRequest,
+    getCachedBriefPaperAccount(),
+    getCachedBriefPaperAccountEquityCurve(),
+    getCachedBriefPaperAccountPerformance(),
     getRecentRuns(8),
     getAgentCandidates(),
     getNewsItems({ take: 6, preference: "auto" }),
     getOptionsDailyScanStatus(),
-    getMarketDataHistory("SPY", briefDateKey(marketStart), briefDateKey(today), "1d"),
-    getMarketDataHistory("QQQ", briefDateKey(marketStart), briefDateKey(today), "1d"),
-    getMarketDataHistory("SOXX", briefDateKey(marketStart), briefDateKey(today), "1d"),
-    getMarketDataHistory("IGV", briefDateKey(marketStart), briefDateKey(today), "1d"),
+    getCachedBriefMarketDataHistory("SPY", briefDateKey(marketStart), briefDateKey(today), "1d"),
+    getCachedBriefMarketDataHistory("QQQ", briefDateKey(marketStart), briefDateKey(today), "1d"),
+    getCachedBriefMarketDataHistory("SOXX", briefDateKey(marketStart), briefDateKey(today), "1d"),
+    getCachedBriefMarketDataHistory("IGV", briefDateKey(marketStart), briefDateKey(today), "1d"),
     getLatestBriefIssue({ locale }),
     getBriefIssueList({ locale, limit: 12 }),
   ]);
+  const selectedPerformance = selectBriefPerformanceResponse(
+    masterPerformance,
+    selectedRange,
+  );
   const text = copy[locale];
   const settingsSafety =
     settings.apiError || !settings.safety ? null : settings.safety;

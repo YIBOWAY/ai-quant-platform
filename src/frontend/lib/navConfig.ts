@@ -7,6 +7,7 @@ import {
   Database,
   FileText,
   FlaskConical,
+  Globe2,
   HelpCircle,
   LayoutDashboard,
   LineChart,
@@ -39,6 +40,7 @@ export type NavItemId =
   | "optionsRadar"
   | "optionsTools"
   | "buySide"
+  | "asiaRadar"
   | "aiNews"
   | "orderBook"
   | "agentStudio"
@@ -108,6 +110,7 @@ const optionsSection: NavSection = {
 const marketsSection: NavSection = {
   id: "markets",
   items: [
+    { id: "asiaRadar", href: "/asia-radar", icon: Globe2 },
     { id: "aiNews", href: "/ai-news", icon: Newspaper },
     { id: "orderBook", href: "/polymarket", icon: BookOpen },
     { id: "agentStudio", href: "/agent-studio", icon: Zap },

@@ -20,7 +20,7 @@ from quant_system.data.providers.futu import FutuMarketDataProvider
 from quant_system.execution.account import PaperAccount
 from quant_system.execution.account_storage import PaperAccountStorage
 from quant_system.execution.models import ExecutionFill, OrderSide
-from quant_system.execution.price_source import PricedQuote
+from quant_system.execution.price_source import PaperPriceSource, PricedQuote
 
 
 @pytest.fixture
@@ -54,6 +54,14 @@ def stub_prices(monkeypatch) -> dict[str, float]:
     )
     monkeypatch.setattr(
         "quant_system.execution.price_source.PaperPriceSource.get_prices", fake_get_prices
+    )
+    monkeypatch.setattr(
+        "quant_system.execution.account_snapshot._resolve_futu_account_quotes",
+        lambda account, *, settings: {
+            symbol: PaperPriceSource(settings).get_price(symbol)
+            for symbol in account.positions
+            if symbol in prices
+        },
     )
     return prices
 
@@ -1287,6 +1295,7 @@ def test_account_performance_aligns_paper_spy_and_qqq_on_common_sessions(
     assert series["QQQ"]["points"][-1]["return_ratio"] == pytest.approx(
         566.5 / 548.0 - 1.0
     )
+    assert hermetic_futu.context_creations == 1
 
 
 def test_account_performance_marks_benchmark_partial_when_peer_observes_missing_session(

@@ -28,6 +28,13 @@ describe("SafetyBadge provider-free SSR authority", () => {
 
     expect(source).toContain("getEffectivePaperSafety");
     expect(source).toContain("getCachedSettings = cache(getSettings)");
+    expect(source).toContain("getCachedBriefMarketDataHistory = unstable_cache(");
+    expect(source).toContain("getCachedBriefPaperAccountPerformance = unstable_cache(");
+    expect(source).toContain("getCachedBriefPaperAccount = unstable_cache(");
+    expect(source).toContain("getCachedBriefPaperAccountEquityCurve = unstable_cache(");
+    expect(source).toContain("revalidate: 60");
+    expect(source).toContain("revalidate: 5");
+    expect(source).toContain("revalidate: 1");
     expect(source).toContain(
       "getCachedEffectivePaperSafety = cache(getEffectivePaperSafety)",
     );

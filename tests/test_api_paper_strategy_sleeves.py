@@ -79,6 +79,14 @@ def stub_prices(monkeypatch) -> dict[str, float]:
         "quant_system.execution.price_source.PaperPriceSource.get_prices",
         fake_get_prices,
     )
+    monkeypatch.setattr(
+        "quant_system.execution.account_snapshot._resolve_futu_account_quotes",
+        lambda account, *, settings: {
+            symbol: fake_get_price(None, symbol)
+            for symbol in account.positions
+            if symbol in prices
+        },
+    )
     return prices
 
 

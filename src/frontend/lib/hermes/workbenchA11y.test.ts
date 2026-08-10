@@ -65,9 +65,11 @@ describe("workbenchA11y (L5c)", () => {
   it("globals keep focus-visible ring + reduced-motion + 44px targets", () => {
     const cssPath = path.join(process.cwd(), "app/globals.css");
     const css = readFileSync(cssPath, "utf8");
-    expect(css).toContain(".app-touch-target");
-    expect(css).toContain("min-width: 44px");
-    expect(css).toContain("min-height: 44px");
+    const targetRule = css.match(/\.app-touch-target\s*\{([^}]*)\}/)?.[1];
+    expect(targetRule).toBeDefined();
+    expect(targetRule).toContain("min-width: 44px");
+    expect(targetRule).toContain("min-height: 44px");
+    expect(targetRule).not.toContain("32px");
     expect(css).toContain(":focus-visible");
     expect(css).toContain("@media (prefers-reduced-motion: reduce)");
     expect(css).toContain("animation-duration: 0.01ms !important");

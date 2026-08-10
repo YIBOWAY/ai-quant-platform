@@ -32,6 +32,13 @@ from quant_system.execution.price_source import PricedQuote, PriceUnavailableErr
 runner = CliRunner()
 
 
+@pytest.fixture(autouse=True)
+def _disable_ambient_futu(monkeypatch):
+    """Only the explicit hermetic production-path test may enable OpenD."""
+    monkeypatch.setenv("QS_FUTU_ENABLED", "false")
+    reload_settings()
+
+
 def _file_tree_snapshot(root: Path) -> dict[str, tuple[object, ...]]:
     return {
         str(path.relative_to(root)): (
@@ -375,8 +382,8 @@ def test_snapshot_production_branch_enriches_from_hermetic_futu_without_writes(
     assert position["day_change_ratio"] == pytest.approx(0.05)
     assert position["day_change_source"] == "futu_snapshot"
     assert position["day_change_as_of"] == "2026-07-28T15:59:59-04:00"
-    assert provider_calls == [("US.AAPL",), ("US.AAPL",)]
-    assert close_calls == 2
+    assert provider_calls == [("US.AAPL",)]
+    assert close_calls == 1
     assert _file_tree_snapshot(storage.account_dir) == before
 
 

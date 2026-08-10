@@ -122,15 +122,26 @@ def resolve_account_quotes(
 ) -> dict[str, PricedQuote | AccountObservedQuote]:
     """Resolve an observational quote or an explicit cost-basis fallback."""
     source = price_source or PaperPriceSource(settings)
+    # The production Futu path can return every held symbol, including the
+    # previous close needed for daily P&L, from one snapshot call. Resolve that
+    # batch first and use the established per-symbol source only for misses.
+    # Injected sources keep their original per-symbol seam and never touch
+    # OpenD, which preserves hermetic callers and tests.
+    batch_quotes = (
+        _resolve_futu_account_quotes(account, settings=settings)
+        if price_source is None
+        else {}
+    )
     quotes: dict[str, PricedQuote | AccountObservedQuote] = {}
     for symbol, position in account.positions.items():
-        quote: PricedQuote | AccountObservedQuote | None = None
-        try:
-            candidate = source.get_price(symbol)
-            if isfinite(candidate.price) and candidate.price > 0:
-                quote = candidate
-        except (PriceUnavailableError, ValueError, TypeError):
-            quote = None
+        quote: PricedQuote | AccountObservedQuote | None = batch_quotes.get(symbol)
+        if quote is None:
+            try:
+                candidate = source.get_price(symbol)
+                if isfinite(candidate.price) and candidate.price > 0:
+                    quote = candidate
+            except (PriceUnavailableError, ValueError, TypeError):
+                quote = None
         if quote is None:
             quote = PricedQuote(
                 symbol=symbol,
@@ -140,22 +151,6 @@ def resolve_account_quotes(
                 source="account",
             )
         quotes[symbol] = quote
-
-    # Preserve the established PaperPriceSource seam first. Only real Futu
-    # observations are replaced by one batch snapshot carrying both last and
-    # previous-close values; injected/stub sources never trigger live OpenD.
-    if price_source is None and any(
-        quote.price_kind == "futu_snapshot" and quote.source == "futu"
-        for quote in quotes.values()
-    ):
-        enriched = _resolve_futu_account_quotes(account, settings=settings)
-        for symbol, quote in list(quotes.items()):
-            if (
-                quote.price_kind == "futu_snapshot"
-                and quote.source == "futu"
-                and symbol in enriched
-            ):
-                quotes[symbol] = enriched[symbol]
     return quotes
 
 

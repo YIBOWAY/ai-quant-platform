@@ -92,12 +92,15 @@ export default async function HermesSessionsPage() {
               const previewLine =
                 session.preview && session.preview !== cardTitle ? session.preview : null;
               return (
-              <li key={session.id}>
+              <li
+                data-hermes-session-message-count={session.message_count ?? 0}
+                key={session.id}
+              >
                 <Card className="transition-colors hover:border-info/40">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <Link
-                        className="font-body-sm font-semibold text-text-primary underline-offset-2 hover:text-info hover:underline"
+                        className="app-touch-target inline-flex items-center font-body-sm font-semibold text-text-primary underline-offset-2 hover:text-info hover:underline"
                         href={localizePath(`/hermes/sessions/${encodeURIComponent(session.id)}`, locale)}
                       >
                         {cardTitle}

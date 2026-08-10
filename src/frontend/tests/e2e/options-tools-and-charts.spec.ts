@@ -100,6 +100,44 @@ test.describe("options tools and real chart surfaces", () => {
     await expect(page.getByTestId("ohlcv-candlestick-chart").getByText("Volume")).toBeVisible();
   });
 
+  for (const viewport of [
+    { name: "mobile", width: 375, height: 667 },
+    { name: "compact desktop", width: 1280, height: 720 },
+  ]) {
+    test(`data explorer keeps the chart clear of raw rows on ${viewport.name}`, async ({ page }) => {
+      await page.setViewportSize({ width: viewport.width, height: viewport.height });
+      await page.goto(
+        "/data-explorer?provider=sample&symbol=SPY&start=2024-01-02&end=2024-02-15",
+        { waitUntil: "domcontentloaded" },
+      );
+
+      const scrollRegion = page.getByTestId("data-explorer-scroll-region");
+      const chart = page.getByTestId("ohlcv-candlestick-chart");
+      const rawHeader = page.locator("thead").filter({ hasText: "Timestamp (UTC)" });
+      await expect(scrollRegion).toBeVisible();
+      await expect(chart).toBeVisible();
+      await expect(rawHeader).toBeVisible();
+
+      const chartBox = await chart.boundingBox();
+      const rawHeaderBox = await rawHeader.boundingBox();
+      const canvasBoxes = await chart.locator("canvas").evaluateAll((canvases) =>
+        canvases.map((canvas) => {
+          const bounds = canvas.getBoundingClientRect();
+          return { bottom: bounds.bottom, height: bounds.height };
+        }),
+      );
+      expect(chartBox).not.toBeNull();
+      expect(rawHeaderBox).not.toBeNull();
+      expect(chartBox!.height).toBeGreaterThanOrEqual(277);
+      expect(Math.max(...canvasBoxes.map((box) => box.bottom))).toBeLessThanOrEqual(
+        rawHeaderBox!.y,
+      );
+      expect(
+        await scrollRegion.evaluate((element) => element.scrollHeight > element.clientHeight),
+      ).toBe(true);
+    });
+  }
+
   test("data explorer initial load uses the backend default source", async ({ page }) => {
     await page.goto("/data-explorer", { waitUntil: "domcontentloaded" });
 
