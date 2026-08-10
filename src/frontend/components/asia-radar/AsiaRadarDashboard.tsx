@@ -324,7 +324,12 @@ function ChartHeader({
   return (
     <div className="flex flex-wrap items-start justify-between gap-3" data-chart-provenance="real-proxy">
       <div>
-        <h2 className="flex items-center gap-2 text-base font-semibold">{icon}{title}</h2>
+        <h2
+          className="flex items-center gap-2 text-base font-semibold text-text-primary"
+          data-chart-title="visible"
+        >
+          {icon}{title}
+        </h2>
         <p className="mt-1 text-xs text-text-secondary">{hint}</p>
       </div>
       <ProvenanceBadges asOf={asOf} compact locale={locale} />
@@ -425,7 +430,7 @@ function MarketDetail({
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <div className="font-label-caps text-text-secondary">{text.detail}</div>
-          <h2 className="mt-1 text-xl font-semibold">
+          <h2 className="mt-1 text-xl font-semibold text-text-primary">
             {locale === "zh" ? market.name_zh : market.name_en} · {market.symbol}
           </h2>
         </div>

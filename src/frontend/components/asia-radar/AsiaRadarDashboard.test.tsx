@@ -93,6 +93,7 @@ describe("AsiaRadarDashboard", () => {
 
     expect(html.match(/data-market-card=/g)).toHaveLength(12);
     expect(html.match(/data-chart-provenance="real-proxy"/g)).toHaveLength(3);
+    expect(html.match(/data-chart-title="visible"/g)).toHaveLength(3);
     expect(html).toContain("Futu 真实行情");
     expect(html).toContain("ETF 代理");
     expect(html).toContain("2026-02-13");
