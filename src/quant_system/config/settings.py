@@ -629,6 +629,25 @@ class LocalTrustSettings(BaseSettings):
     mode: bool = False
 
 
+class FactorAutomationSettings(BaseSettings):
+    """Deny-only switches for the local paper factor automation path.
+
+    ``mode`` may authorize machine review for paper-only candidates.  The
+    independent ``auto_land`` switch is additionally required before any
+    prepared promotion may be committed or landed.  Neither setting grants a
+    live-trading capability.
+    """
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_prefix="QS_FACTOR_AUTOMATION_",
+        extra="ignore",
+    )
+
+    mode: bool = False
+    auto_land: bool = False
+
+
 class AgentV02ReleaseSettings(BaseSettings):
     """Local operator inputs for the durable Agent v0.2 release gate."""
 
@@ -754,6 +773,9 @@ class Settings(BaseSettings):
     hermes_gateway: HermesGatewaySettings = Field(default_factory=HermesGatewaySettings)
     local_mutation: LocalMutationSettings = Field(default_factory=LocalMutationSettings)
     local_trust: LocalTrustSettings = Field(default_factory=LocalTrustSettings)
+    factor_automation: FactorAutomationSettings = Field(
+        default_factory=FactorAutomationSettings
+    )
     agent_v02_release: AgentV02ReleaseSettings = Field(
         default_factory=AgentV02ReleaseSettings
     )

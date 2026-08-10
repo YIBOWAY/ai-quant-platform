@@ -2240,6 +2240,87 @@ def agent_review(
         )
 
 
+@agent_app.command("auto-review")
+def agent_auto_review(
+    candidate_id: Annotated[str, typer.Option("--candidate-id")],
+    expected_manifest_digest: Annotated[str, typer.Option("--expected-digest")],
+    expected_status: Annotated[Literal["pending"], typer.Option("--expected-status")],
+    policy_digest: Annotated[str, typer.Option("--policy-digest")],
+    intake_contract_digest: Annotated[
+        str, typer.Option("--intake-contract-digest")
+    ],
+    agent_output_dir: Annotated[str | None, typer.Option("--agent-output-dir")] = None,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Machine Gate 2 for the paper-only automation path.
+
+    The normal ``agent review`` command remains manual and byte-compatible.
+    This separate surface is fail-closed when the Platform automation flag is
+    off and binds both versioned policy and paper-intake contract digests into
+    the immutable approval lock note.
+    """
+    from quant_system.agent.candidate_pool import (
+        CandidateIntegrityError,
+        CandidateMigrationRequiredError,
+        CandidateReviewStateStaleError,
+        CandidateStaleError,
+    )
+
+    settings = reload_settings()
+    if settings.factor_automation.mode is not True:
+        typer.echo("auto_review_refused reason=factor_automation_disabled")
+        raise typer.Exit(code=1)
+    digest_re = re.compile(r"^[0-9a-f]{64}$")
+    if (
+        digest_re.fullmatch(policy_digest) is None
+        or digest_re.fullmatch(intake_contract_digest) is None
+    ):
+        typer.echo("auto_review_refused reason=invalid_automation_lineage")
+        raise typer.Exit(code=1)
+    note = f"auto:policy:{policy_digest}:intake:{intake_contract_digest}"
+    try:
+        record = AgentRunner(
+            agent_output_dir=resolve_agent_output_dir(agent_output_dir),
+        ).review(
+            candidate_id=candidate_id,
+            decision="approve",
+            note=note,
+            expected_manifest_digest=expected_manifest_digest,
+            expected_status=expected_status,
+            reviewer="auto",
+        )
+    except (
+        CandidateIntegrityError,
+        CandidateMigrationRequiredError,
+        CandidateStaleError,
+        CandidateReviewStateStaleError,
+        FileNotFoundError,
+    ) as exc:
+        typer.echo(f"auto_review_refused reason={exc}")
+        raise typer.Exit(code=1) from exc
+    payload = {
+        "candidate_id": record.candidate_id,
+        "decision": record.decision,
+        "registration": "auto_promote",
+        "manifest_digest": record.manifest_digest,
+        "reviewer": "auto",
+        "policy_digest": policy_digest,
+        "intake_contract_digest": intake_contract_digest,
+    }
+    typer.echo(
+        " ".join(
+            [
+                f"candidate_id={record.candidate_id}",
+                "decision=approve",
+                "registration=auto_promote",
+                "reviewer=auto",
+            ]
+        )
+    )
+    if json_output:
+        _emit_json(payload)
+
+
 @agent_app.command("promote-candidate")
 def agent_promote_candidate(
     candidate_id: Annotated[

@@ -139,6 +139,7 @@ class AgentRunner:
         note: str,
         expected_manifest_digest: str,
         expected_status: Literal["pending"],
+        reviewer: Literal["auto", "manual"] = "manual",
     ) -> ReviewRecord:
         # Validate CAS inputs before any audit/root IO so invalid IDs leave
         # zero writes (shared with CandidatePool.review preconditions).
@@ -161,6 +162,10 @@ class AgentRunner:
             from quant_system.agent.candidate_fs import CandidateIntegrityError
 
             raise CandidateIntegrityError("decision must be approve or reject")
+        if reviewer not in {"auto", "manual"}:
+            from quant_system.agent.candidate_fs import CandidateIntegrityError
+
+            raise CandidateIntegrityError("reviewer must be auto or manual")
 
         task_id = _task_id(AgentTaskType.REVIEW, candidate_id)
         audit = AgentAuditLog(self.agent_output_dir, task_id=task_id)
@@ -174,6 +179,7 @@ class AgentRunner:
                 "expected_manifest_digest": expected_manifest_digest,
                 "expected_status": expected_status,
                 "decision": decision,
+                "reviewer": reviewer,
             },
         )
         record = self.candidates.review(
@@ -182,6 +188,7 @@ class AgentRunner:
             note=note,
             expected_manifest_digest=expected_manifest_digest,
             expected_status=expected_status,
+            reviewer=reviewer,
         )
         audit.record("review_recorded", record.model_dump(mode="json"))
         return record

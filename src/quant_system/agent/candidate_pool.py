@@ -497,6 +497,7 @@ class CandidatePool:
         note: str,
         expected_manifest_digest: str,
         expected_status: Literal["pending"],
+        reviewer: Literal["auto", "manual"] = "manual",
     ) -> ReviewRecord:
         # Validate all CAS inputs before any filesystem create/open of the root.
         candidate_id = _validate_candidate_id(candidate_id)
@@ -506,6 +507,8 @@ class CandidatePool:
             raise CandidateIntegrityError("decision must be approve or reject")
         if expected_status != "pending":
             raise CandidateIntegrityError("expected_status must be the literal 'pending'")
+        if reviewer not in {"auto", "manual"}:
+            raise CandidateIntegrityError("reviewer must be auto or manual")
 
         lock_name = _APPROVED_LOCK if decision == "approve" else _REJECTED_LOCK
         opposite = _REJECTED_LOCK if decision == "approve" else _APPROVED_LOCK
@@ -563,6 +566,7 @@ class CandidatePool:
                     decision=decision,
                     note=note,
                     manifest_digest=digest,
+                    reviewer=reviewer,
                     created_at=created_at,
                 )
                 lock_payload = canonical_json_bytes(
