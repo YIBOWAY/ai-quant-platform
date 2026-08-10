@@ -659,6 +659,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/market-cross-section": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Market Cross Section */
+        get: operations["market_cross_section_api_market_cross_section_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/market-data/history": {
         parameters: {
             query?: never;
@@ -5592,6 +5609,120 @@ export interface components {
             /** Question */
             question: string;
         };
+        /** MarketCrossSectionBasketLabelResponse */
+        MarketCrossSectionBasketLabelResponse: {
+            /** En */
+            en: string;
+            /** Zh */
+            zh: string;
+        };
+        /** MarketCrossSectionHistoryPointResponse */
+        MarketCrossSectionHistoryPointResponse: {
+            /** Close */
+            close: number;
+            /** Date */
+            date: string;
+            /** Indexed Return Pct */
+            indexed_return_pct: number;
+        };
+        /** MarketCrossSectionMetaResponse */
+        MarketCrossSectionMetaResponse: {
+            /**
+             * Adjustment
+             * @constant
+             */
+            adjustment: "qfq";
+            /** As Of */
+            as_of: string;
+            /**
+             * Currency
+             * @constant
+             */
+            currency: "USD";
+            /**
+             * Provenance
+             * @enum {string}
+             */
+            provenance: "futu" | "futu_cache";
+            /**
+             * Provider
+             * @constant
+             */
+            provider: "futu";
+            /** Symbol */
+            symbol: string;
+            /**
+             * Timezone
+             * @constant
+             */
+            timezone: "America/New_York";
+        };
+        /**
+         * MarketCrossSectionResponse
+         * @description Read-only cross-section over a preset/custom symbol universe.
+         *
+         *     Same fail-closed Futu contract as Asia Radar: no sample data, no estimated
+         *     valuation metrics.
+         */
+        MarketCrossSectionResponse: {
+            /** As Of */
+            as_of: string;
+            /** Basket */
+            basket: string | null;
+            basket_label: components["schemas"]["MarketCrossSectionBasketLabelResponse"] | null;
+            /** Fetched At */
+            fetched_at: string;
+            /** Methodology */
+            methodology: {
+                [key: string]: string;
+            };
+            /**
+             * Provenance
+             * @enum {string}
+             */
+            provenance: "futu" | "futu_cache";
+            /**
+             * Provider
+             * @constant
+             */
+            provider: "futu";
+            /** Rows */
+            rows: components["schemas"]["MarketCrossSectionRowResponse"][];
+            /**
+             * Schema Version
+             * @constant
+             */
+            schema_version: "1.0";
+            /**
+             * Timezone
+             * @constant
+             */
+            timezone: "America/New_York";
+        };
+        /** MarketCrossSectionReturnsResponse */
+        MarketCrossSectionReturnsResponse: {
+            /** Month Pct */
+            month_pct: number;
+            /** Week Pct */
+            week_pct: number;
+            /** Ytd Pct */
+            ytd_pct: number;
+        };
+        /** MarketCrossSectionRowResponse */
+        MarketCrossSectionRowResponse: {
+            /** History */
+            history: components["schemas"]["MarketCrossSectionHistoryPointResponse"][];
+            /** Max Drawdown Pct */
+            max_drawdown_pct: number;
+            meta: components["schemas"]["MarketCrossSectionMetaResponse"];
+            /** Rank */
+            rank: number;
+            returns: components["schemas"]["MarketCrossSectionReturnsResponse"];
+            /** Symbol */
+            symbol: string;
+            /** Volatility Pct */
+            volatility_pct: number;
+        };
         /** MarketDataHistoryMetadata */
         MarketDataHistoryMetadata: {
             /** Fetched At */
@@ -9797,6 +9928,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HermesSessionMessagesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    market_cross_section_api_market_cross_section_get: {
+        parameters: {
+            query?: {
+                provider?: string;
+                basket?: string | null;
+                symbols?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketCrossSectionResponse"];
                 };
             };
             /** @description Validation Error */

@@ -25,6 +25,7 @@ from quant_system.api.routes import (
     health,
     hermes,
     local_session,
+    market_cross_section,
     market_data,
     news,
     options,
@@ -455,6 +456,9 @@ def create_app(
     app.middleware("http")(attach_safety_footer)
     app.include_router(health.router, prefix="/api", tags=["health"])
     app.include_router(asia_radar.router, prefix="/api", tags=["asia-radar"])
+    app.include_router(
+        market_cross_section.router, prefix="/api", tags=["market-cross-section"]
+    )
     app.include_router(safety.router, prefix="/api", tags=["safety"])
     app.include_router(local_session.router, prefix="/api", tags=["auth"])
     app.include_router(workspace.router, prefix="/api", tags=["workspace"])

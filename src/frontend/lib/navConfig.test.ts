@@ -25,6 +25,7 @@ const expectedEnabledItemIds: NavItemId[] = [
   "optionsTools",
   "buySide",
   "asiaRadar",
+  "marketCrossSection",
   "aiNews",
   "orderBook",
   "agentStudio",
@@ -49,6 +50,7 @@ const expectedRolledBackItemIds: NavItemId[] = [
   "optionsTools",
   "buySide",
   "asiaRadar",
+  "marketCrossSection",
   "aiNews",
   "orderBook",
   "agentStudio",
@@ -148,6 +150,7 @@ describe("buildNavSections", () => {
       ]);
       expect(itemRoutesFor(sections, "markets")).toEqual([
         { id: "asiaRadar", href: "/asia-radar" },
+        { id: "marketCrossSection", href: "/market-cross-section" },
         { id: "aiNews", href: "/ai-news" },
         { id: "orderBook", href: "/polymarket" },
         { id: "agentStudio", href: "/agent-studio" },
