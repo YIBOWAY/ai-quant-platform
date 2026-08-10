@@ -9,17 +9,19 @@ from quant_system.data.price_history import HistoricalPriceReadError
 
 def _overview() -> dict:
     return {
-        "schema_version": "1.0",
+        "schema_version": "1.1",
         "provider": "futu",
         "as_of": "2026-02-13",
+        "timezone": "America/New_York",
         "fetched_at": "2026-02-13T09:30:00+00:00",
+        "provenance": "futu",
         "methodology": {
             "week": "5 trading sessions",
             "month": "21 trading sessions",
-            "ytd": "calendar year",
+            "ytd": "calendar year first available close through latest shared session",
             "volatility": "63-session annualized realized volatility",
-            "drawdown": "calendar-year maximum drawdown",
-            "k_shape": "daily YTD cross-sectional top/bottom quartiles",
+            "drawdown": "calendar-year maximum drawdown through latest shared session",
+            "k_shape": "daily YTD cross-sectional top-three / bottom-three baskets",
         },
         "markets": [],
         "k_shape": {"winners": [], "laggards": [], "series": []},
@@ -41,6 +43,7 @@ def test_overview_endpoint_forces_futu_and_uses_reader_seam(tmp_path) -> None:
 
     assert response.status_code == 200
     assert response.json()["provider"] == "futu"
+    assert response.json()["timezone"] == "America/New_York"
     assert len(calls) == 1
 
 

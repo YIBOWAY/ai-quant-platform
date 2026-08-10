@@ -22,12 +22,16 @@ const copy = {
     real: "Futu real market data",
     proxy: "ETF proxy",
     asOf: "as of",
+    timezone: "US session",
+    cached: "cached bar",
+    live: "live Futu",
     heatmap: "YTD heatmap",
     heatmapHint: "Color and order are calculated from current YTD returns.",
     ranking: "Cross-market ranking",
     rankingHint: "Ranked by current YTD return; no fixed winners or laggards.",
     kShape: "Dynamic K-shape divergence",
     kShapeHint: "Daily top-three and bottom-three YTD basket averages.",
+    kShapeEmpty: "No YTD K-shape series yet for the current calendar year.",
     winner: "Winner basket",
     laggard: "Laggard basket",
     week: "Week",
@@ -56,12 +60,16 @@ const copy = {
     real: "Futu 真实行情",
     proxy: "ETF 代理",
     asOf: "截至",
+    timezone: "美股时段",
+    cached: "缓存 bar",
+    live: "实时 Futu",
     heatmap: "YTD 热力图",
     heatmapHint: "颜色与顺序由当前 YTD 收益动态计算。",
     ranking: "跨市场排名",
     rankingHint: "按当前 YTD 收益排名，不固定赢家或输家。",
     kShape: "动态 K 型分化",
     kShapeHint: "每日重算 YTD 前三与后三篮子的平均表现。",
+    kShapeEmpty: "当前自然年尚无可用的 K 型序列。",
     winner: "赢家篮子",
     laggard: "输家篮子",
     week: "周",
@@ -150,7 +158,13 @@ export function AsiaRadarDashboard({
             <h1 className="mt-2 font-headline-xl">{text.title}</h1>
             <p className="mt-2 max-w-3xl font-body-sm text-text-secondary">{text.subtitle}</p>
           </div>
-          <ProvenanceBadges locale={locale} asOf={overview.as_of} compact={false} />
+          <ProvenanceBadges
+            locale={locale}
+            asOf={overview.as_of}
+            compact={false}
+            provenance={overview.provenance}
+            timezone={overview.timezone}
+          />
         </div>
       </header>
 
@@ -162,6 +176,8 @@ export function AsiaRadarDashboard({
             locale={locale}
             title={text.heatmap}
             hint={text.heatmapHint}
+            provenance={overview.provenance}
+            timezone={overview.timezone}
           />
           <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {ranked.map((market) => (
@@ -201,6 +217,8 @@ export function AsiaRadarDashboard({
               locale={locale}
               title={text.ranking}
               hint={text.rankingHint}
+              provenance={overview.provenance}
+              timezone={overview.timezone}
             />
             <div className="mt-4 overflow-x-auto">
               <table className="w-full min-w-[540px] text-left text-xs">
@@ -247,6 +265,8 @@ export function AsiaRadarDashboard({
               locale={locale}
               title={text.kShape}
               hint={text.kShapeHint}
+              provenance={overview.provenance}
+              timezone={overview.timezone}
             />
             <KShapeChart locale={locale} overview={overview} />
           </section>
@@ -256,6 +276,7 @@ export function AsiaRadarDashboard({
           <MarketDetail
             locale={locale}
             market={selected}
+            methodology={overview.methodology}
             onTabChange={setTab}
             tab={tab}
           />
@@ -314,12 +335,16 @@ function ChartHeader({
   icon,
   locale,
   title,
+  provenance,
+  timezone,
 }: {
   asOf: string;
   hint: string;
   icon: React.ReactNode;
   locale: Locale;
   title: string;
+  provenance?: "futu" | "futu_cache";
+  timezone?: string;
 }) {
   return (
     <div className="flex flex-wrap items-start justify-between gap-3" data-chart-provenance="real-proxy">
@@ -332,7 +357,13 @@ function ChartHeader({
         </h2>
         <p className="mt-1 text-xs text-text-secondary">{hint}</p>
       </div>
-      <ProvenanceBadges asOf={asOf} compact locale={locale} />
+      <ProvenanceBadges
+        asOf={asOf}
+        compact
+        locale={locale}
+        provenance={provenance}
+        timezone={timezone}
+      />
     </div>
   );
 }
@@ -341,10 +372,14 @@ function ProvenanceBadges({
   asOf,
   compact,
   locale,
+  provenance,
+  timezone,
 }: {
   asOf: string;
   compact: boolean;
   locale: Locale;
+  provenance?: "futu" | "futu_cache";
+  timezone?: string;
 }) {
   const text = copy[locale];
   return (
@@ -355,7 +390,15 @@ function ProvenanceBadges({
       <span className="rounded-full border border-info/40 bg-info/10 px-2.5 py-1 font-semibold text-info">
         {text.proxy}
       </span>
+      {provenance ? (
+        <span className="rounded-full border border-border-subtle px-2.5 py-1 font-mono text-text-secondary">
+          {provenance === "futu_cache" ? text.cached : text.live}
+        </span>
+      ) : null}
       <span className="font-mono text-text-secondary">{text.asOf} {asOf}</span>
+      {timezone ? (
+        <span className="font-mono text-text-secondary">{text.timezone}</span>
+      ) : null}
     </div>
   );
 }
@@ -368,6 +411,13 @@ function KShapeChart({
   overview: AsiaRadarOverview;
 }) {
   const text = copy[locale];
+  if (!overview.k_shape.series.length) {
+    return (
+      <div className="mt-5 rounded-xl border border-dashed border-border-subtle p-5 text-sm text-text-secondary">
+        {text.kShapeEmpty}
+      </div>
+    );
+  }
   const values = overview.k_shape.series.flatMap((point) => [
     point.winner_avg_pct,
     point.laggard_avg_pct,
@@ -410,11 +460,13 @@ function KShapeChart({
 function MarketDetail({
   locale,
   market,
+  methodology,
   onTabChange,
   tab,
 }: {
   locale: Locale;
   market: AsiaRadarMarket;
+  methodology: Record<string, string>;
   onTabChange: (tab: DetailTab) => void;
   tab: DetailTab;
 }) {
@@ -435,7 +487,7 @@ function MarketDetail({
           </h2>
         </div>
         <div className="font-mono text-xs text-text-secondary">
-          {market.meta.provider} · {market.meta.currency} · {market.meta.adjustment.toUpperCase()} · {market.meta.as_of}
+          {market.meta.provider} · {market.meta.currency} · {market.meta.adjustment.toUpperCase()} · {market.meta.as_of} · {market.meta.timezone}
         </div>
       </div>
       <div className="mt-5 flex gap-1 border-b border-border-subtle" role="tablist">
@@ -467,7 +519,17 @@ function MarketDetail({
       </div>
       <details className="border-t border-border-subtle pt-4 text-xs text-text-secondary">
         <summary className="cursor-pointer">{text.methodology}</summary>
-        <p className="mt-2">{market.meta.symbol}: provider={market.meta.provider}, adjustment={market.meta.adjustment}, as_of={market.meta.as_of}</p>
+        <p className="mt-2">
+          {market.meta.symbol}: provider={market.meta.provider}, adjustment={market.meta.adjustment}, as_of={market.meta.as_of}, timezone={market.meta.timezone}, provenance={market.meta.provenance}
+        </p>
+        <ul className="mt-3 space-y-1 font-mono text-[11px]">
+          <li>week: {methodology.week}</li>
+          <li>month: {methodology.month}</li>
+          <li>ytd: {methodology.ytd}</li>
+          <li>volatility: {methodology.volatility}</li>
+          <li>drawdown: {methodology.drawdown}</li>
+          <li>k_shape: {methodology.k_shape}</li>
+        </ul>
       </details>
     </section>
   );

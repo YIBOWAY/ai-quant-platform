@@ -3,6 +3,7 @@ import { apiRequest } from "./apiClient";
 export type AsiaRadarDataStatus = "real";
 export type AsiaRadarCoverage = "proxy";
 export type AsiaRadarLeg = "winner" | "middle" | "laggard";
+export type AsiaRadarProvenance = "futu" | "futu_cache";
 
 export type AsiaRadarMarket = {
   market_id: string;
@@ -29,16 +30,20 @@ export type AsiaRadarMarket = {
     provider: "futu";
     symbol: string;
     currency: "USD";
+    timezone: "America/New_York";
     as_of: string;
     adjustment: "qfq";
+    provenance: AsiaRadarProvenance;
   };
 };
 
 export type AsiaRadarOverview = {
-  schema_version: "1.0";
+  schema_version: "1.0" | "1.1";
   provider: "futu";
   as_of: string;
+  timezone: "America/New_York";
   fetched_at: string;
+  provenance: AsiaRadarProvenance;
   methodology: Record<string, string>;
   markets: AsiaRadarMarket[];
   k_shape: {
@@ -59,4 +64,3 @@ export function getAsiaRadarOverview() {
     { cache: "no-store" },
   );
 }
-

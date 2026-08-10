@@ -62,11 +62,11 @@ const copy = {
     edition: "U.S. research edition",
     title: "Daily Morning Brief",
     subtitle: "HERMES MORNING BRIEF · A QUANTITATIVE LETTER",
-    author: "Platform factual desk · deterministic template",
+    author: "Platform factual desk",
     subscriber: "subscriber one · private use",
     safetyLine: "paper-only journal · dry-run rehearsal · live trading never implied active",
     archiveCta: "Open archived issue",
-    ledeByline: "Compiled from platform facts · template lede",
+    ledeByline: "Compiled from platform facts",
     account: "Account",
     accountEn: "THE ACCOUNT",
     equity: "Equity",
@@ -100,8 +100,8 @@ const copy = {
     marketSummary: "Market summary",
     marketUnavailable: "market move unavailable",
     quote:
-      "Market data is incomplete; the platform template is holding the daily read until SPY, QQQ, SOXX, and IGV all publish fresh bars.",
-    quoteSig: "Platform market note · deterministic template",
+      "Market data is incomplete; waiting for fresh SPY, QQQ, SOXX, and IGV daily bars before forming a full market read.",
+    quoteSig: "Platform market note",
     digest: "AI Intelligence Digest",
     digestEn: "INTELLIGENCE DIGEST",
     noDigest: "No AI intelligence items are available from the local feed.",
@@ -124,11 +124,11 @@ const copy = {
     edition: "美股研究版",
     title: "每日晨报",
     subtitle: "HERMES MORNING BRIEF · A QUANTITATIVE LETTER",
-    author: "平台事实台 · 确定性模板排印",
+    author: "平台事实台",
     subscriber: "订户一人 · 自用",
     safetyLine: "本刊为模拟盘刊物 · DRY-RUN 演练 · live trading never implied active",
     archiveCta: "查看归档版",
-    ledeByline: "导语由平台事实模板排印",
+    ledeByline: "导语由平台事实排印",
     account: "账户",
     accountEn: "THE ACCOUNT",
     equity: "权益",
@@ -160,9 +160,9 @@ const copy = {
     marketEn: "THE MARKET",
     marketSummary: "市场概括",
     marketUnavailable: "市场涨跌数据不足",
-    quoteSig: "平台市场手记 · 确定性模板",
+    quoteSig: "平台市场手记",
     quote:
-      "市场涨跌数据暂不完整；平台模板等待 SPY、QQQ、SOXX、IGV 四组日线全部刷新后再形成完整判断。",
+      "市场涨跌数据暂不完整；待 SPY、QQQ、SOXX、IGV 四组日线全部刷新后再形成完整判断。",
     digest: "AI 情报摘要",
     digestEn: "INTELLIGENCE DIGEST",
     noDigest: "本地 AI 情报源暂无条目。",
@@ -312,10 +312,47 @@ function buildMarketNote(markets: MarketSnapshot[], text: BriefCopy) {
   const strongest = [...complete].sort((a, b) => (b.changePct ?? 0) - (a.changePct ?? 0))[0];
   const weakest = [...complete].sort((a, b) => (a.changePct ?? 0) - (b.changePct ?? 0))[0];
   const positiveCount = complete.filter((item) => (item.changePct ?? 0) >= 0).length;
+  const soxx = complete.find((item) => item.symbol === "SOXX");
+  const igv = complete.find((item) => item.symbol === "IGV");
+  const relativeNote = _semisVsSoftwareNote(soxx, igv, text === copy.zh);
   if (text === copy.zh) {
-    return `今日四个观察指数中 ${positiveCount}/4 收涨，${strongest.symbol} 最强（${formatMarketChange(strongest.changePct)}），${weakest.symbol} 最弱（${formatMarketChange(weakest.changePct)}）；平台模板提示先比较半导体与软件的相对强弱。`;
+    return (
+      `今日四个观察指数中 ${positiveCount}/4 收涨，` +
+      `${strongest.symbol} 最强（${formatMarketChange(strongest.changePct)}），` +
+      `${weakest.symbol} 最弱（${formatMarketChange(weakest.changePct)}）` +
+      `${relativeNote}。`
+    );
   }
-  return `${positiveCount}/4 watched ETFs are up today; ${strongest.symbol} leads (${formatMarketChange(strongest.changePct)}) while ${weakest.symbol} lags (${formatMarketChange(weakest.changePct)}). The deterministic template flags semis versus software for review.`;
+  return (
+    `${positiveCount}/4 watched ETFs are up today; ` +
+    `${strongest.symbol} leads (${formatMarketChange(strongest.changePct)}) while ` +
+    `${weakest.symbol} lags (${formatMarketChange(weakest.changePct)})` +
+    `${relativeNote}.`
+  );
+}
+
+function _semisVsSoftwareNote(
+  soxx: MarketSnapshot | undefined,
+  igv: MarketSnapshot | undefined,
+  zh: boolean,
+): string {
+  if (soxx?.changePct === undefined || igv?.changePct === undefined) {
+    return "";
+  }
+  const diff = soxx.changePct - igv.changePct;
+  if (Math.abs(diff) < 0.002) {
+    return zh
+      ? "；半导体（SOXX）与软件（IGV）涨跌接近"
+      : "; semis (SOXX) and software (IGV) moved roughly in line";
+  }
+  if (diff > 0) {
+    return zh
+      ? `；半导体（SOXX）相对软件（IGV）偏强 ${formatPercent(Math.abs(diff))}`
+      : `; semis (SOXX) outperformed software (IGV) by ${formatPercent(Math.abs(diff))}`;
+  }
+  return zh
+    ? `；软件（IGV）相对半导体（SOXX）偏强 ${formatPercent(Math.abs(diff))}`
+    : `; software (IGV) outperformed semis (SOXX) by ${formatPercent(Math.abs(diff))}`;
 }
 
 function buildLede({
@@ -572,7 +609,7 @@ function buildBriefLogEntries({
   entries.push({
     timestamp: new Date().toISOString(),
     status: "warn",
-    text: locale === "zh" ? "晨报已排印 · 确定性事实模板" : "Morning brief printed · deterministic fact template",
+    text: locale === "zh" ? "晨报已排印 · 当日事实" : "Morning brief printed · same-day facts",
   });
   return entries.slice(0, 8);
 }

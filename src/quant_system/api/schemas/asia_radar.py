@@ -9,8 +9,10 @@ class AsiaRadarMetaResponse(BaseModel):
     provider: Literal["futu"]
     symbol: str
     currency: Literal["USD"]
+    timezone: Literal["America/New_York"]
     as_of: str
     adjustment: Literal["qfq"]
+    provenance: Literal["futu", "futu_cache"]
 
 
 class AsiaRadarReturnsResponse(BaseModel):
@@ -55,11 +57,12 @@ class AsiaRadarKShapeResponse(BaseModel):
 
 
 class AsiaRadarOverviewResponse(BaseModel):
-    schema_version: Literal["1.0"]
+    schema_version: Literal["1.0", "1.1"]
     provider: Literal["futu"]
     as_of: str
+    timezone: Literal["America/New_York"]
     fetched_at: str
+    provenance: Literal["futu", "futu_cache"]
     methodology: dict[str, str]
     markets: list[AsiaRadarMarketResponse]
     k_shape: AsiaRadarKShapeResponse
-
