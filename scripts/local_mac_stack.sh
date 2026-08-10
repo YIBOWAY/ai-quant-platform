@@ -150,6 +150,7 @@ build_stack() {
 install_platform_jobs() {
   bash "$ROOT/scripts/install_agent_v02_stack_launchagents.sh"
   bash "$ROOT/scripts/install_agent_v02_connector_launchagent.sh"
+  bash "$ROOT/scripts/install_factor_automation_launchagent.sh"
 }
 
 ensure_hermes_job() {
@@ -239,6 +240,7 @@ bootout_job() {
 }
 
 stop_stack() {
+  bootout_job com.aiquant.factor-automation
   bootout_job com.aiquant.agent-v02-connector
   bootout_job com.aiquant.frontend
   bootout_job com.aiquant.backend
@@ -276,6 +278,7 @@ status_stack() {
   print_job_status com.aiquant.backend
   print_job_status com.aiquant.frontend
   print_job_status com.aiquant.agent-v02-connector
+  print_job_status com.aiquant.factor-automation
   for endpoint in \
     "hermes=http://127.0.0.1:8642/health" \
     "backend=http://127.0.0.1:8765/api/health" \
@@ -296,6 +299,7 @@ show_logs() {
   echo "backend_log=$ROOT/data/_runtime/logs/backend-api.launchd.log"
   echo "frontend_log=$ROOT/data/_runtime/logs/frontend-next.launchd.log"
   echo "connector_log=$ROOT/data/_runtime/logs/agent-v02-connector.launchd.out.log"
+  echo "factor_automation_log=$ROOT/data/_runtime/logs/factor-automation.launchd.out.log"
 }
 
 usage() {
@@ -306,7 +310,7 @@ Commands:
   start    Start Docker/PostgreSQL, run the production build, install/restart LaunchAgents, and wait for readiness.
   restart  Same as start; all long-running services are replaced by launchd.
   build    Validate the Python backend and run the Next.js production build.
-  stop     Unload all four LaunchAgents and stop the project PostgreSQL container.
+  stop     Unload all five LaunchAgents and stop the project PostgreSQL container.
   status   Show Docker, launchd, and HTTP readiness without changing state.
   logs     Print the stable log paths.
 EOF
