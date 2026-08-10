@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -15,6 +16,7 @@ from quant_system.execution.factor_automation_activation import (
     authorize_automatic_land,
     create_automatic_paper_sleeve,
     maintain_automatic_paper_sleeves,
+    run_automatic_paper_cycle,
 )
 from quant_system.execution.factor_automation_authority import (
     FactorAutomationEventReceipt,
@@ -23,7 +25,18 @@ from quant_system.execution.factor_automation_authority import (
 from quant_system.execution.paper_strategy_sleeve_storage import (
     PaperStrategySleeveStorage,
 )
-from quant_system.execution.paper_strategy_sleeves import StrategySleeveStatus
+from quant_system.execution.paper_strategy_sleeves import (
+    PaperStrategySleeveService,
+    StrategySleeveMode,
+    StrategySleeveStatus,
+)
+from tests.test_paper_strategy_operations import FakePriceSource
+from tests.test_paper_strategy_signals import (
+    FakeOHLCVProvider,
+    make_config,
+    make_ohlcv_frame,
+    patch_provider,
+)
 
 
 def _settings(monkeypatch, tmp_path, *, enabled: bool = True):
@@ -304,3 +317,71 @@ def test_maintenance_pauses_breached_sleeve_and_audits_before_state_change(
     assert sleeve_storage.load_sleeve(sleeve.sleeve_id).status == (
         StrategySleeveStatus.PAUSED
     )
+
+
+def test_automatic_paper_cycle_materializes_one_next_open_plan_idempotently(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = _settings(monkeypatch, tmp_path)
+    patch_provider(monkeypatch, FakeOHLCVProvider(make_ohlcv_frame()))
+    api_runs = tmp_path / "api_runs"
+    account_storage = PaperAccountStorage(api_runs)
+    sleeve_storage = PaperStrategySleeveStorage(api_runs)
+    account = PaperAccount.open_new(initial_cash=1_000_000)
+    config = make_config(max_weight_per_symbol=0.40)
+    sleeve_storage.save_strategy_config(config)
+    service = PaperStrategySleeveService(sleeve_storage)
+    automated = service.create_sleeve(
+        account,
+        config=config,
+        mode=StrategySleeveMode.ALLOCATED,
+        allocated_cash=10_000,
+        metadata={"automation_managed": True},
+        sleeve_id="sleeve-auto-0123456789abcdef",
+    )
+    manual = service.create_sleeve(
+        account,
+        config=config,
+        mode=StrategySleeveMode.ALLOCATED,
+        allocated_cash=10_000,
+    )
+    sleeve_storage.save_sleeve(automated)
+    sleeve_storage.save_sleeve(manual)
+    account_storage.save(account)
+    local_tz = ZoneInfo("Asia/Shanghai")
+    saturday = datetime(2026, 6, 27, 6, 15, tzinfo=local_tz)
+
+    first = run_automatic_paper_cycle(
+        settings,
+        now=saturday,
+        account_storage=account_storage,
+        sleeve_storage=sleeve_storage,
+    )
+    second = run_automatic_paper_cycle(
+        settings,
+        now=saturday,
+        account_storage=account_storage,
+        sleeve_storage=sleeve_storage,
+    )
+
+    signals = sleeve_storage.load_signals(automated.sleeve_id)
+    executions = sleeve_storage.load_executions(automated.sleeve_id)
+    assert first["signals_generated"] == 1
+    assert first["executions_created"] == 1
+    assert second["signals_generated"] == 0
+    assert second["executions_created"] == 0
+    assert len(signals) == len(executions) == 1
+    assert executions[0].signal_id == signals[0].signal_id
+    assert executions[0].target_date == "2026-06-29"
+    assert sleeve_storage.load_signals(manual.sleeve_id) == []
+
+    executed = run_automatic_paper_cycle(
+        settings,
+        now=datetime(2026, 6, 29, 21, 40, tzinfo=local_tz),
+        account_storage=account_storage,
+        sleeve_storage=sleeve_storage,
+        price_source=FakePriceSource({"AAPL": 179.0, "MSFT": 180.25}),
+    )
+    assert executed["executions_processed"] == 1
+    assert executed["executions_filled"] == 1

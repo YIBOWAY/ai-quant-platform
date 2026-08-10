@@ -6,7 +6,7 @@ import hashlib
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, time, timedelta
 from typing import Any
 
 from quant_system.config.settings import Settings
@@ -23,9 +23,14 @@ from quant_system.execution.factor_automation_safety import (
     admit_auto_sleeve,
     evaluate_auto_sleeve_health,
 )
+from quant_system.execution.paper_strategy_operations import (
+    PaperStrategyOperationsRunner,
+)
 from quant_system.execution.paper_strategy_sleeves import (
     PaperStrategySleeveService,
+    SignalStatus,
     StrategyConfig,
+    StrategyExecutionPlanError,
     StrategySleeve,
     StrategySleeveMode,
     StrategySleeveStatus,
@@ -516,6 +521,114 @@ def maintain_automatic_paper_sleeves(
     return {"checked": checked, "paused": paused, "quarantined": quarantined}
 
 
+def _next_weekday(value: date) -> date:
+    candidate = value
+    while candidate.weekday() >= 5:
+        candidate += timedelta(days=1)
+    return candidate
+
+
+def run_automatic_paper_cycle(
+    settings: Settings,
+    *,
+    now: datetime,
+    account_storage: Any,
+    sleeve_storage: Any,
+    price_source: Any | None = None,
+) -> dict[str, int]:
+    """Generate, materialize, and execute due work for automation sleeves only."""
+
+    _require_enabled(settings)
+    if now.tzinfo is None or now.utcoffset() is None:
+        raise FactorAutomationActivationError("automation_cycle_clock_invalid")
+    sleeves = [
+        sleeve
+        for sleeve in sleeve_storage.list_sleeves()
+        if sleeve.metadata.get("automation_managed") is True
+        and sleeve.status == StrategySleeveStatus.RUNNING
+    ]
+    runner = PaperStrategyOperationsRunner(
+        account_storage=account_storage,
+        sleeve_storage=sleeve_storage,
+        settings=settings,
+        price_source=price_source,
+        today=lambda: now.date(),
+    )
+    signals_generated = 0
+    executions_created = 0
+    executions_blocked = 0
+    executions_processed = 0
+    executions_filled = 0
+
+    signal_window_open = now.weekday() in {1, 2, 3, 4, 5} and now.time() >= time(6, 10)
+    if signal_window_open:
+        signal_date = now.date().isoformat()
+        target_date = _next_weekday(now.date()).isoformat()
+        for sleeve in sleeves:
+            signals = sleeve_storage.load_signals(sleeve.sleeve_id)
+            signal = next(
+                (item for item in signals if item.signal_date == signal_date),
+                None,
+            )
+            if signal is None:
+                signal = runner.generate_signal_once(
+                    sleeve.sleeve_id,
+                    signal_date=signal_date,
+                )
+                signals_generated += 1
+            if (
+                signal.status != SignalStatus.GENERATED
+                or signal.execution_blocked_reason is not None
+                or not signal.proposed_orders
+                or sleeve_storage.latest_execution_for_signal(
+                    sleeve.sleeve_id,
+                    signal.signal_id,
+                )
+                is not None
+            ):
+                continue
+            try:
+                runner.create_execution_once(
+                    sleeve.sleeve_id,
+                    signal.signal_id,
+                    target_date=target_date,
+                    metadata={"automation_managed": True},
+                )
+            except StrategyExecutionPlanError as exc:
+                if exc.code == "account_frozen" or exc.code.startswith(
+                    "automation_"
+                ):
+                    executions_blocked += 1
+                elif exc.code == "execution_already_exists":
+                    # A concurrent driver won the idempotency race.
+                    continue
+                else:
+                    raise
+            else:
+                executions_created += 1
+
+    execution_window_open = now.weekday() in {0, 1, 2, 3, 4} and now.time() >= time(
+        21, 35
+    )
+    if execution_window_open:
+        for sleeve in sleeves:
+            result = runner.process_pending_executions_once(
+                sleeve_id=sleeve.sleeve_id,
+                target_date=now.date().isoformat(),
+            )
+            executions_processed += result.processed_count
+            executions_filled += result.filled_count
+            executions_blocked += result.blocked_count
+    return {
+        "sleeves_checked": len(sleeves),
+        "signals_generated": signals_generated,
+        "executions_created": executions_created,
+        "executions_processed": executions_processed,
+        "executions_filled": executions_filled,
+        "executions_blocked": executions_blocked,
+    }
+
+
 __all__ = [
     "AccountValuation",
     "AutomaticLandAuthorizationRequest",
@@ -524,4 +637,5 @@ __all__ = [
     "authorize_automatic_land",
     "create_automatic_paper_sleeve",
     "maintain_automatic_paper_sleeves",
+    "run_automatic_paper_cycle",
 ]

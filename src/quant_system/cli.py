@@ -2737,6 +2737,7 @@ def factor_automation_maintain_command() -> None:
         AccountValuation,
         FactorAutomationActivationError,
         maintain_automatic_paper_sleeves,
+        run_automatic_paper_cycle,
     )
     from quant_system.execution.factor_automation_authority import (
         FactorAutomationAuthorityError,
@@ -2759,6 +2760,7 @@ def factor_automation_maintain_command() -> None:
     try:
         quotes = resolve_account_quotes(account, settings=settings)
         prices = {symbol: quote.price for symbol, quote in quotes.items()}
+        sleeve_storage = PaperStrategySleeveStorage(api_runs_dir)
         result = maintain_automatic_paper_sleeves(
             settings,
             valuation=AccountValuation(
@@ -2772,12 +2774,18 @@ def factor_automation_maintain_command() -> None:
                 },
             ),
             account_storage=account_storage,
-            sleeve_storage=PaperStrategySleeveStorage(api_runs_dir),
+            sleeve_storage=sleeve_storage,
+        )
+        cycle = run_automatic_paper_cycle(
+            settings,
+            now=datetime.now().astimezone(),
+            account_storage=account_storage,
+            sleeve_storage=sleeve_storage,
         )
     except (FactorAutomationActivationError, FactorAutomationAuthorityError) as exc:
         typer.echo(f"factor_automation_refused reason={exc}")
         raise typer.Exit(code=1) from exc
-    _emit_json({"state": "maintained", **result})
+    _emit_json({"state": "maintained", **result, "paper_cycle": cycle})
 
 
 @agent_app.command("promotion-status")
