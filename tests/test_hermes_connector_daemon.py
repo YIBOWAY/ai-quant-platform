@@ -238,6 +238,7 @@ def test_supervised_builder_wires_one_durable_port_and_fresh_gate(
         },
     )
     session_port = object()
+    paper_intake_verifier = object()
     provisioner = _Provisioner(events)
     lease = _Lease()
     release_calls: list[str] = []
@@ -268,6 +269,15 @@ def test_supervised_builder_wires_one_durable_port_and_fresh_gate(
         connector_cli,
         "SubprocessManagedSessionProvisionPort",
         lambda *, cli_settings: session_port if cli_settings is run_port.cli_settings else None,
+    )
+    monkeypatch.setattr(
+        connector_cli,
+        "SubprocessPaperIntakeVerificationPort",
+        lambda *, cli_settings, workspace_id: (
+            paper_intake_verifier
+            if cli_settings is run_port.cli_settings and workspace_id == "ws-local-main"
+            else None
+        ),
     )
     monkeypatch.setattr(
         connector_cli,
@@ -316,6 +326,9 @@ def test_supervised_builder_wires_one_durable_port_and_fresh_gate(
     assert events[:2] == ["compatibility_preflight", "liveness_acquire"]
     assert runtime.worker._dispatch_adapter is run_port  # noqa: SLF001
     assert runtime.worker._run_lifecycle_port is run_port  # noqa: SLF001
+    assert (
+        runtime.worker._paper_intake_verifier is paper_intake_verifier  # noqa: SLF001
+    )
     assert runtime.worker._probe_capabilities() == "available"  # noqa: SLF001
     assert runtime.provisioner is provisioner
     first = runtime.network_gate()

@@ -27,6 +27,11 @@ from quant_system.hermes.dispatch_adapter import (
     HermesDispatchResult,
     HermesRunObservation,
 )
+from quant_system.hermes.paper_intake_port import (
+    FakePaperIntakeVerificationPort,
+    PaperIntakePortError,
+    PaperIntakeVerification,
+)
 from quant_system.hermes.session_registry import HermesSessionRegistryUnavailable
 from quant_system.hermes.workflow_binding import (
     PreparedWorkflowCommand,
@@ -475,6 +480,128 @@ def test_accepted_is_nonterminal_until_durable_observer_reports_success() -> Non
 
     assert observed.terminal_count == 1
     assert ledger._by_id[cmd.command_id].state == "succeeded"
+
+
+def test_paper_intake_receipt_is_required_before_terminal_success() -> None:
+    cmd = _cmd(client_request_id="req-paper-intake-accepted")
+    ledger = _ScriptedLedger(queue=[cmd])
+    adapter = FakeHermesDispatchAdapter()
+    verifier = FakePaperIntakeVerificationPort(
+        decision=PaperIntakeVerification(
+            disposition="accepted",
+            receipt_digest="d" * 64,
+            source_sha256="e" * 64,
+        )
+    )
+    worker = HermesConnectorWorker(
+        ledger=ledger,
+        mode="supervised_dispatch",
+        dispatch_adapter=adapter,
+        run_lifecycle_port=adapter,
+        paper_intake_verifier=verifier,
+        managed_session_resolver=lambda _command: "web_paper_accepted",
+        now=lambda: datetime(2026, 7, 21, 12, 0, tzinfo=UTC),
+    )
+    worker.run_once()
+    delivered = ledger._by_id[cmd.command_id]
+    adapter.set_run_observation(
+        HermesRunObservation(
+            status="succeeded",
+            hermes_session_id="web_paper_accepted",
+            hermes_run_id=delivered.hermes_run_id,
+            evidence_digest="f" * 64,
+            next_cursor=3,
+            replay_complete=True,
+        )
+    )
+
+    result = worker.run_once()
+
+    assert result.terminal_count == 1
+    assert ledger._by_id[cmd.command_id].state == "succeeded"
+    assert [call[0].command_id for call in verifier.calls] == [cmd.command_id]
+
+
+def test_paper_intake_rejection_marks_failed_before_mark_succeeded() -> None:
+    cmd = _cmd(client_request_id="req-paper-intake-rejected")
+    ledger = _ScriptedLedger(queue=[cmd])
+    adapter = FakeHermesDispatchAdapter()
+    verifier = FakePaperIntakeVerificationPort(
+        error=PaperIntakePortError(
+            "paper_intake_discovery_missing",
+            "redacted",
+            retryable=False,
+        )
+    )
+    worker = HermesConnectorWorker(
+        ledger=ledger,
+        mode="supervised_dispatch",
+        dispatch_adapter=adapter,
+        run_lifecycle_port=adapter,
+        paper_intake_verifier=verifier,
+        managed_session_resolver=lambda _command: "web_paper_rejected",
+        now=lambda: datetime(2026, 7, 21, 12, 0, tzinfo=UTC),
+    )
+    worker.run_once()
+    delivered = ledger._by_id[cmd.command_id]
+    adapter.set_run_observation(
+        HermesRunObservation(
+            status="succeeded",
+            hermes_session_id="web_paper_rejected",
+            hermes_run_id=delivered.hermes_run_id,
+            evidence_digest="f" * 64,
+            next_cursor=3,
+            replay_complete=True,
+        )
+    )
+
+    result = worker.run_once()
+
+    terminal = ledger._by_id[cmd.command_id]
+    assert result.terminal_count == 1
+    assert terminal.state == "failed"
+    assert terminal.last_error_code == "paper_intake_discovery_missing"
+    assert ledger.succeeded == []
+
+
+def test_retryable_paper_intake_verifier_failure_keeps_run_reconcilable() -> None:
+    cmd = _cmd(client_request_id="req-paper-intake-retry")
+    ledger = _ScriptedLedger(queue=[cmd])
+    adapter = FakeHermesDispatchAdapter()
+    verifier = FakePaperIntakeVerificationPort(
+        error=PaperIntakePortError(
+            "paper_intake_transcript_unavailable",
+            "redacted",
+            retryable=True,
+        )
+    )
+    worker = HermesConnectorWorker(
+        ledger=ledger,
+        mode="supervised_dispatch",
+        dispatch_adapter=adapter,
+        run_lifecycle_port=adapter,
+        paper_intake_verifier=verifier,
+        managed_session_resolver=lambda _command: "web_paper_retry",
+        now=lambda: datetime(2026, 7, 21, 12, 0, tzinfo=UTC),
+    )
+    worker.run_once()
+    delivered = ledger._by_id[cmd.command_id]
+    adapter.set_run_observation(
+        HermesRunObservation(
+            status="succeeded",
+            hermes_session_id="web_paper_retry",
+            hermes_run_id=delivered.hermes_run_id,
+            evidence_digest="f" * 64,
+            next_cursor=3,
+            replay_complete=True,
+        )
+    )
+
+    result = worker.run_once()
+
+    assert result.terminal_count == 0
+    assert ledger._by_id[cmd.command_id].state == "delivered"
+    assert ledger.succeeded == []
 
 
 def test_terminal_observation_always_replays_from_zero() -> None:

@@ -18,6 +18,7 @@ from quant_system.hermes.intent_payload_port import (
     FakeIntentPayloadPort,
     IntentPayloadCliSettings,
     IntentPayloadPortError,
+    ResolvedIntentPayload,
     SubprocessIntentPayloadPort,
     build_intent_payload_port,
 )
@@ -248,13 +249,64 @@ def test_intent_payload_input_resolver_bind_resolve() -> None:
     )
     receipt = port.put_intent(put_req)
     resolver = intent_payload_input_resolver(port=port)
-    prompt = resolver(
+    resolved = resolver(
         SimpleNamespace(
             command_id="cmd-uuid-1",
             payload_ref="platform-payload://sha256/" + receipt["payload_digest"],
             platform_session_id="m1",
         )
     )
-    assert prompt == "Reply with exactly: L2a-pong"
+    assert resolved == ResolvedIntentPayload(
+        prompt="Reply with exactly: L2a-pong",
+        kind="conversation_turn",
+    )
     assert port.resolves[-1]["consumer_ref"] == "command:cmd-uuid-1"
     assert port.resolves[-1]["payload_ref"] == receipt["payload_ref"]
+
+
+def test_intent_payload_input_resolver_preserves_closed_paper_contract() -> None:
+    from types import SimpleNamespace
+
+    from quant_system.hermes.intent_payload_port import intent_payload_input_resolver
+
+    contract = {
+        "schema_version": "hqa.paper_intake/v1",
+        "minimum_full_text_bytes": 4096,
+        "source_file_ref": "/private/paper-intake/factor.py",
+    }
+    port = FakeIntentPayloadPort()
+    receipt = port.put_intent(
+        {
+            "schema_version": "2.0",
+            "kind": "paper_intake",
+            "owner_id": "local-owner-v1",
+            "workspace_id": "workspace:ws-local-main",
+            "session_id": "session:m1",
+            "client_intent_id": "paper-intake-1",
+            "provider_policy": {},
+            "prompt": "private paper prompt",
+            "ttl_days": 7,
+            "research_claim": {"schema_version": "agent-v0.2-research-claim/v1"},
+            "execution_contract": contract,
+            "execution_contract_digest": "d" * 64,
+            "research_claim_digest": "e" * 64,
+            "execution_instructions": "This run is governed by hqa.paper_intake/v1.",
+        }
+    )
+
+    resolved = intent_payload_input_resolver(port=port)(
+        SimpleNamespace(
+            command_id="cmd-paper-1",
+            payload_ref="platform-payload://sha256/" + receipt["payload_digest"],
+            platform_session_id="m1",
+        )
+    )
+
+    assert resolved == ResolvedIntentPayload(
+        prompt="private paper prompt",
+        kind="paper_intake",
+        execution_contract=contract,
+        execution_contract_digest="d" * 64,
+        research_claim_digest="e" * 64,
+        execution_instructions="This run is governed by hqa.paper_intake/v1.",
+    )

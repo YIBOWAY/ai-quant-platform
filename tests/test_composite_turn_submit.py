@@ -14,9 +14,11 @@ from quant_system.hermes.agent_workspace_actions import (
 from quant_system.hermes.composite_turn_submit import (
     CompositeTurnRequest,
     CompositeTurnSubmitError,
+    PaperIntakeTurnRequest,
     _require_exact_session_admission,
     parse_submit_turn_body,
     submit_composite_turn,
+    submit_paper_intake_turn,
 )
 from quant_system.hermes.dark_identity_profile import (
     PLATFORM_WORKSPACE_ID,
@@ -26,6 +28,7 @@ from quant_system.hermes.intent_payload_port import (
     FakeIntentPayloadPort,
     IntentPayloadPortError,
 )
+from quant_system.hermes.paper_intake_port import PaperIntakePortError
 from quant_system.hermes.session_registry import (
     HermesSessionAdmissionMismatch,
 )
@@ -59,6 +62,32 @@ def _accepted_receipt(request: CompositeTurnRequest) -> ActionReceipt:
     )
 
 
+class _PaperPreparationPort:
+    def __init__(self, *, error: PaperIntakePortError | None = None) -> None:
+        self.error = error
+        self.calls: list[dict[str, object]] = []
+
+    def prepare(self, request):  # type: ignore[no-untyped-def]
+        self.calls.append(dict(request))
+        if self.error is not None:
+            raise self.error
+        return {
+            "ok": True,
+            "schema_version": "2.0",
+            "payload_ref": "payload:sha256:" + ("a" * 64),
+            "payload_digest": "a" * 64,
+            "kind": "paper_intake",
+            "client_intent_id": request["client_intent_id"],
+            "provider_policy_digest": PROVIDER_POLICY_DIGEST,
+            "created_at": "2026-08-10T00:00:00.000000Z",
+            "expires_at": "2026-08-17T00:00:00.000000Z",
+            "ttl_days": request["ttl_days"],
+            "status": "active",
+            "research_claim_digest": "c" * 64,
+            "execution_contract_digest": "d" * 64,
+        }
+
+
 def _managed_session(*, payload_ttl_days: int = 7) -> SimpleNamespace:
     return SimpleNamespace(
         workspace_id=PLATFORM_WORKSPACE_ID,
@@ -69,12 +98,15 @@ def _managed_session(*, payload_ttl_days: int = 7) -> SimpleNamespace:
 
 @pytest.fixture(autouse=True)
 def _canonical_managed_session_registry():  # type: ignore[no-untyped-def]
-    with patch(
-        "quant_system.hermes.composite_turn_submit.require_web_writable_session",
-        return_value=_managed_session(),
-    ), patch(
-        "quant_system.hermes.composite_turn_submit._require_exact_session_admission",
-        return_value=None,
+    with (
+        patch(
+            "quant_system.hermes.composite_turn_submit.require_web_writable_session",
+            return_value=_managed_session(),
+        ),
+        patch(
+            "quant_system.hermes.composite_turn_submit._require_exact_session_admission",
+            return_value=None,
+        ),
     ):
         yield
 
@@ -153,13 +185,16 @@ def test_submit_rejects_non_l2a_workspace() -> None:
 
 
 def test_exact_session_admission_rejects_stale_candidate() -> None:
-    with patch(
-        "quant_system.hermes.composer_readiness.composer_readiness_snapshot",
-        return_value={
-            "chat_write_ready": True,
-            "candidate_admission_id": "candidate-current",
-        },
-    ), pytest.raises(CompositeTurnSubmitError) as exc:
+    with (
+        patch(
+            "quant_system.hermes.composer_readiness.composer_readiness_snapshot",
+            return_value={
+                "chat_write_ready": True,
+                "candidate_admission_id": "candidate-current",
+            },
+        ),
+        pytest.raises(CompositeTurnSubmitError) as exc,
+    ):
         _require_exact_session_admission(
             SimpleNamespace(),
             SimpleNamespace(candidate_admission_id="candidate-revoked"),
@@ -172,14 +207,17 @@ def test_exact_session_admission_rejects_stale_candidate() -> None:
 
 def test_stale_candidate_rejection_happens_before_payload_put() -> None:
     port = FakeIntentPayloadPort()
-    with patch(
-        "quant_system.hermes.composite_turn_submit._require_exact_session_admission",
-        side_effect=CompositeTurnSubmitError(
-            "managed_session_admission_mismatch",
-            "stale candidate",
-            http_status=409,
+    with (
+        patch(
+            "quant_system.hermes.composite_turn_submit._require_exact_session_admission",
+            side_effect=CompositeTurnSubmitError(
+                "managed_session_admission_mismatch",
+                "stale candidate",
+                http_status=409,
+            ),
         ),
-    ), pytest.raises(CompositeTurnSubmitError) as exc:
+        pytest.raises(CompositeTurnSubmitError) as exc,
+    ):
         submit_composite_turn(
             SimpleNamespace(),
             _request(),
@@ -258,6 +296,75 @@ def test_happy_path_put_then_turn() -> None:
     assert action.client_action_id == req.client_action_id
 
 
+def test_paper_intake_submit_prepares_contract_then_records_same_turn() -> None:
+    request = PaperIntakeTurnRequest(
+        workspace_id=PLATFORM_WORKSPACE_ID,
+        managed_session_ref="session:managed-1",
+        client_action_id="paper-intake-0001",
+        prompt="Reproduce the exact paper for the configured universe.",
+        paper_title="A Testable Paper Factor",
+        universe=("SPY", "QQQ"),
+    )
+    port = _PaperPreparationPort()
+    with patch(
+        "quant_system.hermes.composite_turn_submit.submit_conversation_turn",
+        return_value=_accepted_receipt(request),
+    ) as turn:
+        result = submit_paper_intake_turn(
+            SimpleNamespace(),
+            request,
+            mutation_enabled=True,
+            preparation_port=port,
+        )
+
+    assert result["status"] == "accepted"
+    assert result["payload_ref"] == "payload:sha256:" + ("a" * 64)
+    assert result["paper_intake"] == {
+        "execution_contract_digest": "d" * 64,
+        "research_claim_digest": "c" * 64,
+    }
+    assert "paper_title" not in result
+    assert "universe" not in result
+    assert port.calls[0]["kind"] == "paper_intake"
+    assert port.calls[0]["paper_title"] == request.paper_title
+    assert port.calls[0]["universe"] == ["SPY", "QQQ"]
+    action = turn.call_args.args[1]
+    assert action.payload_ref == result["payload_ref"]
+    assert action.client_action_id == request.client_action_id
+
+
+def test_paper_intake_prepare_failure_never_creates_command() -> None:
+    request = PaperIntakeTurnRequest(
+        workspace_id=PLATFORM_WORKSPACE_ID,
+        managed_session_ref="session:managed-1",
+        client_action_id="paper-intake-fail",
+        prompt="private request",
+        paper_title="A Testable Paper Factor",
+        universe=("SPY",),
+    )
+    port = _PaperPreparationPort(
+        error=PaperIntakePortError(
+            "paper_intake_invalid_request",
+            "redacted",
+            retryable=False,
+        )
+    )
+    with (
+        patch("quant_system.hermes.composite_turn_submit.submit_conversation_turn") as turn,
+        pytest.raises(CompositeTurnSubmitError) as captured,
+    ):
+        submit_paper_intake_turn(
+            SimpleNamespace(),
+            request,
+            mutation_enabled=True,
+            preparation_port=port,
+        )
+
+    assert captured.value.code == "paper_intake_invalid_request"
+    assert captured.value.retryable is False
+    turn.assert_not_called()
+
+
 def test_put_uses_registry_owned_ttl_and_provider_policy() -> None:
     port = FakeIntentPayloadPort()
     req = _request()
@@ -272,9 +379,7 @@ def test_put_uses_registry_owned_ttl_and_provider_policy() -> None:
             return_value=_accepted_receipt(req),
         ),
     ):
-        result = submit_composite_turn(
-            SimpleNamespace(), req, mutation_enabled=True, port=port
-        )
+        result = submit_composite_turn(SimpleNamespace(), req, mutation_enabled=True, port=port)
 
     assert result["status"] == "accepted"
     assert port.puts[0]["ttl_days"] == 7
@@ -289,14 +394,10 @@ def test_noncanonical_registry_ttl_fails_before_payload_store() -> None:
             "quant_system.hermes.composite_turn_submit.require_web_writable_session",
             return_value=_managed_session(payload_ttl_days=14),
         ),
-        patch(
-            "quant_system.hermes.composite_turn_submit.submit_conversation_turn"
-        ) as turn,
+        patch("quant_system.hermes.composite_turn_submit.submit_conversation_turn") as turn,
         pytest.raises(CompositeTurnSubmitError) as exc,
     ):
-        submit_composite_turn(
-            SimpleNamespace(), req, mutation_enabled=True, port=port
-        )
+        submit_composite_turn(SimpleNamespace(), req, mutation_enabled=True, port=port)
 
     assert exc.value.code == "integrity"
     assert port.puts == []
@@ -321,14 +422,10 @@ def test_put_receipt_policy_mismatch_fails_before_command_write() -> None:
             "quant_system.hermes.composite_turn_submit.require_web_writable_session",
             return_value=session,
         ),
-        patch(
-            "quant_system.hermes.composite_turn_submit.submit_conversation_turn"
-        ) as turn,
+        patch("quant_system.hermes.composite_turn_submit.submit_conversation_turn") as turn,
         pytest.raises(CompositeTurnSubmitError) as exc,
     ):
-        submit_composite_turn(
-            SimpleNamespace(), req, mutation_enabled=True, port=port
-        )
+        submit_composite_turn(SimpleNamespace(), req, mutation_enabled=True, port=port)
 
     assert exc.value.code == "integrity"
     assert exc.value.http_status == 503
@@ -469,12 +566,8 @@ def test_identical_retry_after_accepted() -> None:
         "quant_system.hermes.composite_turn_submit.submit_conversation_turn",
         return_value=_accepted_receipt(req),
     ):
-        first = submit_composite_turn(
-            SimpleNamespace(), req, mutation_enabled=True, port=port
-        )
-        second = submit_composite_turn(
-            SimpleNamespace(), req, mutation_enabled=True, port=port
-        )
+        first = submit_composite_turn(SimpleNamespace(), req, mutation_enabled=True, port=port)
+        second = submit_composite_turn(SimpleNamespace(), req, mutation_enabled=True, port=port)
     assert first["payload_digest"] == second["payload_digest"]
     assert first["status"] == second["status"] == "accepted"
     assert len(port.puts) == 2  # both hit store; store is idempotent
@@ -506,14 +599,10 @@ def test_v8_m2_same_id_different_prompt_conflicts_zero_turn() -> None:
         "quant_system.hermes.composite_turn_submit.submit_conversation_turn",
         return_value=_accepted_receipt(req_a),
     ) as turn:
-        first = submit_composite_turn(
-            SimpleNamespace(), req_a, mutation_enabled=True, port=port
-        )
+        first = submit_composite_turn(SimpleNamespace(), req_a, mutation_enabled=True, port=port)
         assert first["status"] == "accepted"
         with pytest.raises(CompositeTurnSubmitError) as exc:
-            submit_composite_turn(
-                SimpleNamespace(), req_b, mutation_enabled=True, port=port
-            )
+            submit_composite_turn(SimpleNamespace(), req_b, mutation_enabled=True, port=port)
     assert exc.value.http_status == 409
     assert exc.value.code == "conflict"
     # First put stored; second put attempted then conflicted — turn only once.
@@ -537,12 +626,8 @@ def test_v8_m2_double_submit_same_body_stable_payload_binding() -> None:
         "quant_system.hermes.composite_turn_submit.submit_conversation_turn",
         return_value=_accepted_receipt(req),
     ) as turn:
-        r1 = submit_composite_turn(
-            SimpleNamespace(), req, mutation_enabled=True, port=port
-        )
-        r2 = submit_composite_turn(
-            SimpleNamespace(), req, mutation_enabled=True, port=port
-        )
+        r1 = submit_composite_turn(SimpleNamespace(), req, mutation_enabled=True, port=port)
+        r2 = submit_composite_turn(SimpleNamespace(), req, mutation_enabled=True, port=port)
     assert r1["status"] == r2["status"] == "accepted"
     assert r1["payload_digest"] == r2["payload_digest"]
     assert r1["payload_ref"] == r2["payload_ref"]
@@ -561,13 +646,9 @@ def test_v8_m2_ack_loss_retry_recovers_same_payload_binding() -> None:
         "quant_system.hermes.composite_turn_submit.submit_conversation_turn",
         return_value=_accepted_receipt(req),
     ):
-        first = submit_composite_turn(
-            SimpleNamespace(), req, mutation_enabled=True, port=port
-        )
+        first = submit_composite_turn(SimpleNamespace(), req, mutation_enabled=True, port=port)
         # Simulate client never saw first HTTP body; retries identical request.
-        recovered = submit_composite_turn(
-            SimpleNamespace(), req, mutation_enabled=True, port=port
-        )
+        recovered = submit_composite_turn(SimpleNamespace(), req, mutation_enabled=True, port=port)
     assert recovered["status"] == "accepted"
     assert recovered["payload_digest"] == first["payload_digest"]
     assert recovered["payload_ref"] == first["payload_ref"]
@@ -593,14 +674,10 @@ def test_v8_m2_outcome_unknown_then_retry_same_id() -> None:
         "quant_system.hermes.composite_turn_submit.submit_conversation_turn",
         side_effect=_turn,
     ):
-        unknown = submit_composite_turn(
-            SimpleNamespace(), req, mutation_enabled=True, port=port
-        )
+        unknown = submit_composite_turn(SimpleNamespace(), req, mutation_enabled=True, port=port)
         assert unknown["status"] == "outcome_unknown"
         assert unknown["recovery_action"] == "follow_and_reconcile_original_action"
-        accepted = submit_composite_turn(
-            SimpleNamespace(), req, mutation_enabled=True, port=port
-        )
+        accepted = submit_composite_turn(SimpleNamespace(), req, mutation_enabled=True, port=port)
     assert accepted["status"] == "accepted"
     assert accepted["payload_digest"] == unknown["payload_digest"]
     assert len(port._store) == 1  # type: ignore[arg-type]
@@ -617,9 +694,12 @@ def test_v8_m2_port_unavailable_fail_closed_no_turn() -> None:
         )
 
     port = FakeIntentPayloadPort(put_handler=boom)
-    with patch(
-        "quant_system.hermes.composite_turn_submit.submit_conversation_turn",
-    ) as turn, pytest.raises(CompositeTurnSubmitError) as exc:
+    with (
+        patch(
+            "quant_system.hermes.composite_turn_submit.submit_conversation_turn",
+        ) as turn,
+        pytest.raises(CompositeTurnSubmitError) as exc,
+    ):
         submit_composite_turn(
             SimpleNamespace(),
             _request(),

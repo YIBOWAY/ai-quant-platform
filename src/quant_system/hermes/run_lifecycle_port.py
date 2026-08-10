@@ -28,7 +28,10 @@ from quant_system.hermes.dispatch_adapter import (
     RunLifecycleStatus,
     evidence_digest_for,
 )
-from quant_system.hermes.intent_payload_port import IntentPayloadPortError
+from quant_system.hermes.intent_payload_port import (
+    IntentPayloadPortError,
+    ResolvedIntentPayload,
+)
 
 _STDIN_LIMIT = 1_200_000
 _STDOUT_LIMIT = 4_194_304
@@ -90,7 +93,9 @@ class SubprocessHermesRunLifecyclePort:
     """Durable submit/recover and observation through ``hermes_run_cli``."""
 
     cli_settings: HermesRunCliSettings
-    input_resolver: Callable[[HermesDispatchRequest], str]
+    input_resolver: Callable[
+        [HermesDispatchRequest], str | ResolvedIntentPayload
+    ]
     runner: Callable[..., subprocess.CompletedProcess[bytes]] | None = None
 
     def require_compatible_capabilities(
@@ -136,30 +141,59 @@ class SubprocessHermesRunLifecyclePort:
                 network_attempted=False,
             )
         try:
-            prompt = self.input_resolver(request)
+            resolved = self.input_resolver(request)
+            if isinstance(resolved, ResolvedIntentPayload):
+                prompt = resolved.prompt
+            else:
+                prompt = resolved
+                resolved = ResolvedIntentPayload(prompt=prompt)
             if type(prompt) is not str or not prompt or len(prompt.encode("utf-8")) > 16_384:
                 raise HermesRunPortError(
                     "payload_input_invalid",
                     "resolved prompt is invalid",
                     retryable=False,
                 )
+            metadata: dict[str, object] = {
+                "command_id": request.command_id,
+                "kind": request.kind,
+                "client_request_id": request.client_request_id,
+                "platform_session_id": request.platform_session_id,
+                "canonical_request_digest": request.canonical_request_digest,
+                "payload_ref": request.payload_ref,
+                "source": "platform.hqa_hermes_run_port",
+            }
+            request_body: dict[str, object] = {
+                "input": prompt,
+                "session_id": session_id,
+                "metadata": metadata,
+            }
+            if resolved.kind == "paper_intake":
+                if (
+                    resolved.execution_contract is None
+                    or resolved.execution_contract_digest is None
+                    or resolved.research_claim_digest is None
+                    or resolved.execution_instructions is None
+                ):
+                    raise HermesRunPortError(
+                        "payload_input_invalid",
+                        "paper intake dispatch contract is incomplete",
+                        retryable=False,
+                    )
+                metadata.update(
+                    {
+                        "execution_contract": "hqa.paper_intake/v1",
+                        "execution_contract_digest": (
+                            resolved.execution_contract_digest
+                        ),
+                        "research_claim_digest": resolved.research_claim_digest,
+                    }
+                )
+                request_body["instructions"] = resolved.execution_instructions
             document = self._invoke(
                 "submit",
                 {
                     "idempotency_key": request.idempotency_key(),
-                    "request_body": {
-                        "input": prompt,
-                        "session_id": session_id,
-                        "metadata": {
-                            "command_id": request.command_id,
-                            "kind": request.kind,
-                            "client_request_id": request.client_request_id,
-                            "platform_session_id": request.platform_session_id,
-                            "canonical_request_digest": request.canonical_request_digest,
-                            "payload_ref": request.payload_ref,
-                            "source": "platform.hqa_hermes_run_port",
-                        },
-                    },
+                    "request_body": request_body,
                 },
             )
         except HermesRunPortError as exc:
@@ -657,7 +691,9 @@ def _evidence_digest(document: object) -> str:
 def build_subprocess_run_lifecycle_port(
     settings: object,
     *,
-    input_resolver: Callable[[HermesDispatchRequest], str],
+    input_resolver: Callable[
+        [HermesDispatchRequest], str | ResolvedIntentPayload
+    ],
     runner: Callable[..., subprocess.CompletedProcess[bytes]] | None = None,
 ) -> SubprocessHermesRunLifecyclePort:
     """Build the production HQA subprocess port from existing platform config."""

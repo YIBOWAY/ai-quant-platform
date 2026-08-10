@@ -27,6 +27,11 @@ from quant_system.hermes.command_ledger import (
     HermesCommandNotFound,
     HermesCommandValidationError,
 )
+from quant_system.hermes.composite_turn_submit import (
+    CompositeTurnSubmitError,
+    PaperIntakeTurnRequest,
+    submit_paper_intake_turn,
+)
 from quant_system.hermes.connector_liveness import (
     ConnectorLivenessAuthority,
     ConnectorLivenessError,
@@ -54,6 +59,10 @@ from quant_system.hermes.managed_session_provisioner import (
     SubprocessManagedSessionProvisionPort,
 )
 from quant_system.hermes.paper_gate_cli import paper_gate_app
+from quant_system.hermes.paper_intake_port import (
+    PaperIntakePortError,
+    SubprocessPaperIntakeVerificationPort,
+)
 from quant_system.hermes.release_cli import release_app
 from quant_system.hermes.release_runtime import (
     ReleaseRuntimeProbeError,
@@ -352,9 +361,7 @@ def build_connector_runtime(
                 claim_release_only = True
             else:
                 claim_candidate_admission_id = initial_candidate.admission_id
-                claim_candidate_admission_digest = (
-                    initial_candidate.admission_digest
-                )
+                claim_candidate_admission_digest = initial_candidate.admission_digest
 
     worker_kwargs["ledger"] = HermesCommandLedger(
         settings,
@@ -370,8 +377,7 @@ def build_connector_runtime(
                 retryable=True,
             )
         if claim_release_only and (
-            getattr(getattr(settings, "local_trust", None), "mode", False)
-            is True
+            getattr(getattr(settings, "local_trust", None), "mode", False) is True
         ):
             # Local trust mode: the gate is still consulted every cycle so a
             # live-trading red-line flip closes dispatch immediately.
@@ -448,6 +454,10 @@ def build_connector_runtime(
                 worker_kwargs["capability_probe"] = run_port.capabilities
                 dispatch_adapter = run_port
                 worker_kwargs["run_lifecycle_port"] = run_port
+                worker_kwargs["paper_intake_verifier"] = SubprocessPaperIntakeVerificationPort(
+                    cli_settings=run_port.cli_settings,
+                    workspace_id=settings.agent_v02_release.workspace_id,
+                )
                 session_port = SubprocessManagedSessionProvisionPort(
                     cli_settings=run_port.cli_settings
                 )
@@ -476,6 +486,7 @@ def build_connector_runtime(
             ConnectorLivenessError,
             HermesRunPortError,
             IntentPayloadPortError,
+            PaperIntakePortError,
             ReleaseRuntimeProbeError,
             ValueError,
         ) as exc:
@@ -616,13 +627,19 @@ workflow_binding_app = typer.Typer(
     help="Persist or inspect the exact metadata-only HQA workflow binding.",
     no_args_is_help=True,
 )
+paper_intake_app = typer.Typer(
+    help="Submit contract-bound paper research without argv secrets.",
+    no_args_is_help=True,
+)
 hermes_app.add_typer(workflow_binding_app, name="workflow-binding")
+hermes_app.add_typer(paper_intake_app, name="paper-intake")
 hermes_app.add_typer(release_app, name="release")
 hermes_app.add_typer(candidate_app, name="candidate")
 hermes_app.add_typer(paper_gate_app, name="paper-gate")
 hermes_app.add_typer(vertical_a_app, name="vertical-a")
 
 _WORKFLOW_BINDING_STDIN_LIMIT = 16 * 1024
+_PAPER_INTAKE_STDIN_LIMIT = 64 * 1024
 _PG_BIGINT_MAX = 9_223_372_036_854_775_807
 _PG_INTEGER_MAX = 2_147_483_647
 _PREPARED_STRING_FIELDS = frozenset(
@@ -754,6 +771,72 @@ def _read_prepared_workflow_command() -> PreparedWorkflowCommand:
 
 def _emit_json(payload: dict[str, object]) -> None:
     typer.echo(json.dumps(payload, sort_keys=True, separators=(",", ":")))
+
+
+def _read_paper_intake_submission() -> PaperIntakeTurnRequest:
+    stream = getattr(sys.stdin, "buffer", sys.stdin)
+    raw = stream.read(_PAPER_INTAKE_STDIN_LIMIT + 1)
+    if isinstance(raw, str):
+        raw = raw.encode("utf-8", errors="strict")
+    fields = {
+        "workspace_id",
+        "managed_session_ref",
+        "client_action_id",
+        "prompt",
+        "paper_title",
+        "universe",
+    }
+    try:
+        if not raw or len(raw) > _PAPER_INTAKE_STDIN_LIMIT:
+            raise ValueError
+        document = json.loads(
+            raw.decode("utf-8", errors="strict"),
+            object_pairs_hook=_unique_json_object,
+            parse_constant=_reject_json_constant,
+        )
+        if not isinstance(document, dict) or set(document) != fields:
+            raise ValueError
+        if any(type(document[field]) is not str for field in fields - {"universe"}):
+            raise ValueError
+        universe = document["universe"]
+        if not isinstance(universe, list) or any(type(item) is not str for item in universe):
+            raise ValueError
+    except (UnicodeError, ValueError, json.JSONDecodeError, RecursionError) as exc:
+        raise WorkflowBindingInputError("invalid paper intake submission") from exc
+    return PaperIntakeTurnRequest(
+        workspace_id=str(document["workspace_id"]),
+        managed_session_ref=str(document["managed_session_ref"]),
+        client_action_id=str(document["client_action_id"]),
+        prompt=str(document["prompt"]),
+        paper_title=str(document["paper_title"]),
+        universe=tuple(universe),
+    )
+
+
+@paper_intake_app.command("submit")
+def paper_intake_submit_command() -> None:
+    """Submit one paper intake from a closed JSON object on stdin."""
+
+    try:
+        request = _read_paper_intake_submission()
+        result = submit_paper_intake_turn(
+            load_settings(),
+            request,
+            mutation_enabled=True,
+        )
+    except WorkflowBindingInputError:
+        _emit_json(
+            {
+                "error_code": "paper_intake_invalid_request",
+                "retryable": False,
+            }
+        )
+        raise typer.Exit(code=2) from None
+    except CompositeTurnSubmitError as exc:
+        _emit_json({"error_code": exc.code, "retryable": exc.retryable})
+        raise typer.Exit(code=1 if exc.retryable else 2) from None
+    else:
+        _emit_json(result)
 
 
 def _workflow_binding_error(error_code: str, *, exit_code: int) -> None:

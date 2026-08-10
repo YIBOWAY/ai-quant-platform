@@ -13,7 +13,10 @@ from quant_system.hermes.dispatch_adapter import (
     HermesDispatchRequest,
     fixed_input_resolver,
 )
-from quant_system.hermes.intent_payload_port import IntentPayloadPortError
+from quant_system.hermes.intent_payload_port import (
+    IntentPayloadPortError,
+    ResolvedIntentPayload,
+)
 from quant_system.hermes.run_lifecycle_port import (
     HermesRunCliSettings,
     HermesRunPortError,
@@ -71,7 +74,12 @@ def _compatible_capability_receipt() -> dict[str, object]:
                 "session-fork",
             ],
             "write_contract": {
-                "run_submit_fields": ["input", "session_id", "metadata"],
+                "run_submit_fields": [
+                    "input",
+                    "session_id",
+                    "metadata",
+                    "instructions",
+                ],
                 "platform_must_not_send": [
                     "conversation_history",
                     "previous_response_id",
@@ -337,6 +345,73 @@ def test_submit_receipt_preserves_conversation_root_and_run_tip(
     assert result.conversation_hermes_session_id == "web_managed_1"
     assert result.hermes_session_id == "web_tip"
     assert result.hermes_run_id == "run_compressed_1"
+
+
+def test_paper_intake_submit_binds_contract_instructions_and_digest_metadata(
+    tmp_path: Path,
+) -> None:
+    python = tmp_path / "python"
+    python.touch(mode=0o700)
+    hqa_root = tmp_path / "hqa"
+    hqa_root.mkdir()
+    captured: dict[str, object] = {}
+    contract = {
+        "schema_version": "hqa.paper_intake/v1",
+        "minimum_full_text_bytes": 4096,
+        "source_file_ref": "/private/paper-intake/factor.py",
+    }
+
+    def runner(argv, **kwargs):
+        captured.update(json.loads(kwargs["input"]))
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=json.dumps(
+                {
+                    "ok": True,
+                    "run_id": "run_paper_1",
+                    "session_id": "web_managed_1",
+                    "requested_session_id": "web_managed_1",
+                    "conversation_session_id": "web_managed_1",
+                    "resolved_session_id": "web_managed_1",
+                    "created": True,
+                    "idempotency_key": (
+                        "platform-command:00000000-0000-4000-8000-000000000001"
+                    ),
+                }
+            ).encode(),
+            stderr=b"",
+        )
+
+    port = SubprocessHermesRunLifecyclePort(
+        cli_settings=HermesRunCliSettings(
+            python_executable=python,
+            hqa_root=hqa_root,
+            base_url="http://127.0.0.1:8642",
+            api_key=None,
+            timeout_seconds=5.0,
+        ),
+        input_resolver=lambda _request: ResolvedIntentPayload(
+            prompt="private paper prompt",
+            kind="paper_intake",
+            execution_contract=contract,
+            execution_contract_digest="d" * 64,
+            research_claim_digest="e" * 64,
+            execution_instructions="This run is governed by hqa.paper_intake/v1.",
+        ),
+        runner=runner,
+    )
+
+    result = port.submit_or_recover(_request())
+
+    assert result.kind == "accepted"
+    body = captured["request_body"]
+    assert isinstance(body, dict)
+    assert body["input"] == "private paper prompt"
+    assert body["instructions"] == "This run is governed by hqa.paper_intake/v1."
+    assert body["metadata"]["execution_contract"] == "hqa.paper_intake/v1"
+    assert body["metadata"]["execution_contract_digest"] == "d" * 64
+    assert body["metadata"]["research_claim_digest"] == "e" * 64
 
 
 def test_observe_requires_gapless_replay_and_returns_terminal_evidence(

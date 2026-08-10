@@ -30,9 +30,15 @@ from quant_system.hermes.dark_identity_profile import (
     store_session_id,
 )
 from quant_system.hermes.intent_payload_port import (
+    IntentPayloadCliSettings,
     IntentPayloadPort,
     IntentPayloadPortError,
     build_intent_payload_port,
+)
+from quant_system.hermes.paper_intake_port import (
+    PaperIntakePortError,
+    PaperIntakePreparationPort,
+    SubprocessPaperIntakePreparationPort,
 )
 from quant_system.hermes.session_registry import (
     HermesSessionAdmissionClosed,
@@ -56,6 +62,37 @@ class CompositeTurnRequest:
     managed_session_ref: str
     client_action_id: str
     prompt: str
+
+
+@dataclass(frozen=True)
+class PaperIntakeTurnRequest(CompositeTurnRequest):
+    paper_title: str
+    universe: tuple[str, ...]
+
+
+@dataclass
+class _PaperIntakeIntentAdapter:
+    preparation_port: PaperIntakePreparationPort
+    paper_request: PaperIntakeTurnRequest
+    receipt: dict[str, object] | None = None
+
+    def put_intent(self, request: Mapping[str, Any]) -> dict[str, Any]:
+        prepare_request = {
+            **dict(request),
+            "kind": "paper_intake",
+            "paper_title": self.paper_request.paper_title,
+            "universe": list(self.paper_request.universe),
+        }
+        try:
+            receipt = self.preparation_port.prepare(prepare_request)
+        except PaperIntakePortError as exc:
+            raise IntentPayloadPortError(
+                exc.code,
+                exc.message,
+                retryable=exc.retryable,
+            ) from exc
+        self.receipt = dict(receipt)
+        return dict(receipt)
 
 
 class CompositeTurnSubmitError(Exception):
@@ -188,6 +225,13 @@ def _map_port_error(exc: IntentPayloadPortError) -> CompositeTurnSubmitError:
             exc.message,
             http_status=400,
             retryable=False,
+        )
+    if code.startswith("paper_intake_"):
+        return CompositeTurnSubmitError(
+            code,
+            "paper intake preparation failed",
+            http_status=503 if exc.retryable else 400,
+            retryable=exc.retryable,
         )
     if code in {
         "intent_invalid_request",
@@ -334,8 +378,7 @@ def submit_composite_turn(
             retryable=True,
         )
     if (
-        put_receipt.get("provider_policy_digest")
-        != session.provider_policy_digest
+        put_receipt.get("provider_policy_digest") != session.provider_policy_digest
         or put_receipt.get("ttl_days") != session.payload_ttl_days
     ):
         raise CompositeTurnSubmitError(
@@ -410,6 +453,74 @@ def submit_composite_turn(
     )
 
 
+def submit_paper_intake_turn(
+    settings: Settings,
+    request: PaperIntakeTurnRequest,
+    *,
+    mutation_enabled: bool,
+    actor_owner_user_id: UUID | str = ROOT_USER_ID,
+    preparation_port: PaperIntakePreparationPort | None = None,
+) -> dict[str, object]:
+    """Prepare one contract-bound encrypted paper intent, then record its turn.
+
+    This is an internal driver surface, not the browser submit schema.  Full
+    paper title, ordered universe, and prompt cross only the local HQA stdin
+    pipe; the returned receipt contains digests only.
+    """
+
+    if (
+        type(request.paper_title) is not str
+        or not request.paper_title
+        or request.paper_title != request.paper_title.strip()
+        or type(request.universe) is not tuple
+        or not request.universe
+        or any(type(symbol) is not str or not symbol for symbol in request.universe)
+        or len(set(request.universe)) != len(request.universe)
+    ):
+        raise CompositeTurnSubmitError(
+            "paper_intake_invalid_request",
+            "paper intake claim is invalid",
+            http_status=400,
+        )
+    active_port = preparation_port
+    if active_port is None:
+        try:
+            active_port = SubprocessPaperIntakePreparationPort(
+                cli_settings=IntentPayloadCliSettings.from_settings(settings),
+            )
+        except IntentPayloadPortError as exc:
+            raise _map_port_error(exc) from exc
+    adapter = _PaperIntakeIntentAdapter(
+        preparation_port=active_port,
+        paper_request=request,
+    )
+    public = submit_composite_turn(
+        settings,
+        CompositeTurnRequest(
+            workspace_id=request.workspace_id,
+            managed_session_ref=request.managed_session_ref,
+            client_action_id=request.client_action_id,
+            prompt=request.prompt,
+        ),
+        mutation_enabled=mutation_enabled,
+        actor_owner_user_id=actor_owner_user_id,
+        port=adapter,  # type: ignore[arg-type]
+    )
+    receipt = adapter.receipt
+    if receipt is None:
+        raise CompositeTurnSubmitError(
+            "paper_intake_cli_invalid_receipt",
+            "paper intake preparation returned no receipt",
+            http_status=503,
+            retryable=True,
+        )
+    public["paper_intake"] = {
+        "execution_contract_digest": receipt["execution_contract_digest"],
+        "research_claim_digest": receipt["research_claim_digest"],
+    }
+    return public
+
+
 def _public_composite_receipt(
     receipt: ActionReceipt,
     *,
@@ -447,8 +558,7 @@ def parse_submit_turn_body(raw: Mapping[str, Any]) -> CompositeTurnRequest:
     if missing:
         raise CompositeTurnSubmitError(
             "validation",
-            "submit-turn requires workspace_id, managed_session_ref, "
-            "client_action_id, prompt",
+            "submit-turn requires workspace_id, managed_session_ref, client_action_id, prompt",
             http_status=400,
         )
     return CompositeTurnRequest(
@@ -462,7 +572,9 @@ def parse_submit_turn_body(raw: Mapping[str, Any]) -> CompositeTurnRequest:
 __all__ = [
     "CompositeTurnRequest",
     "CompositeTurnSubmitError",
+    "PaperIntakeTurnRequest",
     "PLATFORM_WORKSPACE_ID",
     "parse_submit_turn_body",
     "submit_composite_turn",
+    "submit_paper_intake_turn",
 ]

@@ -204,6 +204,80 @@ def test_connector_worker_reports_fail_closed_runtime_error_as_json(monkeypatch)
     assert "database URL omitted" not in result.stdout
 
 
+def test_paper_intake_submit_reads_private_claim_from_stdin_and_emits_digest_receipt(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def submit(_settings, request, **kwargs):  # type: ignore[no-untyped-def]
+        captured["request"] = request
+        captured.update(kwargs)
+        return {
+            "status": "accepted",
+            "payload_ref": "payload:sha256:" + ("a" * 64),
+            "paper_intake": {
+                "research_claim_digest": "b" * 64,
+                "execution_contract_digest": "c" * 64,
+            },
+        }
+
+    monkeypatch.setattr(connector_cli, "submit_paper_intake_turn", submit)
+    body = {
+        "workspace_id": "ws-local-main",
+        "managed_session_ref": "session:managed-1",
+        "client_action_id": "paper-intake-0001",
+        "prompt": "private exact paper request",
+        "paper_title": "A Testable Paper Factor",
+        "universe": ["SPY", "QQQ"],
+    }
+
+    result = runner.invoke(
+        app,
+        ["hermes", "paper-intake", "submit"],
+        input=json.dumps(body),
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert json.loads(result.stdout)["status"] == "accepted"
+    request = captured["request"]
+    assert request.paper_title == body["paper_title"]
+    assert request.universe == ("SPY", "QQQ")
+    assert captured["mutation_enabled"] is True
+
+
+def test_paper_intake_submit_rejects_unknown_stdin_fields_before_mutation(
+    monkeypatch,
+) -> None:
+    body = {
+        "workspace_id": "ws-local-main",
+        "managed_session_ref": "session:managed-1",
+        "client_action_id": "paper-intake-0001",
+        "prompt": "private exact paper request",
+        "paper_title": "A Testable Paper Factor",
+        "universe": ["SPY"],
+        "unexpected": True,
+    }
+    monkeypatch.setattr(
+        connector_cli,
+        "submit_paper_intake_turn",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("invalid stdin must not mutate")
+        ),
+    )
+
+    result = runner.invoke(
+        app,
+        ["hermes", "paper-intake", "submit"],
+        input=json.dumps(body),
+    )
+
+    assert result.exit_code == 2
+    assert json.loads(result.stdout) == {
+        "error_code": "paper_intake_invalid_request",
+        "retryable": False,
+    }
+
+
 def test_connector_worker_supervised_mode_is_forwarded(monkeypatch) -> None:
     captured: dict[str, object] = {}
     ledger = _FakeLedger()

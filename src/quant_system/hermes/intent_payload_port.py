@@ -47,6 +47,18 @@ class IntentPayloadPort(Protocol):
     ) -> dict[str, Any]: ...
 
 
+@dataclass(frozen=True)
+class ResolvedIntentPayload:
+    """Trusted-pipe dispatch body plus optional body-free paper contract."""
+
+    prompt: str
+    kind: str = "conversation_turn"
+    execution_contract: Mapping[str, object] | None = None
+    execution_contract_digest: str | None = None
+    research_claim_digest: str | None = None
+    execution_instructions: str | None = None
+
+
 def _as_path(value: object, *, field: str) -> Path:
     if isinstance(value, Path):
         return value
@@ -500,6 +512,23 @@ class FakeIntentPayloadPort:
             "payload_digest": match["payload_digest"],
             "prompt": match["prompt"],
             "consumer_ref": consumer_ref,
+            "kind": match["body"].get("kind", "conversation_turn"),
+            **(
+                {
+                    "execution_contract": match["body"]["execution_contract"],
+                    "execution_contract_digest": match["body"][
+                        "execution_contract_digest"
+                    ],
+                    "research_claim_digest": match["body"][
+                        "research_claim_digest"
+                    ],
+                    "execution_instructions": match["body"][
+                        "execution_instructions"
+                    ],
+                }
+                if match["body"].get("kind") == "paper_intake"
+                else {}
+            ),
         }
 
 
@@ -519,7 +548,7 @@ def intent_payload_input_resolver(
     settings: object | None = None,
     *,
     port: IntentPayloadPort | None = None,
-) -> Callable[[object], str]:
+) -> Callable[[object], ResolvedIntentPayload]:
     """Build a dispatch ``input_resolver`` that bind_resolves via the CLI Port.
 
     ``consumer_ref = command:<ledger_command_id>``. Plaintext exists only inside
@@ -533,7 +562,7 @@ def intent_payload_input_resolver(
 
     active = build_intent_payload_port(settings, port=port)
 
-    def _resolve(request: object) -> str:
+    def _resolve(request: object) -> ResolvedIntentPayload:
         command_id = getattr(request, "command_id", None)
         payload_ref = getattr(request, "payload_ref", None)
         platform_session_id = getattr(request, "platform_session_id", None)
@@ -581,7 +610,67 @@ def intent_payload_input_resolver(
                 "resolved prompt exceeds 16 KiB chat ceiling",
                 retryable=False,
             )
-        return prompt
+        kind = receipt.get("kind", "conversation_turn")
+        if kind == "conversation_turn":
+            forbidden = {
+                "execution_contract",
+                "execution_contract_digest",
+                "research_claim_digest",
+                "execution_instructions",
+            }
+            if forbidden & set(receipt):
+                raise IntentPayloadPortError(
+                    "intent_cli_invalid_receipt",
+                    "ordinary intent receipt carries paper metadata",
+                    retryable=False,
+                )
+            return ResolvedIntentPayload(prompt=prompt, kind=kind)
+        if kind != "paper_intake":
+            raise IntentPayloadPortError(
+                "intent_cli_invalid_receipt",
+                "dispatch intent kind is unsupported",
+                retryable=False,
+            )
+        contract = receipt.get("execution_contract")
+        contract_digest = receipt.get("execution_contract_digest")
+        claim_digest = receipt.get("research_claim_digest")
+        instructions = receipt.get("execution_instructions")
+        if (
+            not isinstance(contract, Mapping)
+            or set(contract) != {
+                "schema_version",
+                "minimum_full_text_bytes",
+                "source_file_ref",
+            }
+            or contract.get("schema_version") != "hqa.paper_intake/v1"
+            or contract.get("minimum_full_text_bytes") != 4096
+            or type(contract.get("source_file_ref")) is not str
+            or not str(contract["source_file_ref"]).startswith("/")
+            or type(contract_digest) is not str
+            or len(contract_digest) != 64
+            or any(char not in "0123456789abcdef" for char in contract_digest)
+            or type(claim_digest) is not str
+            or len(claim_digest) != 64
+            or any(char not in "0123456789abcdef" for char in claim_digest)
+            or type(instructions) is not str
+            or not instructions.startswith(
+                "This run is governed by hqa.paper_intake/v1."
+            )
+            or len(instructions.encode("utf-8")) > 4_096
+        ):
+            raise IntentPayloadPortError(
+                "intent_cli_invalid_receipt",
+                "paper intake dispatch receipt is invalid",
+                retryable=False,
+            )
+        return ResolvedIntentPayload(
+            prompt=prompt,
+            kind=kind,
+            execution_contract=dict(contract),
+            execution_contract_digest=contract_digest,
+            research_claim_digest=claim_digest,
+            execution_instructions=instructions,
+        )
 
     return _resolve
 
@@ -591,6 +680,7 @@ __all__ = [
     "IntentPayloadCliSettings",
     "IntentPayloadPort",
     "IntentPayloadPortError",
+    "ResolvedIntentPayload",
     "SubprocessIntentPayloadPort",
     "build_intent_payload_port",
     "intent_payload_input_resolver",

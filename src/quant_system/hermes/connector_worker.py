@@ -47,6 +47,10 @@ from quant_system.hermes.dispatch_adapter import (
     RunLifecyclePort,
     evidence_digest_for,
 )
+from quant_system.hermes.paper_intake_port import (
+    PaperIntakePortError,
+    PaperIntakeVerificationPort,
+)
 from quant_system.hermes.session_registry import HermesSessionRegistryUnavailable
 from quant_system.storage.database import DatabaseUnavailable
 
@@ -226,9 +230,7 @@ class PostgresCommandWakeupWaiter:
     ) -> None:
         self._database = database
         self._stop_requested = stop_requested or (lambda: False)
-        self._connection_context: AbstractContextManager[
-            _PostgresListenerConnection
-        ] | None = None
+        self._connection_context: AbstractContextManager[_PostgresListenerConnection] | None = None
         self._connection: _PostgresListenerConnection | None = None
 
     def wait(self, timeout_seconds: float) -> bool:
@@ -325,6 +327,7 @@ class HermesConnectorWorker:
         lease_duration: timedelta = timedelta(seconds=30),
         dispatch_adapter: HermesDispatchPort | None = None,
         run_lifecycle_port: RunLifecyclePort | None = None,
+        paper_intake_verifier: PaperIntakeVerificationPort | None = None,
         dispatch_gate: Callable[[HermesCommand], DispatchGateDecision] | None = None,
         managed_session_resolver: Callable[[HermesCommand], str | None] | None = None,
         claims_per_cycle: int = 1,
@@ -348,10 +351,9 @@ class HermesConnectorWorker:
         self._worker_id = worker_id
         self._lease_duration = lease_duration
         self._dispatch_adapter = dispatch_adapter
+        self._paper_intake_verifier = paper_intake_verifier
         self._run_lifecycle_port = run_lifecycle_port
-        self._dispatch_gate = dispatch_gate or (
-            lambda _cmd: DispatchGateDecision(allow=True)
-        )
+        self._dispatch_gate = dispatch_gate or (lambda _cmd: DispatchGateDecision(allow=True))
         self._managed_session_resolver = managed_session_resolver or (lambda _cmd: None)
         self._claims_per_cycle = claims_per_cycle
 
@@ -388,9 +390,7 @@ class HermesConnectorWorker:
         if self._mode == "supervised_dispatch" and dispatch_allowed:
             claim_ledger = self._as_claim_ledger()
             if self._run_lifecycle_port is not None:
-                recovered_count, terminal_count = self._reconcile_active_runs(
-                    claim_ledger
-                )
+                recovered_count, terminal_count = self._reconcile_active_runs(claim_ledger)
             for _ in range(self._claims_per_cycle):
                 outcome = self._claim_and_dispatch(claim_ledger)
                 if outcome is None:
@@ -438,9 +438,7 @@ class HermesConnectorWorker:
     ) -> tuple[HermesConnectorCycleResult, ...]:
         """Collect explicitly bounded cycles; daemons must use ``iter_cycles``."""
         if max_cycles is None:
-            raise ValueError(
-                "run_loop max_cycles is required; use iter_cycles for streaming"
-            )
+            raise ValueError("run_loop max_cycles is required; use iter_cycles for streaming")
         return tuple(
             self.iter_cycles(
                 wakeup_waiter=wakeup_waiter,
@@ -499,9 +497,7 @@ class HermesConnectorWorker:
             )
         missing = [name for name in required if not callable(getattr(ledger, name, None))]
         if missing:
-            raise TypeError(
-                "supervised_dispatch ledger is missing: " + ", ".join(missing)
-            )
+            raise TypeError("supervised_dispatch ledger is missing: " + ", ".join(missing))
         return ledger  # type: ignore[return-value]
 
     def _reconcile_active_runs(
@@ -514,9 +510,7 @@ class HermesConnectorWorker:
         if port is None:
             return 0, 0
         try:
-            commands = ledger.list_commands_for_run_reconciliation(
-                limit=self._reconcile_limit
-            )
+            commands = ledger.list_commands_for_run_reconciliation(limit=self._reconcile_limit)
         except Exception:  # noqa: BLE001 - a read outage must not start new recovery I/O
             return 0, 0
 
@@ -560,9 +554,7 @@ class HermesConnectorWorker:
             ):
                 continue
             try:
-                registry_session_id = self._managed_session_resolver(
-                    current
-                )
+                registry_session_id = self._managed_session_resolver(current)
                 if (
                     registry_session_id is not None
                     and registry_session_id != current.hermes_session_id
@@ -579,10 +571,11 @@ class HermesConnectorWorker:
                 )
             except Exception:  # noqa: BLE001 - observation failure is nonterminal
                 continue
-            if conversation_session_id is not None and (
-                observation.conversation_hermes_session_id
-                or observation.hermes_session_id
-            ) != conversation_session_id:
+            if (
+                conversation_session_id is not None
+                and (observation.conversation_hermes_session_id or observation.hermes_session_id)
+                != conversation_session_id
+            ):
                 continue
             if self._record_terminal_observation(ledger, current, observation):
                 terminal_count += 1
@@ -607,10 +600,7 @@ class HermesConnectorWorker:
             or not result.hermes_run_id
             or (
                 request.hermes_session_id is not None
-                and (
-                result.conversation_hermes_session_id
-                or result.hermes_session_id
-                )
+                and (result.conversation_hermes_session_id or result.hermes_session_id)
                 != request.hermes_session_id
             )
         ):
@@ -649,10 +639,8 @@ class HermesConnectorWorker:
             not observation.is_terminal
             or not observation.replay_complete
             or not observation.evidence_digest
-            or observation.conversation_hermes_session_id
-            != command.hermes_session_id
-            or observation.hermes_session_id
-            != command.resolved_hermes_session_id
+            or observation.conversation_hermes_session_id != command.hermes_session_id
+            or observation.hermes_session_id != command.resolved_hermes_session_id
             or observation.hermes_run_id != command.hermes_run_id
         ):
             return False
@@ -667,13 +655,49 @@ class HermesConnectorWorker:
         }
         try:
             if observation.status == "succeeded":
+                verifier = self._paper_intake_verifier
+                if verifier is not None:
+                    try:
+                        intake = verifier.verify(command, observation)
+                    except PaperIntakePortError as exc:
+                        if exc.retryable:
+                            return False
+                        ledger.mark_failed(
+                            **common,
+                            error_code=_safe_error_code(exc.code),
+                        )
+                        return True
+                    if intake.disposition == "accepted":
+                        receipt_digest = intake.receipt_digest
+                        if (
+                            type(receipt_digest) is not str
+                            or len(receipt_digest) != 64
+                            or any(char not in "0123456789abcdef" for char in receipt_digest)
+                        ):
+                            ledger.mark_failed(
+                                **common,
+                                error_code="paper_intake_cli_invalid_receipt",
+                            )
+                            return True
+                        common["evidence_digest"] = hashlib.sha256(
+                            (
+                                "paper-intake-success/v1\x00"
+                                + str(observation.evidence_digest)
+                                + "\x00"
+                                + receipt_digest
+                            ).encode("ascii")
+                        ).hexdigest()
+                    elif intake.disposition != "not_required":
+                        ledger.mark_failed(
+                            **common,
+                            error_code="paper_intake_cli_invalid_receipt",
+                        )
+                        return True
                 ledger.mark_succeeded(**common)
             elif observation.status == "failed":
                 ledger.mark_failed(
                     **common,
-                    error_code=_safe_error_code(
-                        observation.error_code or "hermes_run_failed"
-                    ),
+                    error_code=_safe_error_code(observation.error_code or "hermes_run_failed"),
                 )
             else:
                 ledger.mark_cancelled(**common)
@@ -863,10 +887,7 @@ class HermesConnectorWorker:
         if (
             result.is_success
             and request.hermes_session_id is not None
-            and (
-                result.conversation_hermes_session_id
-                or result.hermes_session_id
-            )
+            and (result.conversation_hermes_session_id or result.hermes_session_id)
             != request.hermes_session_id
         ):
             # Hermes may have accepted a Run, so this is an unknown outcome,
@@ -996,8 +1017,7 @@ class HermesConnectorWorker:
                     lease_token=lease_token,
                     now=self._now(),
                     hermes_session_id=(
-                        result.conversation_hermes_session_id
-                        or result.hermes_session_id
+                        result.conversation_hermes_session_id or result.hermes_session_id
                     ),
                     resolved_hermes_session_id=result.hermes_session_id,
                     hermes_run_id=result.hermes_run_id,
@@ -1019,9 +1039,7 @@ class HermesConnectorWorker:
                     lease_token=lease_token,
                     now=self._now(),
                     evidence_digest=evidence,
-                    error_code=_safe_error_code(
-                        result.error_code or "upstream_rejected"
-                    ),
+                    error_code=_safe_error_code(result.error_code or "upstream_rejected"),
                 )
                 return {
                     "command_id": command_id,
@@ -1041,9 +1059,7 @@ class HermesConnectorWorker:
                     lease_token=lease_token,
                     now=recorded_at,
                     retry_at=recorded_at + _unavailable_retry_delay(started),
-                    error_code=_safe_error_code(
-                        result.error_code or "dispatch_unavailable"
-                    ),
+                    error_code=_safe_error_code(result.error_code or "dispatch_unavailable"),
                 )
                 return {
                     "command_id": command_id,
@@ -1106,9 +1122,7 @@ def _unavailable_retry_delay(command: HermesCommand) -> timedelta:
     attempt = max(1, int(command.attempt_count))
     exponent = min(attempt - 1, 16)
     base = _UNAVAILABLE_RETRY_BASE_SECONDS * (2**exponent)
-    jitter_seed = hashlib.sha256(
-        f"{command.command_id}:{attempt}".encode("ascii")
-    ).digest()
+    jitter_seed = hashlib.sha256(f"{command.command_id}:{attempt}".encode("ascii")).digest()
     jitter = 0.9 + (int.from_bytes(jitter_seed[:2], "big") / 65_535) * 0.2
     seconds = min(_UNAVAILABLE_RETRY_MAX_SECONDS, base * jitter)
     return timedelta(seconds=seconds)
