@@ -22,15 +22,22 @@ import type {
   HermesResultKind,
   HermesResultsQuery,
 } from "./hermes/resultsTypes";
-import type { AsiaRadarMarket, AsiaRadarOverview } from "./asiaRadar";
+import type {
+  AsiaRadarMarket,
+  AsiaRadarMarketSummary,
+  AsiaRadarOverview,
+  AsiaRadarSummary,
+} from "./asiaRadar";
 
 export type AsiaRadarMetaResponse = AsiaRadarMarket["meta"];
 export type AsiaRadarReturnsResponse = AsiaRadarMarket["returns"];
 export type AsiaRadarHistoryPointResponse = AsiaRadarMarket["history"][number];
 export type AsiaRadarMarketResponse = AsiaRadarMarket;
+export type AsiaRadarMarketSummaryResponse = AsiaRadarMarketSummary;
 export type AsiaRadarKShapePointResponse = AsiaRadarOverview["k_shape"]["series"][number];
 export type AsiaRadarKShapeResponse = AsiaRadarOverview["k_shape"];
 export type AsiaRadarOverviewResponse = AsiaRadarOverview;
+export type AsiaRadarSummaryResponse = AsiaRadarSummary;
 
 export type SafetyFooter = {
   dry_run: boolean;
