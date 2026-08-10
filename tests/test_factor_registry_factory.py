@@ -123,6 +123,37 @@ def test_promoted_library_factors_are_registered(monkeypatch) -> None:
     assert set(registry_without.factor_ids()) == _EXAMPLE_IDS
 
 
+def test_live_registry_physically_excludes_auto_paper_only_factor(
+    tmp_path, monkeypatch
+) -> None:
+    import sys
+    import types
+
+    module_name = "quant_system.factors.library.promoted.auto_paper_fixture"
+    module_path = tmp_path / "auto_paper_fixture.py"
+    module_path.write_text(
+        "\n".join(
+            [
+                "# promotion_scope: paper_only",
+                "# promotion_reviewer: auto",
+                f"# automation_policy_digest: {'a' * 64}",
+                f"# intake_contract_digest: {'b' * 64}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    module = types.ModuleType(module_name)
+    module.__file__ = str(module_path)
+    monkeypatch.setitem(sys.modules, module_name, module)
+    monkeypatch.setattr(_StubPromotedFactor, "__module__", module_name)
+    monkeypatch.setattr(
+        library.promoted, "PROMOTED_FACTORS", (_StubPromotedFactor,), raising=True
+    )
+
+    assert "stub_promoted" in build_factor_registry(purpose="paper").factor_ids()
+    assert "stub_promoted" not in build_factor_registry(purpose="live").factor_ids()
+
+
 def test_registry_factory_has_no_candidate_execution_switch() -> None:
     parameters = inspect.signature(build_factor_registry).parameters
 

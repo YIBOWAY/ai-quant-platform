@@ -215,6 +215,10 @@ def test_happy_path_writes_module_init_and_test_scaffold(dirs) -> None:
     assert f"manifest_digest: {digest}" in module_content
     assert "manifest_schema: 1.0" in module_content
     assert "approved_on: 2026-01-01" in module_content
+    assert "promotion_scope: live_eligible" in module_content
+    assert "promotion_reviewer: manual" in module_content
+    assert "automation_policy_digest: none" in module_content
+    assert "intake_contract_digest: none" in module_content
     assert "approved.lock" not in module_content
     assert str(dirs["agent"]) not in module_content
     assert module_content.endswith(_FACTOR_SRC)
@@ -235,6 +239,42 @@ def test_happy_path_writes_module_init_and_test_scaffold(dirs) -> None:
     assert 'metadata.factor_id == "wiring_test_factor"' in test_content
     assert "compute" in test_content
     ast.parse(test_content)
+
+
+def test_auto_promotion_materializes_immutable_paper_only_qualification(dirs) -> None:
+    _write_candidate(dirs["agent"], "cand-auto", _FACTOR_SRC)
+
+    result = _promote(
+        "cand-auto",
+        dirs,
+        promotion_scope="paper_only",
+        reviewer="auto",
+        automation_policy_digest="a" * 64,
+        intake_contract_digest="b" * 64,
+    )
+
+    content = result.module_path.read_text(encoding="utf-8")
+    assert "# promotion_scope: paper_only\n" in content
+    assert "# promotion_reviewer: auto\n" in content
+    assert f"# automation_policy_digest: {'a' * 64}\n" in content
+    assert f"# intake_contract_digest: {'b' * 64}\n" in content
+
+
+def test_auto_live_eligible_promotion_is_rejected_before_writes(dirs) -> None:
+    _write_candidate(dirs["agent"], "cand-auto-live", _FACTOR_SRC)
+
+    with pytest.raises(PromotionError, match="auto promotion must be paper_only"):
+        _promote(
+            "cand-auto-live",
+            dirs,
+            promotion_scope="live_eligible",
+            reviewer="auto",
+            automation_policy_digest="a" * 64,
+            intake_contract_digest="b" * 64,
+        )
+
+    assert not dirs["library"].exists()
+    assert not dirs["tests"].exists()
 
 
 def test_gate3_scaffold_sizes_history_from_factor_lookback_and_is_ruff_clean(

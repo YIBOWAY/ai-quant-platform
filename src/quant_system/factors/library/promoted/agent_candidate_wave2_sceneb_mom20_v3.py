@@ -3,6 +3,10 @@
 # manifest_schema: 1.0
 # manifest_digest: 5ca064d597778b45f1a718047becf5b67b30cf9b24d441632b3a408cfd1c227d
 # approved_on: 2026-07-14
+# promotion_scope: live_eligible
+# promotion_reviewer: manual
+# automation_policy_digest: none
+# intake_contract_digest: none
 # source: verbatim copy of factor.py.candidate at promotion time.
 from quant_system.factors.base import BaseFactor
 
