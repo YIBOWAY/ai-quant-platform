@@ -1,6 +1,11 @@
 # 数据库缓存方案
 
-状态（2026-07-15）：本地存储分为六类能力：
+> 当前覆盖说明（2026-08-10）：本文主体保留早期数据库演进历史。现行 startup 已固定
+> `QS_DATABASE_AUTO_MIGRATE=false`；migration 006–029 已在授权窗口逐步进入当前 live，
+> 029 经 backup/isolated restore 后仅 apply 一次，作为 append-only factor-automation
+> promote/demote/日配额权威，禁止重放。运维以 `../runbooks/agent-v0-2-local-stack.md` 为准。
+
+状态（2026-07-15 历史快照）：本地存储分为六类能力：
 
 1. DuckDB 富途期权报价缓存。
 2. 可选 PostgreSQL run index；研究 artifact 仍以文件为事实源。

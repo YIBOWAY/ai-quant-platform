@@ -9,8 +9,9 @@
 > execution-state controls are available. Opt-in read-only Futu/OpenD checks now
 > cover both signal generation and paper execution processing. MVP-3 Slice 1
 > adds a shared operations runner plus scheduler-safe one-shot CLI/status
-> commands. MVP-3 Slice 2 adds macOS LaunchAgent templates/runbook; automatic
-> scheduling is not active until the operator runs the install script.
+> commands. MVP-3 Slice 2 adds optional manual-sleeve LaunchAgent templates.
+> D-33 (2026-08-10) separately adds a five-minute, dual-Flag LaunchAgent that
+> acts only on `automation_managed=true` sleeves; manual sleeves stay one-shot.
 > Phase 1a-4 v2 Slice 9A (2026-07-10) separates observation from recovery:
 > every strategy-sleeve GET and `ops-status` is strictly read-only; crash
 > recovery now requires an explicit mutation or `paper strategies recover-pending`.
@@ -257,6 +258,30 @@ MVP-3 Slice 2 adds macOS LaunchAgent assets and a runbook:
 The backend/frontend LaunchAgents are long-running local services. Strategy
 sleeve jobs are one-shot commands with `KeepAlive=false`; UI availability does
 not imply automatic execution is enabled.
+
+## D-33 automatic paper cycle
+
+`com.aiquant.factor-automation` is installed by `local_mac_stack.sh`; it is not
+one of the optional legacy manual-sleeve schedulers. Both Platform and HQA Flag
+pairs must be enabled or the driver reports disabled before mutation. Each
+five-minute tick first maintains automatic sleeve risk and then considers only
+running sleeves whose metadata has `automation_managed=true`:
+
+- local Tuesday-Saturday after 06:10: generate at most one signal for the date
+  and materialize one next-weekday `next_open` plan;
+- local Monday-Friday after 21:35: process due plans once through the existing
+  paper execution/journal service;
+- signal and execution identities make replays and concurrent driver races
+  idempotent; manual sleeves are excluded;
+- order creation re-checks sleeve and aggregate limits. Risk/limit blocks are
+  counted; unexpected identity/config errors fail the driver instead of being
+  reported as success.
+
+This uses a weekday rule, not an exchange-holiday calendar. Closed-market or
+missing-data cases must remain no-order/blocked facts; they must not fabricate a
+fill. The FastAPI lifecycle still does not host this scheduler. Full operation,
+pause/quarantine/demote, and rollback semantics are in
+`/Users/sunyibo/programs/Hermes-quant-agent/docs/runbooks/full-automation-paper.md`.
 
 The fourth MVP-2 slice exposes the same manual execution lifecycle in the
 `/paper-trading` Strategy Sleeves workspace. For each sleeve, the panel shows

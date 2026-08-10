@@ -5,17 +5,21 @@ migration, readiness, service restart, candidate E2E, and database restore.
 The connector runbook covers connector mechanics only and must not duplicate
 this sequence.
 
-The long-running local stack has four independently managed LaunchAgents:
+The long-running local stack has five independently managed LaunchAgents:
 
 - `ai.hermes.gateway` — official Hermes API on `127.0.0.1:8642`;
 - `com.aiquant.backend` — Platform API on `127.0.0.1:8765`;
 - `com.aiquant.frontend` — built Web frontend on `127.0.0.1:3001`;
 - `com.aiquant.agent-v02-connector` — installed separately and kept in
-  explicit `reconcile_only` unless a bounded candidate/release window is ready.
+  explicit `reconcile_only` unless a bounded candidate/release window is ready;
+- `com.aiquant.factor-automation` — five-minute, dual-Flag, `paper_only`
+  automation and sleeve-maintenance driver.
 
-These jobs never install or start Paper Strategy Sleeves schedulers.
+This stack still does not install the optional legacy manual-sleeve schedulers.
+The D-33 driver acts only on `automation_managed` sleeves; its semantic runbook
+is `/Users/sunyibo/programs/Hermes-quant-agent/docs/runbooks/full-automation-paper.md`.
 
-## Everyday macOS operation (2026-08-09)
+## Everyday macOS operation (2026-08-10)
 
 The supported daily entrypoint is repository-owned and independent of Codex,
 Claude Code, ChatGPT, or any terminal lifetime:
@@ -36,7 +40,8 @@ run the production frontend build before installing/reloading the jobs. Use
 2. validates the ordinary backend command
    `python -m quant_system.cli serve --host 127.0.0.1 --port 8765`;
 3. runs `npm --prefix src/frontend run build` and serves the production build;
-4. installs the Hermes, backend, frontend, and connector user LaunchAgents;
+4. installs the Hermes, backend, frontend, connector, and factor-automation
+   user LaunchAgents;
 5. requires the prior Hermes PID and port to remain quiescent before replacement,
    then waits for PostgreSQL and all three HTTP ports to become ready.
 
@@ -46,7 +51,11 @@ Live readiness reports `admission_mode=local_trust` with no candidate ID or
 digest; it must never masquerade as a digest-bound candidate admission.
 It does not enable real trading: `live_trading_enabled=false` and
 `kill_switch=true` remain independent hard boundaries. Startup never applies a
-database migration.
+database migration. Migration 029 was applied once on 2026-08-10 after backup
+and isolated restore rehearsal. It is the append-only automatic
+promote/demote/daily-quota authority and must not be replayed. D-33 flags grant
+only machine-reviewed `paper_only` land and never authorize a candidate/release
+or live trading.
 
 ## Current source and live boundary
 

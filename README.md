@@ -21,8 +21,14 @@ Local `chat_write_ready` is not public authorization. Standing
 In solo-owner trust mode the runtime reports the distinct
 `admission_mode=local_trust`; it does not counterfeit a candidate identity.
 
-The normal 2026-08-09 local runtime is a persistent macOS stack: PostgreSQL in
-Docker plus Hermes, backend, frontend, and connector LaunchAgents. It is not
+D-33 adds a separate dual-Flag path for verified paper research. It can machine
+review and locally ff-land only `promotion_scope=paper_only`, admit a bounded
+automatic sleeve, and run its paper signal/execution cycle. The live registry
+rejects those factors; GitHub is never auto-pushed. See the HQA
+`/Users/sunyibo/programs/Hermes-quant-agent/docs/runbooks/full-automation-paper.md`.
+
+The normal local runtime is a persistent macOS stack: PostgreSQL in Docker plus
+Hermes, backend, frontend, connector, and factor-automation LaunchAgents. It is not
 owned by a Codex, Claude Code, or terminal process. Historical migration and
 candidate windows remain evidence only; the sole migration, readiness,
 restart, E2E, and restore authority is the
@@ -71,7 +77,7 @@ bash scripts/local_mac_stack.sh status
 
 `start` opens Docker Desktop when needed, starts the existing
 `quantplatform-db` container, builds the Next.js production bundle, installs or
-refreshes the four user LaunchAgents, and waits for ports `8642`, `8765`, and
+refreshes the five user LaunchAgents, and waits for ports `8642`, `8765`, and
 `3001`. The services survive closing the terminal and switching between AI
 tools. Other supported operations are:
 
@@ -578,8 +584,11 @@ available:
   It is CLI-only and strictly read-only: there is no HTTP route, account/provider
   access, recovery, mutation, scheduler or missed-opportunity calculation.
 
-Scheduled sleeve execution is not implemented yet: generated signals do not
-auto-fill and the FastAPI process does not run a resident scheduler. The
+D-33 scheduled execution is implemented only for `automation_managed=true`
+running sleeves. The independent five-minute LaunchAgent creates at most one
+daily signal/next-weekday plan after the local research window and processes
+due paper plans after the local execution window. Manual sleeves remain
+one-shot and the FastAPI process still does not own a resident scheduler. The
 existing `POST /api/paper/account/rebalance` endpoint remains a full-account
 rebalance path, not a Strategy Sleeves entrypoint or liquidation shortcut; it is
 rejected when actual sleeve-owned lots exist. See

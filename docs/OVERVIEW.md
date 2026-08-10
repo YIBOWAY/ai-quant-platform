@@ -7,7 +7,7 @@ Phase、Wave 与 Workbench 文档是历史交付证据，不是当前开发或�
 会话仍只读，继续上下文必须显式 fork。`chat_write_ready` 是本地状态，public standing
 继续 OFF。
 
-仓库 change set 含 migration source 016–028。2026-07-31 的只读现场核对显示 live
+仓库 change set 含 migration source 016–029。2026-07-31 的只读现场核对显示 live
 `quantplatform` 有 016–027 标记、没有 028 标记，运行进程也尚未提供
 `GET /api/safety/effective`。这不是 028 live 或 release 授权，本页也不证明 028
 是否 committed/installed/isolated-replayed/live-applied/authorized。当前进度先看
@@ -74,12 +74,17 @@ Hermes 与 AI 研究工作流：
   主读取链路。
 - 平台不复活 LLM runner；普通 chat prompt 只经 HQA encrypted Intent Payload
   authority，不进入 PostgreSQL 或 `/act`。
+- D-33 自动 paper 只在 HQA/Platform 两对 Flag 都为 true 时运行：真实 intake/final
+  backtest 证据通过机器政策后，只写 `reviewer=auto`、`promotion_scope=paper_only`，本地
+  ff-only land，不 auto-push。029 是 append-only promote/demote/日配额权威；live registry
+  对这种因子硬拒绝。
 - 新 managed Session 的 composer 只有在 local flags、owner/CSRF、migration 028
   readiness、effective paper safety、Keychain、candidate/release 与 connector
   liveness 全通过时打开。External/history session 不原地写入。
 - `public_chat_write_ready`、`public_write_authorized`、
   `release_authorized` 继续 OFF；旧研究页 redirect/retirement 仍需独立批准。
-- 任何候选晋级前都必须经过人工评审；常驻 paper/live 路径不加载 candidate 文件。
+- 手工 Scene-B 和任何 live 资格仍必须人工评审；D-33 是唯一机器评审例外，且仅能把
+  已验证代码化因子送入 paper registry。常驻路径从不加载 candidate 文件。
 
 AI 行业资讯：
 

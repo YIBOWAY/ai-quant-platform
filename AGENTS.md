@@ -54,13 +54,16 @@ data/                     Local cache, fixtures, generated research outputs.
   `/Users/sunyibo/programs/Hermes-quant-agent`.
 - **Current local operations snapshot (2026-08-09):** normal Mac startup is
   `bash scripts/local_mac_stack.sh start`. It owns Docker readiness, the
-  production frontend build, and four user LaunchAgents (Hermes, backend,
-  frontend, connector). Do not bind service lifetime to an AI-tool terminal.
+  production frontend build, and five user LaunchAgents (Hermes, backend,
+  frontend, connector, factor automation). Do not bind service lifetime to an
+  AI-tool terminal.
   Hermes replacement requires a stable old-PID/port quiescence window.
   Local trust bypasses identity ceremony only; trust cookies are mode-bound,
   readiness reports `admission_mode=local_trust` without candidate identity,
   while `live_trading_enabled=false`, `kill_switch=true`, migration authority,
-  and human gates remain independent.
+  and manual live gates remain independent. D-33 factor automation is a
+  separate, default-OFF dual-Flag path and may create only `paper_only`
+  qualifications; it cannot grant live eligibility.
 - The only Platform operations authority for the Agent v0.2 local stack is
   [`docs/runbooks/agent-v0-2-local-stack.md`](docs/runbooks/agent-v0-2-local-stack.md).
   Other docs may explain a component, but must link there instead of copying a
@@ -94,6 +97,11 @@ data/                     Local cache, fixtures, generated research outputs.
   database must stop. The retained 028 commands may target only a newly created
   isolated pre-028 restore for rehearsal, never current live; any later
   migration needs its own review and authorization.
+- Migration 029 was applied exactly once on 2026-08-10 after its own backup and
+  isolated restore rehearsal. It is the append-only factor-automation
+  promote/demote/daily-quota authority. Do not replay it. The automatic paper
+  operator contract lives in the HQA repo at
+  `docs/runbooks/full-automation-paper.md`.
 - Migration 028 freezes the candidate write rail to the effective paper
   authority. For the root owner there must be exactly one canonical paper
   account, its ID must be `default`, materialized `kill_switch` must be true,

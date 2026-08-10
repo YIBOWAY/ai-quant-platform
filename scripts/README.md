@@ -118,7 +118,7 @@ mode-`600` artifacts; the final receipt is sorted, compact canonical UTF-8.
 
 | Script | Purpose |
 | --- | --- |
-| `local_mac_stack.sh` | Normal Mac operator entrypoint: `start|restart|build|stop|status|logs`. Starts the existing Docker PostgreSQL container, builds the production frontend, waits for the prior Hermes PID and port to remain quiescent before replacement, installs/reloads Hermes + backend + frontend + connector LaunchAgents, waits for health, and rejects transient AI-tool executables. |
+| `local_mac_stack.sh` | Normal Mac operator entrypoint: `start|restart|build|stop|status|logs`. Starts Docker PostgreSQL, builds the production frontend, drains the prior Hermes socket generation, installs/reloads Hermes + backend + frontend + connector + factor-automation LaunchAgents, waits for health, and rejects transient AI-tool executables. |
 | `run_quant_backend.sh` | Agent v0.2 LaunchAgent target for the localhost FastAPI backend on `127.0.0.1:8765`; loads the owner-only runtime env, rejects startup migration, and serves release-worktree source. |
 | `run_quant_frontend.sh` | Agent v0.2 LaunchAgent target for the built Next.js frontend on `127.0.0.1:3001`; requires an owner-only env that explicitly enables Hermes Chat, serves this worktree's `.next`, and can reuse main-repo `node_modules`. |
 | `install_agent_v02_stack_launchagents.sh` | Validate, render, and replay-safely install only the Agent v0.2 backend/frontend LaunchAgents. It never installs strategy schedulers. |
@@ -126,16 +126,20 @@ mode-`600` artifacts; the final receipt is sorted, compact canonical UTF-8.
 | `run_agent_v02_connector.sh` | Agent v0.2 connector target; requires a regular, non-symlink, exact-mode-`600` env, rejects startup migration, binds imports to release source, and accepts only `QS_AGENT_V02_CONNECTOR_MODE=reconcile_only` or `supervised_dispatch`. The installed safety posture sets `QS_AGENT_V02_CONNECTOR_MODE=reconcile_only`; the legacy absent-env fallback remains `supervised_dispatch` only for frozen compatibility. Its `--check` is provider/network/database-free. |
 | `install_agent_v02_connector_launchagent.sh` | Run the connector `--check` before any launchd mutation, then render and replay-safely install the connector LaunchAgent in the mode selected by its owner-only env. |
 | `uninstall_agent_v02_connector_launchagent.sh` | Boot out and remove only the Agent v0.2 connector LaunchAgent. |
+| `run_factor_automation_driver.sh` | Five-minute D-33 target. Loads the owner-only backend env, rejects transient HQA runtimes, and runs one fail-closed `paper_only` queue/maintenance cycle. |
+| `install_factor_automation_launchagent.sh` | Check and replay-safely install `com.aiquant.factor-automation`; the driver remains disabled unless both HQA and Platform Flag pairs are true. |
 | `run_paper_strategy_sleeves.sh` | LaunchAgent/CLI wrapper for one-shot Paper Strategy Sleeves ops commands (`ops-status`, `generate-due-signals`, `execute-due`). |
 | `install_paper_strategy_sleeves_launchagent.sh` | Render and bootstrap user-level macOS LaunchAgents under `~/Library/LaunchAgents/`; does not use sudo. |
 | `uninstall_paper_strategy_sleeves_launchagent.sh` | Boot out and remove the rendered user-level LaunchAgents. |
 
 For everyday Mac use, run `bash scripts/local_mac_stack.sh start`; do not keep
 services alive by leaving an AI-tool terminal open. See
-`docs/runbooks/agent-v0-2-local-stack.md` for the dedicated Web stack and
+`docs/runbooks/agent-v0-2-local-stack.md` for the stack,
+`/Users/sunyibo/programs/Hermes-quant-agent/docs/runbooks/full-automation-paper.md`
+for D-33, and
 `docs/execution/paper_strategy_sleeves_launchd.md` for the separate paper
 schedulers. The backend/frontend jobs are long-running local services;
-strategy-sleeve jobs are one-shot paper commands.
+legacy strategy-sleeve jobs are one-shot paper commands.
 
 ## Data And Maintenance
 

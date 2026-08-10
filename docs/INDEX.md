@@ -3,7 +3,7 @@
 这是整个仓库的主地图。先用下面的“当前工作”确定执行入口，再按需查架构、操作
 指南和历史交付。不要从旧 phase、audit 或未勾选 checkbox 推断当前进度。
 
-## 当前工作（2026-08-01）
+## 当前工作（2026-08-10）
 
 | 层级 | 权威入口 | 状态 |
 |---|---|---|
@@ -14,6 +14,8 @@
 | 已交付专业前端 / 只读壳 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-13-hermes-professional-frontend-shell.md` | F0 direction-a + F1 书面批准后，F2 Hermes 壳与可回滚默认首页已交付。Approvals 保持证据只读（`approvalMutations=false`）；official Hermes API 会话读取已接入（`sessionRead=true`）。3E-A 又交付只读 Unified Results 目录/详情，但完整切流仍关闭。设计记录见 [design/hermes-workbench/README.md](design/hermes-workbench/README.md)。 |
 | 唯一运维权威 | [Agent v0.2 local-stack](runbooks/agent-v0-2-local-stack.md) | 唯一维护 migration、backup、isolated replay、readiness、restart、candidate E2E 与 pre-028 restore 的文档；其他 runbook 只解释组件。 |
 | Platform 单一 main | [2026-08-10 Git 分支合并审计](audits/2026-08-10-platform-git-branch-consolidation.md) | 两个 Platform checkout 与 GitHub 已统一到受保护 `main`；旧分支先按 exact tip 建 archive tag 后删除，bundle/dirty snapshot 可恢复。此拓扑收口不授权 live、因子晋级或 migration 029。 |
+| D-33 自动 paper | `/Users/sunyibo/programs/Hermes-quant-agent/docs/plans/2026-08-10-full-automation-paper-path.md` 与 `docs/runbooks/full-automation-paper.md` | 双-Flag、真实 intake/final evidence、机器 Gate、`paper_only`、本地 ff-only land、029 配额、限额 sleeve 与五分钟常驻 paper 周期；不 auto-push，live 永远人工。 |
+| 029 operator window | 2026-08-10 现场执行 | backup + isolated restore rehearsal 后一次 apply；append-only promote/demote/daily quota authority。禁止重放；启动永不自动迁移。 |
 | 应用前历史快照 | source/change set 016–028；live 现场只读核对 2026-07-31 | inspected 016–027 markers 存在；当时 028 marker 不存在，运行后端尚无 `/api/safety/effective`。这是保留的 pre-apply 快照，不描述当前 live 状态。 |
 | 028 operator window | 2026-08-01 现场观察；详见 [Agent v0.2 local-stack](runbooks/agent-v0-2-local-stack.md) | 028 marker=1/version=1，exact two binding triggers 均为 `ENABLE ALWAYS`，schema fingerprint `e3f713ac05a1a990cfa9be45157e880e06709c425a4883736544d8f2b626f33a`；一次性 apply 后的正常重启、readiness 与 `/api/safety/effective` 通过。该快照不证明论文研究语义，也不授权重放 028。 |
 | AlphaZeroBeta 重测 | `/Users/sunyibo/programs/Hermes-quant-agent/data/_runtime/agent-v02-work/Hermes-quant-agent/docs/audits/2026-07-31-alphazerobeta-paper-research-web-e2e.md` | Web/UI、Session、dispatch、provider、approval、durable Run、直接 PDF/全文读取与数据库持久化等机械生命周期通过，zero orders；但论文研究 verdict 为 **UNVERIFIED / NOT ACCEPTED**。Skill-only 约束没有形成 runtime-enforced、digest-bound `hqa.paper_intake/v1` receipt/verifier，因此 factor/backtest/Gate/result 为 **NOT EVALUATED**，不能写成正确跳过。正式候选套件 `5632 passed / 272 skipped / 0 failed`，manifest SHA-256=`eba8099bf3801927f3d93b40d1e133546d7cbcc4eece4c58b416bf52bd29a136`；candidate 已 revoke，connector=`reconcile_only`，local/public write 均关闭。 |
@@ -184,7 +186,7 @@ rows；操作只看 [local-stack runbook](runbooks/agent-v0-2-local-stack.md)。
 | [design/paper_trading_position_map_redesign.md](design/paper_trading_position_map_redesign.md) | 模拟交易 + 持仓地图**重设计**（设计文档 + 分阶段实现计划） |
 | [design/paper_strategy_sleeves_plan.md](design/paper_strategy_sleeves_plan.md) | Paper Strategy Sleeves **MVP-1**（策略资金段/信号观察/allocated 分账设计，非历史 Phase 1） |
 | [design/paper_strategy_sleeves_mvp2_plan.md](design/paper_strategy_sleeves_mvp2_plan.md) | Paper Strategy Sleeves **MVP-2**（pending execution / next-open 纸面执行计划） |
-| [execution/paper_strategy_sleeves.md](execution/paper_strategy_sleeves.md) | Paper Strategy Sleeves 执行说明（后端基础、API contract、daily signal、手动 signal CLI、pending execution、backend next-open processor、手动处理 API/CLI、UI 执行状态控件与 opt-in 真实 Futu 验证已实现；自动调度尚未实现） |
+| [execution/paper_strategy_sleeves.md](execution/paper_strategy_sleeves.md) | Paper Strategy Sleeves 执行说明（手工 sleeve 保持 one-shot；D-33 为 `automation_managed` sleeve 增加独立常驻信号/计划/paper fill 周期） |
 | [design/ai_news_integration_plan.md](design/ai_news_integration_plan.md) | AI News Integration **MVP-1 / MVP-2**（AI HOT 只读接入 + 可选 PG 缓存；决策日志指向 Horizon Bridge） |
 | [superpowers/specs/2026-07-23-ai-news-horizon-bridge-design.md](superpowers/specs/2026-07-23-ai-news-horizon-bridge-design.md) | AI News × Horizon Bridge **Phase A 设计**（热备 failover；合同可升 Phase B；**已实现**） |
 | [superpowers/plans/2026-07-23-ai-news-horizon-bridge.md](superpowers/plans/2026-07-23-ai-news-horizon-bridge.md) | AI News × Horizon Bridge **实现计划**（Tasks 1–10） |
@@ -195,7 +197,7 @@ rows；操作只看 [local-stack runbook](runbooks/agent-v0-2-local-stack.md)。
 | 文档 | 用途 |
 |---|---|
 | [../README.md](../README.md) | 快速项目入口与运行命令。 |
-| [runbooks/agent-v0-2-local-stack.md](runbooks/agent-v0-2-local-stack.md) | **唯一 Agent v0.2 运维权威**：016–028、backup/replay/apply/readiness/restart/E2E/restore。 |
+| [runbooks/agent-v0-2-local-stack.md](runbooks/agent-v0-2-local-stack.md) | **唯一 Agent v0.2 stack 运维权威**：016–029、backup/replay/apply/readiness/restart/E2E/restore；D-33 语义看 HQA 自动 paper runbook。 |
 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-10-phase-1a-4-v2.md` | **已交付记录**：Slice 9A-9G + mini 9H。 |
 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-12-full-9h-automation-notifications.md` | **已交付记录**：完整 9H 自动化与通知。 |
 | [superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md](superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md) | Slice 0-8 实现记录与未来前端 backlog。 |
