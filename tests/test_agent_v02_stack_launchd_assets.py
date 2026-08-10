@@ -105,12 +105,17 @@ def _write_eio_launchctl(
     tmp_path: Path,
     *,
     always_fail: bool,
+    failures_before_success: int = 1,
 ) -> tuple[Path, Path]:
     launchctl_log = tmp_path / "launchctl.log"
     state_dir = tmp_path / "launchctl-state"
     state_dir.mkdir()
     launchctl = tmp_path / "launchctl"
-    failure_condition = "true" if always_fail else '[[ "$attempt" -eq 1 ]]'
+    failure_condition = (
+        "true"
+        if always_fail
+        else f'[[ "$attempt" -le {failures_before_success} ]]'
+    )
     launchctl.write_text(
         "#!/usr/bin/env bash\n"
         f'printf "%s\\n" "$*" >> "{launchctl_log}"\n'
@@ -582,6 +587,33 @@ def test_stack_installer_retries_transient_launchctl_bootstrap_eio(
     assert result.stderr.count("launchctl_bootstrap_eio") == 2
 
 
+def test_stack_installer_survives_an_extended_launchctl_eio_drain_window(
+    tmp_path: Path,
+) -> None:
+    release_root, installer, _, run_env = _prepare_stack_installer(tmp_path)
+    launchctl, launchctl_log = _write_eio_launchctl(
+        tmp_path,
+        always_fail=False,
+        failures_before_success=6,
+    )
+    run_env["QS_LAUNCHCTL_BIN"] = str(launchctl)
+
+    result = subprocess.run(
+        [str(installer)],
+        cwd=release_root,
+        env=run_env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    calls = launchctl_log.read_text(encoding="utf-8")
+    assert calls.count("bootout ") == 2
+    assert calls.count("bootstrap ") == 14
+    assert result.stderr.count("launchctl_bootstrap_eio") == 12
+
+
 def test_stack_installer_exhausts_bounded_eio_retries_and_fails(
     tmp_path: Path,
 ) -> None:
@@ -604,9 +636,10 @@ def test_stack_installer_exhausts_bounded_eio_retries_and_fails(
     assert result.returncode != 0
     calls = launchctl_log.read_text(encoding="utf-8")
     assert calls.count("bootout ") == 1
-    assert calls.count("bootstrap ") == 5
+    assert calls.count("bootstrap ") == 25
     assert "Bootstrap failed: 5: Input/output error" in result.stderr
     assert "launchctl_bootstrap_eio_exhausted" in result.stderr
+    assert "attempts=25" in result.stderr
 
 
 def test_stack_uninstaller_removes_only_backend_and_frontend(

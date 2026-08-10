@@ -91,7 +91,7 @@ export function TodayResults({ preview, hqaConclusions, locale }: TodayResultsPr
           {preview.items.map((item) => (
             <li key={`${item.kind}:${item.resourceId}`}>
               <Link
-                className="flex flex-wrap items-center gap-3 border-b border-border-subtle py-2.5 transition-colors hover:bg-bg-surface-muted/40"
+                className="app-touch-target flex flex-wrap items-center gap-3 border-b border-border-subtle py-2.5 transition-colors hover:bg-bg-surface-muted/40"
                 href={resultDetailHref(item, locale)}
                 prefetch={false}
               >

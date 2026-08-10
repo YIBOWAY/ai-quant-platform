@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import {
   assertFullPageTargetsAndFocus,
   assertNoHorizontalOverflow,
@@ -9,6 +9,26 @@ import {
 test.beforeEach(() => {
   test.skip(process.env.PW_E2E !== "1", "Set PW_E2E=1 to run local full-stack smoke.");
 });
+
+async function openLongestPersistedSession(page: Page) {
+  const sessionRows = page.locator("[data-hermes-session-list] li");
+  expect(await sessionRows.count()).toBeGreaterThan(0);
+  const targetIndex = await sessionRows.evaluateAll((rows) => {
+    let bestIndex = 0;
+    let bestCount = -1;
+    rows.forEach((row, index) => {
+      const count = Number(
+        (row as HTMLElement).dataset.hermesSessionMessageCount ?? "0",
+      );
+      if (count > bestCount) {
+        bestIndex = index;
+        bestCount = count;
+      }
+    });
+    return bestIndex;
+  });
+  await sessionRows.nth(targetIndex).getByRole("link").click();
+}
 
 /**
  * Data-agnostic smoke against the isolated real temporary platform FastAPI
@@ -43,13 +63,15 @@ test("@real-backend-smoke Hermes sessions fail closed when the gateway is disabl
   );
   const externalRequests = await installLoopbackOnlyGuard(page);
 
-  await page.goto("/zh/hermes/sessions", { waitUntil: "networkidle" });
+  await page.goto("/zh/hermes/sessions", { waitUntil: "domcontentloaded" });
 
   await expect(page.getByRole("heading", { name: "真实会话记录" })).toBeVisible();
   await expect(page.locator("[data-hermes-sessions-unavailable]")).toBeVisible();
   await expect(page.getByRole("link", { name: "会话记录" })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "和 Hermes 对话" })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "发送（已禁用）" })).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: /^发送(?:（已禁用）)?$/ }),
+  ).toBeDisabled();
   expect(externalRequests).toEqual([]);
 });
 
@@ -62,13 +84,13 @@ test("@live-hermes-sessions reads real persisted sessions without opening chat w
   );
   const externalRequests = await installLoopbackOnlyGuard(page);
 
-  await page.goto("/zh/hermes/sessions", { waitUntil: "networkidle" });
+  await page.goto("/zh/hermes/sessions", { waitUntil: "domcontentloaded" });
 
   await expect(page.locator("[data-hermes-sessions-unavailable]")).toHaveCount(0);
-  await expect(page.getByText("只读已连接")).toBeVisible();
-  const sessionLinks = page.locator("[data-hermes-session-list] a");
-  expect(await sessionLinks.count()).toBeGreaterThan(0);
-  await sessionLinks.first().click();
+  await expect(
+    page.locator("[data-hermes-sessions]").getByText("只读已连接"),
+  ).toBeVisible();
+  await openLongestPersistedSession(page);
   await expect(page).toHaveURL(/\/zh\/hermes\/sessions\/[^/?#]+$/);
   await expect(
     page.locator("[data-hermes-session-messages], [data-hermes-session-empty]"),
@@ -80,7 +102,9 @@ test("@live-hermes-sessions reads real persisted sessions without opening chat w
     .poll(() => sessionScrollRegion.evaluate((element) => element.scrollTop))
     .toBeGreaterThan(0);
   await expect(page.getByRole("textbox", { name: "和 Hermes 对话" })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "发送（已禁用）" })).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: /^发送(?:（已禁用）)?$/ }),
+  ).toBeDisabled();
   expect(externalRequests).toEqual([]);
 });
 
@@ -93,10 +117,8 @@ test("@live-hermes-sessions keeps session context pinned while reading the lates
   );
   const externalRequests = await installLoopbackOnlyGuard(page);
 
-  await page.goto("/zh/hermes/sessions", { waitUntil: "networkidle" });
-  const sessionLinks = page.locator("[data-hermes-session-list] a");
-  expect(await sessionLinks.count()).toBeGreaterThan(0);
-  await sessionLinks.first().click();
+  await page.goto("/zh/hermes/sessions", { waitUntil: "domcontentloaded" });
+  await openLongestPersistedSession(page);
   await expect(page.locator("[data-hermes-session-latest-anchor]")).toBeInViewport();
 
   const scrollRegion = page.locator("[data-page-scroll-region]");
@@ -355,7 +377,7 @@ test("@combined-fixture Hermes Approvals navigates complete GET-only candidate e
       page.locator("[data-hermes-promoted-registry-unavailable]"),
     ).toHaveCount(0);
     await expect(page.getByText("权威 manifest digest")).toBeVisible();
-    await expect(page.getByText("平台可 review · 不代表 HQA Gate 2")).toBeVisible();
+    await expect(page.getByText("可用 · 不代表 HQA Gate 2")).toBeVisible();
     await expect(page.locator("[data-hermes-candidate-source]")).toContainText(
       "fixture_factor",
     );

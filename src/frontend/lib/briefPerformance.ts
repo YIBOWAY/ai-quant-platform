@@ -93,6 +93,25 @@ export function selectBriefPerformanceSeries(
   });
 }
 
+export function selectBriefPerformanceResponse(
+  master: PaperAccountPerformanceResponse,
+  selectedRange: BriefPerformanceRange,
+): PaperAccountPerformanceResponse {
+  const snapshot = buildBriefPerformanceSnapshot(master, selectedRange);
+  const series = selectBriefPerformanceSeries(snapshot);
+  const dates = series
+    .flatMap((item) => item.points.map((point) => point.date))
+    .sort();
+  return {
+    ...master,
+    range: selectedRange,
+    requested_start: performanceRangeStart(master.requested_end, selectedRange),
+    actual_start: dates.at(0) ?? null,
+    actual_end: dates.at(-1) ?? null,
+    series,
+  };
+}
+
 function performanceRangeStart(
   endValue: string,
   range: BriefPerformanceRange,

@@ -14,6 +14,7 @@ import {
   buildBriefPerformanceSnapshot,
   parseBriefPerformanceRange,
   resolveBriefArchiveBlockedReason,
+  selectBriefPerformanceResponse,
   selectBriefPerformanceSeries,
 } from "./briefPerformance";
 
@@ -214,6 +215,13 @@ describe("Brief performance", () => {
     expect(selected[0]?.points.at(-1)?.return_ratio).toBeCloseTo(
       1.05 / 1.04 - 1,
     );
+
+    const response = selectBriefPerformanceResponse(performance, "7d");
+    expect(response.range).toBe("7d");
+    expect(response.requested_start).toBe("2026-07-21");
+    expect(response.actual_start).toBe("2026-07-22");
+    expect(response.actual_end).toBe("2026-07-27");
+    expect(response.series[0]?.points).toEqual(selected[0]?.points);
   });
 
   it("renders localized range links and all three dated series", () => {

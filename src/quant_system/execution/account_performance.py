@@ -85,16 +85,13 @@ def build_account_performance(
         if symbol not in symbols:
             symbols.append(symbol)
 
-    reads = {
-        symbol: _read_symbol(
-            settings=settings,
-            cache=cache,
-            symbol=symbol,
-            start=fetch_start,
-            end=requested_end,
-        )
-        for symbol in symbols
-    }
+    reads = _read_symbols(
+        settings=settings,
+        cache=cache,
+        symbols=symbols,
+        start=fetch_start,
+        end=requested_end,
+    )
     warnings.extend(
         f"{symbol}:{reads[symbol].error_code}"
         for symbol in normalized_benchmarks
@@ -193,6 +190,40 @@ def _normalize_benchmarks(benchmarks: list[str]) -> list[str]:
     return normalized
 
 
+def _read_symbols(
+    *,
+    settings: Settings,
+    cache: EquityBarCache | None,
+    symbols: list[str],
+    start: date,
+    end: date,
+) -> dict[str, _PriceRead]:
+    """Use one provider context on the healthy path, preserving per-series fallback."""
+    try:
+        snapshot = read_historical_prices(
+            settings=settings,
+            symbols=symbols,
+            start=start.isoformat(),
+            end=end.isoformat(),
+            provider="futu",
+            interval="1d",
+            adjustment="qfq",
+            cache=cache,
+        )
+    except Exception:  # noqa: BLE001 - retry individually for honest partial-series status
+        return {
+            symbol: _read_symbol(
+                settings=settings,
+                cache=cache,
+                symbol=symbol,
+                start=start,
+                end=end,
+            )
+            for symbol in symbols
+        }
+    return {symbol: _snapshot_read(symbol, snapshot) for symbol in symbols}
+
+
 def _read_symbol(
     *,
     settings: Settings,
@@ -232,7 +263,15 @@ def _read_symbol(
 
 
 def _snapshot_read(symbol: str, snapshot: HistoricalPriceSnapshot) -> _PriceRead:
-    rows = snapshot.series[0]["rows"] if snapshot.series else []
+    matching_series = next(
+        (
+            item
+            for item in snapshot.series
+            if str(item.get("symbol", "")).upper().strip() == symbol
+        ),
+        None,
+    )
+    rows = matching_series["rows"] if matching_series is not None else []
     closes = {
         date.fromisoformat(str(row["date"])): float(row["close"])
         for row in rows
