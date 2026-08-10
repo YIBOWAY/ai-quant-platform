@@ -2416,6 +2416,129 @@ def agent_promote_candidate(
     )
 
 
+@agent_app.command("promote-auto-prepare")
+def agent_promote_auto_prepare(
+    candidate_id: Annotated[str, typer.Option("--candidate-id")],
+    expected_digest: Annotated[str, typer.Option("--expected-digest")],
+    final_backtest_receipt: Annotated[
+        str, typer.Option("--final-backtest-receipt")
+    ],
+    base_commit: Annotated[str, typer.Option("--base-commit")],
+    policy_digest: Annotated[str, typer.Option("--policy-digest")],
+    intake_contract_digest: Annotated[
+        str, typer.Option("--intake-contract-digest")
+    ],
+) -> None:
+    """Prepare Gate 3 with immutable paper-only qualification; never commits."""
+    from quant_system.agent.promotion_workspace import (
+        PromotionWorkspaceError,
+        default_promotion_root,
+        prepare_cli_payload,
+        prepare_promotion_workspace,
+        resolve_managed_worktree_root,
+        resolve_platform_repo,
+    )
+
+    settings = reload_settings()
+    if settings.factor_automation.mode is not True:
+        typer.echo("auto_promotion_refused reason=factor_automation_disabled")
+        raise typer.Exit(code=1)
+    try:
+        agent_root = resolve_agent_output_dir()
+        result = prepare_promotion_workspace(
+            repo_dir=resolve_platform_repo(),
+            agent_output_dir=agent_root,
+            candidate_id=candidate_id,
+            expected_candidate_digest=expected_digest,
+            final_backtest_receipt_id=final_backtest_receipt,
+            base_commit=base_commit,
+            promotion_root=default_promotion_root(agent_root),
+            worktree_root=resolve_managed_worktree_root(),
+            promotion_scope="paper_only",
+            reviewer="auto",
+            automation_policy_digest=policy_digest,
+            intake_contract_digest=intake_contract_digest,
+        )
+    except PromotionWorkspaceError as exc:
+        typer.echo(f"auto_promotion_refused reason={exc}")
+        raise typer.Exit(code=1) from exc
+    typer.echo(json.dumps(prepare_cli_payload(result), sort_keys=True))
+
+
+def _require_auto_land_flags() -> None:
+    settings = reload_settings()
+    if (
+        settings.factor_automation.mode is not True
+        or settings.factor_automation.auto_land is not True
+    ):
+        typer.echo("auto_promotion_refused reason=factor_automation_disabled")
+        raise typer.Exit(code=1)
+
+
+@agent_app.command("promote-auto-commit")
+def agent_promote_auto_commit(
+    promotion_id: Annotated[str, typer.Option("--promotion-id")],
+) -> None:
+    """Second Gate-3 phase: commit the exact prepared patch locally."""
+    from quant_system.agent.promotion_workspace import (
+        PromotionWorkspaceError,
+        commit_automatic_promotion,
+        default_promotion_root,
+        resolve_managed_worktree_root,
+        resolve_platform_repo,
+    )
+
+    _require_auto_land_flags()
+    try:
+        agent_root = resolve_agent_output_dir()
+        result = commit_automatic_promotion(
+            promotion_id=promotion_id,
+            agent_output_dir=agent_root,
+            promotion_root=default_promotion_root(agent_root),
+            worktree_root=resolve_managed_worktree_root(),
+            repo_dir=resolve_platform_repo(),
+        )
+    except PromotionWorkspaceError as exc:
+        typer.echo(f"auto_promotion_refused reason={exc}")
+        raise typer.Exit(code=1) from exc
+    _emit_json(result)
+
+
+@agent_app.command("promote-auto-land")
+def agent_promote_auto_land(
+    promotion_id: Annotated[str, typer.Option("--promotion-id")],
+    expected_base_commit: Annotated[str, typer.Option("--expected-base-commit")],
+    expected_reviewed_commit: Annotated[
+        str, typer.Option("--expected-reviewed-commit")
+    ],
+) -> None:
+    """Fast-forward local main only; this command has no push implementation."""
+    from quant_system.agent.promotion_workspace import (
+        PromotionWorkspaceError,
+        default_promotion_root,
+        land_automatic_promotion,
+        resolve_managed_worktree_root,
+        resolve_platform_repo,
+    )
+
+    _require_auto_land_flags()
+    try:
+        agent_root = resolve_agent_output_dir()
+        result = land_automatic_promotion(
+            promotion_id=promotion_id,
+            expected_base_commit=expected_base_commit,
+            expected_reviewed_commit=expected_reviewed_commit,
+            agent_output_dir=agent_root,
+            promotion_root=default_promotion_root(agent_root),
+            worktree_root=resolve_managed_worktree_root(),
+            repo_dir=resolve_platform_repo(),
+        )
+    except PromotionWorkspaceError as exc:
+        typer.echo(f"auto_promotion_refused reason={exc}")
+        raise typer.Exit(code=1) from exc
+    _emit_json(result)
+
+
 @agent_app.command("promotion-status")
 def agent_promotion_status(
     promotion_id: Annotated[

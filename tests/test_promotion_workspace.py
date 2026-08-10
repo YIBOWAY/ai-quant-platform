@@ -168,7 +168,13 @@ def _git_repo(tmp_path: Path) -> Path:
     return repo
 
 
-def _write_approved_candidate(agent_output: Path, source: str = _FACTOR_SRC) -> tuple[str, str]:
+def _write_approved_candidate(
+    agent_output: Path,
+    source: str = _FACTOR_SRC,
+    *,
+    reviewer: str = "manual",
+    note: str = "approve for gate3 workspace tests",
+) -> tuple[str, str]:
     pool = CandidatePool(agent_output)
     artifact = pool.write_candidate(
         task_id="gate3-task",
@@ -180,9 +186,10 @@ def _write_approved_candidate(agent_output: Path, source: str = _FACTOR_SRC) -> 
     pool.review(
         candidate_id=artifact.candidate_id,
         decision="approve",
-        note="approve for gate3 workspace tests",
+        note=note,
         expected_manifest_digest=artifact.manifest_digest,
         expected_status="pending",
+        reviewer=reviewer,
     )
     return artifact.candidate_id, artifact.manifest_digest
 
@@ -239,6 +246,84 @@ def test_prepare_persists_final_receipt_in_manifest_identity_and_status(
         }
     )
     assert other.promotion_id != result.promotion_id
+
+
+def test_auto_prepare_commit_and_local_ff_land_are_two_phase_and_idempotent(
+    tmp_path: Path,
+) -> None:
+    from quant_system.agent.promotion_workspace import (
+        commit_automatic_promotion,
+        land_automatic_promotion,
+        prepare_promotion_workspace,
+        promotion_status,
+    )
+
+    policy_digest = "a" * 64
+    intake_digest = "b" * 64
+    repo = _git_repo(tmp_path)
+    agent_output = tmp_path / "agent-output"
+    candidate_id, digest = _write_approved_candidate(
+        agent_output,
+        reviewer="auto",
+        note=f"auto:policy:{policy_digest}:intake:{intake_digest}",
+    )
+    kwargs = _prepare_kwargs(tmp_path, repo, agent_output, candidate_id, digest)
+    prepared = prepare_promotion_workspace(
+        **kwargs,
+        promotion_scope="paper_only",
+        reviewer="auto",
+        automation_policy_digest=policy_digest,
+        intake_contract_digest=intake_digest,
+    )
+    before = promotion_status(
+        promotion_id=prepared.promotion_id,
+        agent_output_dir=agent_output,
+        promotion_root=kwargs["promotion_root"],
+        worktree_root=kwargs["worktree_root"],
+        repo_dir=repo,
+    )
+    assert before["status"] == "awaiting_human_commit"
+    assert before["reviewed_commit"] is None
+
+    committed = commit_automatic_promotion(
+        promotion_id=prepared.promotion_id,
+        agent_output_dir=agent_output,
+        promotion_root=kwargs["promotion_root"],
+        worktree_root=kwargs["worktree_root"],
+        repo_dir=repo,
+    )
+    assert committed["status"] == "reviewed"
+    assert committed["reviewed_commit"]
+    module = prepared.worktree_path / (
+        "src/quant_system/factors/library/promoted/workspace_test_factor.py"
+    )
+    content = module.read_text(encoding="utf-8")
+    assert "# promotion_scope: paper_only\n" in content
+    assert "# promotion_reviewer: auto\n" in content
+    assert f"# automation_policy_digest: {policy_digest}\n" in content
+    assert f"# intake_contract_digest: {intake_digest}\n" in content
+
+    landed = land_automatic_promotion(
+        promotion_id=prepared.promotion_id,
+        expected_base_commit=kwargs["base_commit"],
+        expected_reviewed_commit=committed["reviewed_commit"],
+        agent_output_dir=agent_output,
+        promotion_root=kwargs["promotion_root"],
+        worktree_root=kwargs["worktree_root"],
+        repo_dir=repo,
+    )
+    assert landed["status"] == "landed"
+    assert _git(repo, "rev-parse", "HEAD").strip() == committed["reviewed_commit"]
+    repeated = land_automatic_promotion(
+        promotion_id=prepared.promotion_id,
+        expected_base_commit=kwargs["base_commit"],
+        expected_reviewed_commit=committed["reviewed_commit"],
+        agent_output_dir=agent_output,
+        promotion_root=kwargs["promotion_root"],
+        worktree_root=kwargs["worktree_root"],
+        repo_dir=repo,
+    )
+    assert repeated == landed
 
 
 def test_prepare_rejects_invalid_final_receipt_before_creating_state(

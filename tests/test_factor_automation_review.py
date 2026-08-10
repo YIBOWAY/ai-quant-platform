@@ -142,3 +142,29 @@ def test_auto_review_rejects_bad_digest_before_lock_write(tmp_path: Path) -> Non
 
     assert result.exit_code != 0
     assert not (artifact.path.parent / "approved.lock").exists()
+
+
+def test_auto_commit_and_land_surfaces_refuse_before_state_io_when_flags_off() -> None:
+    for argv in (
+        ["agent", "promote-auto-commit", "--promotion-id", "promo-disabled"],
+        [
+            "agent",
+            "promote-auto-land",
+            "--promotion-id",
+            "promo-disabled",
+            "--expected-base-commit",
+            "a" * 40,
+            "--expected-reviewed-commit",
+            "b" * 40,
+        ],
+    ):
+        result = runner.invoke(
+            app,
+            argv,
+            env={
+                "QS_FACTOR_AUTOMATION_MODE": "false",
+                "QS_FACTOR_AUTOMATION_AUTO_LAND": "false",
+            },
+        )
+        assert result.exit_code == 1
+        assert "factor_automation_disabled" in result.output

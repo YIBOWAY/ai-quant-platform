@@ -47,7 +47,9 @@ __all__ = [
     "PromotionManifestV1",
     "PromotionWorkspaceError",
     "PromotionWorkspaceResult",
+    "commit_automatic_promotion",
     "cleanup_promotion_workspace",
+    "land_automatic_promotion",
     "prepare_promotion_workspace",
     "promotion_status",
     "resolve_managed_worktree_root",
@@ -128,6 +130,7 @@ class PromotionStateV1(BaseModel):
         "awaiting_human_commit",
         "reviewed",
         "review_invalidated",
+        "landed",
         "cleanup_pending",
         "abandon_pending",
         "cleaned",
@@ -415,7 +418,14 @@ def _worktree_move(repo: Path, src: Path, dst: Path) -> None:
 
 
 def _materialize_in_worktree(
-    worktree: Path, snapshot: VerifiedCandidateSnapshot, expected_digest: str
+    worktree: Path,
+    snapshot: VerifiedCandidateSnapshot,
+    expected_digest: str,
+    *,
+    promotion_scope: str = "live_eligible",
+    reviewer: str = "manual",
+    automation_policy_digest: str | None = None,
+    intake_contract_digest: str | None = None,
 ) -> None:
     library_dir = worktree / _PROMOTED_REL
     tests_dir = worktree / _TESTS_REL
@@ -425,6 +435,10 @@ def _materialize_in_worktree(
             expected_candidate_digest=expected_digest,
             library_dir=library_dir,
             tests_dir=tests_dir,
+            promotion_scope=promotion_scope,
+            reviewer=reviewer,
+            automation_policy_digest=automation_policy_digest,
+            intake_contract_digest=intake_contract_digest,
         )
     except PromotionError as exc:
         raise PromotionWorkspaceError(str(exc)) from exc
@@ -726,6 +740,10 @@ def prepare_promotion_workspace(
     base_commit: str,
     promotion_root: Path,
     worktree_root: Path,
+    promotion_scope: str = "live_eligible",
+    reviewer: str = "manual",
+    automation_policy_digest: str | None = None,
+    intake_contract_digest: str | None = None,
 ) -> PromotionWorkspaceResult:
     """Prepare an isolated Gate 3 review worktree and immutable scoped patch."""
     repo_dir = Path(repo_dir)
@@ -747,6 +765,21 @@ def prepare_promotion_workspace(
         candidate_id=candidate_id,
         expected_candidate_digest=expected_candidate_digest,
     )
+    if reviewer == "auto":
+        expected_note = (
+            f"auto:policy:{automation_policy_digest}:intake:{intake_contract_digest}"
+        )
+        if (
+            promotion_scope != "paper_only"
+            or not isinstance(automation_policy_digest, str)
+            or _HEX64.fullmatch(automation_policy_digest) is None
+            or not isinstance(intake_contract_digest, str)
+            or _HEX64.fullmatch(intake_contract_digest) is None
+            or snapshot.review_record is None
+            or snapshot.review_record.reviewer != "auto"
+            or snapshot.review_record.note != expected_note
+        ):
+            raise PromotionWorkspaceError("automatic promotion lineage mismatch")
     factor_id = _factor_id_from_snapshot(snapshot)
     scoped = _scoped_paths_for(factor_id)
     _refuse_existing_targets(repo_dir, base, scoped)
@@ -773,7 +806,15 @@ def prepare_promotion_workspace(
         staging = worktree_root / f".staging-{secrets.token_hex(12)}"
         try:
             _worktree_add_detach(repo_dir, staging, base)
-            _materialize_in_worktree(staging, snapshot, expected_candidate_digest)
+            _materialize_in_worktree(
+                staging,
+                snapshot,
+                expected_candidate_digest,
+                promotion_scope=promotion_scope,
+                reviewer=reviewer,
+                automation_policy_digest=automation_policy_digest,
+                intake_contract_digest=intake_contract_digest,
+            )
             _intent_to_add_new_files(staging, scoped[0], scoped[2])
             patch = _capture_scoped_patch(staging, scoped)
             _verify_post_materialization(staging, base, scoped, patch)
@@ -1273,7 +1314,7 @@ def _promotion_status_locked(
             reason=transition_refusal,
         )
 
-    if state.status in {"abandoned", "cleaned"}:
+    if state.status in {"abandoned", "cleaned", "landed"}:
         return payload(
             status=state.status,
             reviewed_commit=state.reviewed_commit,
@@ -1337,6 +1378,167 @@ def _promotion_status_locked(
         reviewed_commit=state.reviewed_commit,
         reason=reason,
     )
+
+
+def commit_automatic_promotion(
+    *,
+    promotion_id: str,
+    agent_output_dir: Path | str,
+    promotion_root: Path,
+    worktree_root: Path,
+    repo_dir: Path,
+) -> dict[str, Any]:
+    """Commit one exact prepared patch on a named local automation branch."""
+    promotion_id = validate_promotion_id(promotion_id)
+    promotion_root = _normalize_trusted_root_alias(Path(promotion_root))
+    worktree_root = _normalize_trusted_root_alias(Path(worktree_root))
+    repo_dir = Path(repo_dir)
+    with _promotion_root_lock(promotion_root):
+        observed = _promotion_status_locked(
+            promotion_id=promotion_id,
+            agent_output_dir=agent_output_dir,
+            promotion_root=promotion_root,
+            worktree_root=worktree_root,
+            repo_dir=repo_dir,
+        )
+        if observed["status"] == "reviewed" and observed["reviewed_commit"]:
+            return observed
+        if observed["status"] != "awaiting_human_commit":
+            raise PromotionWorkspaceError(
+                f"automatic commit refused from state {observed['status']}"
+            )
+        manifest, state, _manifest_path, _state_path, patch_path = (
+            _load_validated_promotion(
+                promotion_id=promotion_id,
+                promotion_root=promotion_root,
+                worktree_root=worktree_root,
+                repo_dir=repo_dir,
+            )
+        )
+        if state.reviewed_commit is not None:
+            raise PromotionWorkspaceError("automatic commit state is inconsistent")
+        worktree = worktree_root / promotion_id
+        prepared_patch = _read_nofollow_regular(patch_path)
+        _verify_prepared_workspace(
+            worktree=worktree,
+            manifest=manifest,
+            prepared_patch=prepared_patch,
+        )
+        branch = f"codex/auto-paper/{promotion_id}"
+        branch_ref = f"refs/heads/{branch}"
+        existing = _git_text(
+            repo_dir, "rev-parse", "--verify", branch_ref, check=False
+        )
+        if existing.returncode == 0:
+            if existing.stdout.strip() != manifest.base_commit:
+                raise PromotionWorkspaceError(
+                    "automatic promotion branch already points elsewhere"
+                )
+            switched = _git_text(worktree, "switch", branch, check=False)
+        else:
+            switched = _git_text(worktree, "switch", "-c", branch, check=False)
+        _require_git_ok(switched, context="automatic promotion branch")
+        staged = _git_text(
+            worktree, "add", "--", *manifest.scoped_paths, check=False
+        )
+        _require_git_ok(staged, context="automatic promotion stage")
+        staged_paths = _git_text(
+            worktree, "diff", "--cached", "--name-only", check=False
+        )
+        _require_git_ok(staged_paths, context="automatic promotion staged paths")
+        if set(staged_paths.stdout.splitlines()) != set(manifest.scoped_paths):
+            raise PromotionWorkspaceError("automatic promotion staged path mismatch")
+        committed = _git_text(
+            worktree,
+            "commit",
+            "-m",
+            f"feat(factors): land paper-only {manifest.candidate_id}",
+            check=False,
+        )
+        _require_git_ok(committed, context="automatic promotion commit")
+        result = _promotion_status_locked(
+            promotion_id=promotion_id,
+            agent_output_dir=agent_output_dir,
+            promotion_root=promotion_root,
+            worktree_root=worktree_root,
+            repo_dir=repo_dir,
+        )
+        if result["status"] != "reviewed" or not result["reviewed_commit"]:
+            raise PromotionWorkspaceError(
+                f"automatic promotion commit verification failed: {result['reason']}"
+            )
+        return result
+
+
+def land_automatic_promotion(
+    *,
+    promotion_id: str,
+    expected_base_commit: str,
+    expected_reviewed_commit: str,
+    agent_output_dir: Path | str,
+    promotion_root: Path,
+    worktree_root: Path,
+    repo_dir: Path,
+) -> dict[str, Any]:
+    """Fast-forward only the local Platform checkout; never fetches or pushes."""
+    promotion_id = validate_promotion_id(promotion_id)
+    promotion_root = _normalize_trusted_root_alias(Path(promotion_root))
+    worktree_root = _normalize_trusted_root_alias(Path(worktree_root))
+    repo_dir = Path(repo_dir)
+    if (
+        re.fullmatch(r"[0-9a-f]{40,64}", expected_base_commit) is None
+        or re.fullmatch(r"[0-9a-f]{40,64}", expected_reviewed_commit) is None
+    ):
+        raise PromotionWorkspaceError("automatic land commit identity is invalid")
+    with _promotion_root_lock(promotion_root):
+        manifest, state, _manifest_path, state_path, _patch_path = (
+            _load_validated_promotion(
+                promotion_id=promotion_id,
+                promotion_root=promotion_root,
+                worktree_root=worktree_root,
+                repo_dir=repo_dir,
+            )
+        )
+        if (
+            manifest.base_commit != expected_base_commit
+            or state.reviewed_commit != expected_reviewed_commit
+        ):
+            raise PromotionWorkspaceError("automatic land CAS mismatch")
+        head = _main_head(repo_dir)
+        if state.status == "landed":
+            if head != expected_reviewed_commit:
+                raise PromotionWorkspaceError("landed state disagrees with local HEAD")
+            return _promotion_status_locked(
+                promotion_id=promotion_id,
+                agent_output_dir=agent_output_dir,
+                promotion_root=promotion_root,
+                worktree_root=worktree_root,
+                repo_dir=repo_dir,
+            )
+        if state.status != "reviewed":
+            raise PromotionWorkspaceError(
+                f"automatic land refused from state {state.status}"
+            )
+        if head == expected_base_commit:
+            landed = _git_text(
+                repo_dir, "merge", "--ff-only", expected_reviewed_commit, check=False
+            )
+            _require_git_ok(landed, context="automatic local ff-only land")
+        elif head != expected_reviewed_commit:
+            raise PromotionWorkspaceError(
+                f"automatic land HEAD CAS mismatch: {head}"
+            )
+        state = state.model_copy(update={"status": "landed"})
+        _write_bytes_replace(
+            state_path, canonical_json_bytes(state.model_dump(mode="json"))
+        )
+        return _promotion_status_locked(
+            promotion_id=promotion_id,
+            agent_output_dir=agent_output_dir,
+            promotion_root=promotion_root,
+            worktree_root=worktree_root,
+            repo_dir=repo_dir,
+        )
 
 
 def cleanup_promotion_workspace(
