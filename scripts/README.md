@@ -118,7 +118,7 @@ mode-`600` artifacts; the final receipt is sorted, compact canonical UTF-8.
 
 | Script | Purpose |
 | --- | --- |
-| `local_mac_stack.sh` | Normal Mac operator entrypoint: `start|restart|build|stop|status|logs`. Starts Docker PostgreSQL, builds the production frontend, drains the prior Hermes socket generation, installs/reloads Hermes + backend + frontend + connector + factor-automation LaunchAgents, waits for health, and rejects transient AI-tool executables. |
+| `local_mac_stack.sh` | Normal Mac operator entrypoint: `start|restart|build|stop|status|logs`. Starts Docker PostgreSQL, builds the production frontend, drains the prior Hermes socket generation, installs/reloads Hermes + backend + frontend + connector + factor-automation + asia-radar-refresh LaunchAgents, waits for health, and rejects transient AI-tool executables. |
 | `run_quant_backend.sh` | Agent v0.2 LaunchAgent target for the localhost FastAPI backend on `127.0.0.1:8765`; loads the owner-only runtime env, rejects startup migration, and serves release-worktree source. |
 | `run_quant_frontend.sh` | Agent v0.2 LaunchAgent target for the built Next.js frontend on `127.0.0.1:3001`; requires an owner-only env that explicitly enables Hermes Chat, serves this worktree's `.next`, and can reuse main-repo `node_modules`. |
 | `install_agent_v02_stack_launchagents.sh` | Validate, render, and replay-safely install only the Agent v0.2 backend/frontend LaunchAgents. It never installs strategy schedulers. |
@@ -128,6 +128,8 @@ mode-`600` artifacts; the final receipt is sorted, compact canonical UTF-8.
 | `uninstall_agent_v02_connector_launchagent.sh` | Boot out and remove only the Agent v0.2 connector LaunchAgent. |
 | `run_factor_automation_driver.sh` | Five-minute D-33 target. Loads the owner-only backend env, rejects transient HQA runtimes, and runs one fail-closed `paper_only` queue/maintenance cycle. |
 | `install_factor_automation_launchagent.sh` | Check and replay-safely install `com.aiquant.factor-automation`; the driver remains disabled unless both HQA and Platform Flag pairs are true. |
+| `run_asia_radar_refresh.sh` | Daily Asia Radar target. Warms the 12-ETF Futu bar cache and persists the day's read-only overview snapshot; fails closed when OpenD is unavailable. |
+| `install_asia_radar_refresh_launchagent.sh` | Render and replay-safely install `com.aiquant.asia-radar-refresh` (17:05 local, calendar interval); never places orders and never substitutes sample data. |
 | `run_paper_strategy_sleeves.sh` | LaunchAgent/CLI wrapper for one-shot Paper Strategy Sleeves ops commands (`ops-status`, `generate-due-signals`, `execute-due`). |
 | `install_paper_strategy_sleeves_launchagent.sh` | Render and bootstrap user-level macOS LaunchAgents under `~/Library/LaunchAgents/`; does not use sudo. |
 | `uninstall_paper_strategy_sleeves_launchagent.sh` | Boot out and remove the rendered user-level LaunchAgents. |
