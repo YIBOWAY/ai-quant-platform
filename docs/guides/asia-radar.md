@@ -18,6 +18,16 @@ sample、静态或演示曲线。
 “真实行情”描述价格来源，“ETF 代理”描述市场覆盖方式，两者不是互斥状态。指数
 页签在 Phase 1 可以为空；龙头驱动页签只有 UI 壳，不展示虚构的个股权重或贡献。
 
+## Phase 1.1 口径补强
+
+- `timezone=America/New_York` 进入契约；所有市场对齐到**最新共享交易日**的 `as_of`，
+  某一 ETF 缺当日 bar 即整体 503。
+- 响应含 `provenance`：`futu` = 实时拉取，`futu_cache` = 命中本地 DuckDB bar 缓存
+  （`data/futu_equity_bars.duckdb`，TTL 1 天）。缓存失败不会静默替代为 sample。
+- 每个市场需要至少 64 根历史 bar；不足直接 503，不会给出“被截断的周/月收益”。
+- 当日未完成的美股 bar 不计入；K 型序列只覆盖自然年。
+- 详情 history 只保留最近 90 根作 sparkline，减小首屏体积。
+
 ## 指标口径
 
 - 周收益：5 个交易日。
@@ -38,7 +48,8 @@ GET /api/asia-radar/overview?provider=futu
 
 该 API 强制 `provider=futu`。传入其他 provider 返回 400；OpenD 不可达、Futu
 读取失败或 12 ETF 合同不完整时返回结构化 503，不返回替代曲线。API 只读，不写入
-行情缓存、账户、订单或研究候选。
+行情缓存、账户、订单或研究候选（Phase 1.1 起会复用只读的 `EquityBarCache` bar 缓存，
+并以 `provenance=futu_cache` 明示，缓存本身永不回退为 sample）。
 
 ## 本地检查
 

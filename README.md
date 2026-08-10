@@ -210,6 +210,7 @@ committed/installed runtime and then repeat `probe`.
 | `/brief` | Live UI-assembled factual daily-brief preview and PostgreSQL archive control; saving is disabled if the authoritative paper-account source is unavailable. Its AI HOT GET may contact that upstream and best-effort mirror news/cache-audit rows to PostgreSQL; merely viewing the live preview does not create a brief snapshot. The server validates the complete factual-v1 schema and watermarks, but does not independently refetch every upstream source. |
 | `/brief/[publicId]` | Immutable historical brief snapshot rendered from its stored payload and source watermarks. |
 | `/data-explorer` | US equity historical data viewer. |
+| `/asia-radar` | Read-only Asia 12-market radar: heatmap, ranking, and dynamic K-shape from 12 U.S.-listed country ETFs over strict Futu 1d QFQ bars. Its dedicated API requires `provider=futu` and fails closed (400/503) instead of falling back to sample; Phase 1 intentionally shows no PE/PB/ERP/crowding/risk-list figures. |
 | `/factor-lab` | Current factor diagnostics surface; planned to become a run/detail analysis surface under the Hermes workbench. |
 | `/backtest` | Run strategy, universe, factor-weight, and benchmark backtests. |
 | `/strategies` | Strategy Catalog for registered research strategies. |

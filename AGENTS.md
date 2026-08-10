@@ -216,6 +216,11 @@ data/                     Local cache, fixtures, generated research outputs.
 
 - Explicit providers are strict: `sample`, `futu`, or `tiingo`. An unavailable
   requested real provider must fail clearly, never silently become sample.
+  `/asia-radar` is an Asia 12-market read-only radar over the fixed 12-ETF Futu
+  universe; its dedicated API (`/api/asia-radar/overview`) requires
+  `provider=futu`, uses an auditable `futu|futu_cache` provenance, and never
+  reuses the generic `/ohlcv` sample fallback. Keep it free of PE/PB/ERP,
+  crowding, and risk-list figures until real cross-market sources exist.
 - Factor development is code-first. Register backend factor code; do not add a
   free-form frontend expression builder.
 - A runnable backtest strategy needs both registry metadata and a pipeline
@@ -309,6 +314,7 @@ data/                     Local cache, fixtures, generated research outputs.
 |---|---|
 | Current route/status | `docs/INDEX.md` and the active frontend/Hermes plan |
 | Storage/PostgreSQL | `docs/architecture/database_cache_plan.md` |
+| Asia Radar | `docs/guides/asia-radar.md` |
 | Paper account | `docs/guides/paper-trading.md` |
 | Strategy sleeves | `docs/execution/paper_strategy_sleeves.md` |
 | Backtests/strategies | `docs/guides/backtester.md`, `docs/guides/strategy-catalog.md` |

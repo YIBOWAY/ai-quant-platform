@@ -343,6 +343,7 @@ rows；操作只看 [local-stack runbook](runbooks/agent-v0-2-local-stack.md)。
 | `/options-radar/[symbol]` | 已保存的雷达候选，以及可选的实时期权链加载。 |
 | `/options-tools` | 本地 AlphaGBM 风格期权工具箱。 |
 | `/options-buyside` | 买方期权策略助手。 |
+| `/asia-radar` | 亚洲雷达：12 只美国上市国家 ETF 的只读跨市场热力图/排名/动态 K 型。专用 API 强制 `provider=futu`，失败不回退 sample；Phase 1 不展示 PE/PB/ERP/拥挤度/个股风险名单。 |
 | `/ai-news` | AI 新闻研究流（AI HOT 主源 + Horizon 热备 Facade），含精选动态、关键词/分类/时间窗筛选、日报、原文链接与实际 provider/served_from。 |
 | `/polymarket` | 只读预测市场研究。 |
 | `/agent-studio` | 过渡期只读候选池检查；展示源码与审计证据，不再提供平台 LLM task 或批准/拒绝控件，并引导返回 Hermes。 |
