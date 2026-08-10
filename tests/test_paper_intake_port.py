@@ -196,6 +196,7 @@ def test_subprocess_port_accepts_exact_body_free_receipt(tmp_path: Path) -> None
     assert captured["argv"][-2:] == ["hqa.paper_intake_cli", "verify"]
     assert "stdin-secret" not in " ".join(captured["argv"])
     request = captured["request"]
+    assert request["owner_id"] == "owner-local-root"
     assert request["command_id"] == str(command.command_id)
     assert request["endpoint"]["api_key"] == "stdin-secret"
 

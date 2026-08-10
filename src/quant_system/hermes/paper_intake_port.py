@@ -17,7 +17,10 @@ from dataclasses import dataclass, field
 from typing import Literal, Protocol
 
 from quant_system.hermes.command_ledger import HermesCommand
-from quant_system.hermes.dark_identity_profile import normalize_payload_ref
+from quant_system.hermes.dark_identity_profile import (
+    STORE_OWNER_ID,
+    normalize_payload_ref,
+)
 from quant_system.hermes.dispatch_adapter import HermesRunObservation
 from quant_system.hermes.intent_payload_port import IntentPayloadCliSettings
 from quant_system.hermes.run_lifecycle_port import HermesRunCliSettings
@@ -349,6 +352,7 @@ class SubprocessPaperIntakeVerificationPort:
         payload_ref = normalize_payload_ref(command.payload_ref)
         request = {
             "endpoint": self.cli_settings.endpoint_document(),
+            "owner_id": STORE_OWNER_ID,
             "workspace_id": self.workspace_id,
             "platform_session_id": command.platform_session_id,
             "command_id": str(command.command_id),
