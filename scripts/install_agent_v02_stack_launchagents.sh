@@ -19,8 +19,12 @@ elif command -v plutil >/dev/null 2>&1; then
 else
   PLUTIL=""
 fi
-LAUNCHCTL_BOOTSTRAP_MAX_ATTEMPTS=5
-LAUNCHCTL_BOOTSTRAP_RETRY_DELAY_SECONDS=0.2
+# macOS can keep a just-booted-out launchd generation internally busy for
+# several seconds even after `launchctl print` no longer sees it. Keep this
+# bounded and fail closed, but allow enough time for the old backend/frontend
+# generation to drain before declaring a persistent local restart broken.
+LAUNCHCTL_BOOTSTRAP_MAX_ATTEMPTS=25
+LAUNCHCTL_BOOTSTRAP_RETRY_DELAY_SECONDS=0.5
 
 fail() {
   echo "stack_install_error=$1" >&2

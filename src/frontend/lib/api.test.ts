@@ -6,6 +6,7 @@ import {
   getFactorLabDashboard,
   getHermesResultDetail,
   getHermesResults,
+  getPaperAccount,
   type FactorLabResponse,
 } from "./api";
 
@@ -29,6 +30,82 @@ const factorLabPayload = {
 function factorLabGuardrailSummary(payload: FactorLabResponse) {
   return `${payload.guardrails.walk_forward.fold_count}:${payload.guardrails.leakage_audit.status}`;
 }
+
+describe("server read retry", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("recovers a paper-account read from one transient backend failure", async () => {
+    const healthyAccount = {
+      account_id: "default",
+      base_currency: "USD",
+      initial_cash: 1_000_000,
+      cash: 735_267,
+      reserved_cash: 0,
+      available_cash: 735_267,
+      equity: 994_845,
+      realized_pnl: 0,
+      unrealized_pnl: -5_155,
+      pnl_abs: -5_155,
+      pnl_pct: -0.005155,
+      invested_pct: 0.2609,
+      kill_switch: true,
+      price_source: { kind: "futu_snapshot", as_of: "2026-08-07T20:00:00Z" },
+      positions: [],
+      pending_orders: [],
+      created_at: "2026-08-01T00:00:00Z",
+      updated_at: "2026-08-07T20:00:00Z",
+      safety: {
+        dry_run: true,
+        paper_trading: true,
+        live_trading_enabled: false,
+        kill_switch: true,
+        bind_address: "127.0.0.1",
+      },
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ detail: "backend warming up" }), {
+          status: 503,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(healthyAccount), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await getPaperAccount();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result).toMatchObject({
+      account_id: "default",
+      equity: 994_845,
+      pnl_abs: -5_155,
+    });
+    expect(result).not.toHaveProperty("apiError");
+  });
+
+  it("does not retry a permanent paper-account client error", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ detail: "invalid account" }), {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await getPaperAccount();
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(result.apiError).toBe("400: invalid account");
+  });
+});
 
 describe("getFactorLabDashboard", () => {
   afterEach(() => {

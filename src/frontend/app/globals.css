@@ -205,17 +205,11 @@ select option {
   }
 }
 
-/* Global shell / Hermes a11y contracts: 44px targets on touch devices,
-   compact 32px on fine pointers (mouse); focus ring, reduced motion */
+/* Global shell / Hermes a11y contract: keep every interactive target at least
+   44px for mouse, touch, switch and magnified-pointer users alike. */
 .app-touch-target {
-  min-width: 32px;
-  min-height: 32px;
-}
-@media (pointer: coarse) {
-  .app-touch-target {
-    min-width: 44px;
-    min-height: 44px;
-  }
+  min-width: 44px;
+  min-height: 44px;
 }
 
 :where(a[href], button, input, select, textarea, summary, [role="button"]):focus-visible {

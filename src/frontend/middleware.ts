@@ -19,13 +19,12 @@ export function middleware(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
 
   if (maybeLocale && LOCALES.includes(maybeLocale)) {
-    const rewritten = request.nextUrl.clone();
-    const rest = `/${segments.slice(2).join("/")}`.replace(/\/+$/, "") || "/";
-    rewritten.pathname = rest;
     requestHeaders.set("x-qs-locale", maybeLocale);
-    return NextResponse.rewrite(rewritten, {
-      request: { headers: requestHeaders },
-    });
+    // Path stripping lives in next.config.ts as a relative rewrite. An
+    // absolute middleware rewrite is unsafe here because Next normalizes
+    // every loopback NextURL to localhost, then compares it with the actual
+    // 127.0.0.1 server URL and intermittently proxies back into itself.
+    return NextResponse.next({ request: { headers: requestHeaders } });
   }
 
   return NextResponse.next({

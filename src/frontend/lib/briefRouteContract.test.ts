@@ -18,14 +18,14 @@ describe("/brief route contract", () => {
       "getFactors",
       "getBacktests",
       "getPaperRuns",
-      "getPaperAccount",
-      "getPaperAccountEquityCurve",
-      "getPaperAccountPerformance",
+      "getCachedBriefPaperAccount",
+      "getCachedBriefPaperAccountEquityCurve",
+      "getCachedBriefPaperAccountPerformance",
       "getRecentRuns",
       "getAgentCandidates",
       "getNewsItems",
       "getOptionsDailyScanStatus",
-      "getMarketDataHistory",
+      "getCachedBriefMarketDataHistory",
       "getServerLocale",
       "getLatestBriefIssue",
       "BriefArchiveControl",
@@ -40,8 +40,12 @@ describe("/brief route contract", () => {
     expect(source).not.toContain("getAiHotItems");
 
     for (const symbol of ["SPY", "QQQ", "SOXX", "IGV"]) {
-      expect(source).toContain(`getMarketDataHistory("${symbol}"`);
+      expect(source).toContain(`getCachedBriefMarketDataHistory("${symbol}"`);
     }
+    expect(source).not.toContain("getMarketDataHistory(");
+    expect(source).not.toContain("getPaperAccountPerformance(");
+    expect(source).not.toContain("getPaperAccount(");
+    expect(source).not.toContain("getPaperAccountEquityCurve(");
   });
 
   it("does not call the provider-coupled health route during SSR", () => {

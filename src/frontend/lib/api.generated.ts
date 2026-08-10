@@ -112,6 +112,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/asia-radar/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Asia Radar Overview */
+        get: operations["asia_radar_overview_api_asia_radar_overview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/owner/bootstrap": {
         parameters: {
             query?: never;
@@ -2553,6 +2570,126 @@ export interface components {
              * @default true
              */
             verify_original_source: boolean;
+        };
+        /** AsiaRadarHistoryPointResponse */
+        AsiaRadarHistoryPointResponse: {
+            /** Close */
+            close: number;
+            /** Date */
+            date: string;
+            /** Indexed Return Pct */
+            indexed_return_pct: number;
+        };
+        /** AsiaRadarKShapePointResponse */
+        AsiaRadarKShapePointResponse: {
+            /** Date */
+            date: string;
+            /** Laggard Avg Pct */
+            laggard_avg_pct: number;
+            /** Spread Pct */
+            spread_pct: number;
+            /** Winner Avg Pct */
+            winner_avg_pct: number;
+        };
+        /** AsiaRadarKShapeResponse */
+        AsiaRadarKShapeResponse: {
+            /** Laggards */
+            laggards: string[];
+            /** Series */
+            series: components["schemas"]["AsiaRadarKShapePointResponse"][];
+            /** Winners */
+            winners: string[];
+        };
+        /** AsiaRadarMarketResponse */
+        AsiaRadarMarketResponse: {
+            /**
+             * Data Status
+             * @constant
+             */
+            data_status: "real";
+            /** History */
+            history: components["schemas"]["AsiaRadarHistoryPointResponse"][];
+            /**
+             * K Leg
+             * @enum {string}
+             */
+            k_leg: "winner" | "middle" | "laggard";
+            /**
+             * Market Coverage
+             * @constant
+             */
+            market_coverage: "proxy";
+            /** Market Id */
+            market_id: string;
+            /** Max Drawdown Pct */
+            max_drawdown_pct: number;
+            meta: components["schemas"]["AsiaRadarMetaResponse"];
+            /** Name En */
+            name_en: string;
+            /** Name Zh */
+            name_zh: string;
+            /** Rank */
+            rank: number;
+            returns: components["schemas"]["AsiaRadarReturnsResponse"];
+            /** Symbol */
+            symbol: string;
+            /** Volatility Pct */
+            volatility_pct: number;
+        };
+        /** AsiaRadarMetaResponse */
+        AsiaRadarMetaResponse: {
+            /**
+             * Adjustment
+             * @constant
+             */
+            adjustment: "qfq";
+            /** As Of */
+            as_of: string;
+            /**
+             * Currency
+             * @constant
+             */
+            currency: "USD";
+            /**
+             * Provider
+             * @constant
+             */
+            provider: "futu";
+            /** Symbol */
+            symbol: string;
+        };
+        /** AsiaRadarOverviewResponse */
+        AsiaRadarOverviewResponse: {
+            /** As Of */
+            as_of: string;
+            /** Fetched At */
+            fetched_at: string;
+            k_shape: components["schemas"]["AsiaRadarKShapeResponse"];
+            /** Markets */
+            markets: components["schemas"]["AsiaRadarMarketResponse"][];
+            /** Methodology */
+            methodology: {
+                [key: string]: string;
+            };
+            /**
+             * Provider
+             * @constant
+             */
+            provider: "futu";
+            /**
+             * Schema Version
+             * @constant
+             */
+            schema_version: "1.0";
+        };
+        /** AsiaRadarReturnsResponse */
+        AsiaRadarReturnsResponse: {
+            /** Month Pct */
+            month_pct: number;
+            /** Week Pct */
+            week_pct: number;
+            /** Ytd Pct */
+            ytd_pct: number;
         };
         /** BacktestBenchmarkSnapshot */
         BacktestBenchmarkSnapshot: {
@@ -8590,6 +8727,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CompositeTurnReceiptResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    asia_radar_overview_api_asia_radar_overview_get: {
+        parameters: {
+            query?: {
+                provider?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AsiaRadarOverviewResponse"];
                 };
             };
             /** @description Validation Error */

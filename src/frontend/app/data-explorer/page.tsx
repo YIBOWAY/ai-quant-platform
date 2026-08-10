@@ -116,7 +116,10 @@ export default async function DataExplorer({ searchParams }: DataExplorerProps) 
   const tableRows = [...ohlcv.rows].reverse().slice(0, MAX_TABLE_ROWS);
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden">
+    <div
+      className="flex h-full w-full flex-col overflow-x-hidden overflow-y-auto"
+      data-testid="data-explorer-scroll-region"
+    >
       <div className="flex-none border-b border-border-subtle bg-bg-surface p-4">
         <ErrorBanner locale={locale} messages={[symbols.apiError, ohlcv.apiError]} />
         <div className="mb-3 flex items-center gap-2">
@@ -153,7 +156,7 @@ export default async function DataExplorer({ searchParams }: DataExplorerProps) 
 
       {hasRows ? (
         <div className="flex min-h-0 flex-1 flex-col">
-          <div className="flex min-h-0 flex-1 flex-col bg-bg-base p-4">
+          <div className="flex flex-1 flex-col bg-bg-base p-4">
             <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
               <div className="flex items-baseline gap-3">
                 <span className="font-headline-xl text-text-primary">{ohlcv.symbol}</span>
@@ -187,7 +190,7 @@ export default async function DataExplorer({ searchParams }: DataExplorerProps) 
                 </div>
               ) : null}
             </div>
-            <div className="min-h-0 flex-1">
+            <div className="min-h-[290px] flex-1">
               <CandlestickChart locale={locale} rows={ohlcv.rows} />
             </div>
           </div>

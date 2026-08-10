@@ -22,6 +22,15 @@ import type {
   HermesResultKind,
   HermesResultsQuery,
 } from "./hermes/resultsTypes";
+import type { AsiaRadarMarket, AsiaRadarOverview } from "./asiaRadar";
+
+export type AsiaRadarMetaResponse = AsiaRadarMarket["meta"];
+export type AsiaRadarReturnsResponse = AsiaRadarMarket["returns"];
+export type AsiaRadarHistoryPointResponse = AsiaRadarMarket["history"][number];
+export type AsiaRadarMarketResponse = AsiaRadarMarket;
+export type AsiaRadarKShapePointResponse = AsiaRadarOverview["k_shape"]["series"][number];
+export type AsiaRadarKShapeResponse = AsiaRadarOverview["k_shape"];
+export type AsiaRadarOverviewResponse = AsiaRadarOverview;
 
 export type SafetyFooter = {
   dry_run: boolean;
@@ -2075,54 +2084,93 @@ const AIHOT_RESEARCH_SAFETY: AiHotResearchSafety = {
   verify_original_source: true,
 };
 
-async function apiGet<T extends ApiEnvelope>(path: string, fallback: T): Promise<T> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 60_000);
-  try {
-    const response = await fetch(`${API_BASE_URL}${path}`, {
-      cache: "no-store",
-      signal: controller.signal,
-      headers: { accept: "application/json" },
-    });
-    if (!response.ok) {
-      // Surface the backend's structured detail (e.g. {code, message}) instead
-      // of an opaque "400 Bad Request" so users can tell a typo'd ticker from
-      // OpenD being down.
-      let detailText = "";
-      try {
-        const payload = (await response.json()) as { detail?: unknown };
-        if (typeof payload.detail === "string") {
-          detailText = payload.detail;
-        } else if (payload.detail && typeof payload.detail === "object") {
-          const detail = payload.detail as { message?: unknown; code?: unknown };
-          const message = typeof detail.message === "string" ? detail.message : "";
-          const code = typeof detail.code === "string" ? `[${detail.code}] ` : "";
-          detailText = message ? `${code}${message}` : JSON.stringify(payload.detail);
-        }
-      } catch {
-        // body not JSON — fall through to the status line
-      }
-      throw new Error(
-        detailText ? `${response.status}: ${detailText}` : `${response.status} ${response.statusText}`,
-      );
-    }
-    return (await response.json()) as T;
-  } catch (error) {
-    const aborted =
-      (error instanceof DOMException && error.name === "AbortError") ||
-      controller.signal.aborted;
-    return {
-      ...fallback,
-      safety: fallback.safety ?? FALLBACK_SAFETY,
-      apiError: aborted
-        ? "Request timed out after 60s (backend may be waiting on a provider such as Futu OpenD)."
-        : error instanceof Error
-          ? error.message
-          : "API unavailable",
-    };
-  } finally {
-    clearTimeout(timeoutId);
+const SERVER_READ_RETRY_DELAY_MS = 150;
+
+class ApiGetHttpError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+    this.name = "ApiGetHttpError";
   }
+}
+
+function waitForServerReadRetry() {
+  return new Promise((resolve) => setTimeout(resolve, SERVER_READ_RETRY_DELAY_MS));
+}
+
+async function apiGet<T extends ApiEnvelope>(
+  path: string,
+  fallback: T,
+  retryTransient = false,
+): Promise<T> {
+  const maxAttempts = retryTransient ? 2 : 1;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60_000);
+    try {
+      const response = await fetch(`${API_BASE_URL}${path}`, {
+        cache: "no-store",
+        signal: controller.signal,
+        headers: { accept: "application/json" },
+      });
+      if (!response.ok) {
+        // Surface the backend's structured detail (e.g. {code, message}) instead
+        // of an opaque "400 Bad Request" so users can tell a typo'd ticker from
+        // OpenD being down.
+        let detailText = "";
+        try {
+          const payload = (await response.json()) as { detail?: unknown };
+          if (typeof payload.detail === "string") {
+            detailText = payload.detail;
+          } else if (payload.detail && typeof payload.detail === "object") {
+            const detail = payload.detail as { message?: unknown; code?: unknown };
+            const message = typeof detail.message === "string" ? detail.message : "";
+            const code = typeof detail.code === "string" ? `[${detail.code}] ` : "";
+            detailText = message ? `${code}${message}` : JSON.stringify(payload.detail);
+          }
+        } catch {
+          // body not JSON — fall through to the status line
+        }
+        const error = new ApiGetHttpError(
+          detailText ? `${response.status}: ${detailText}` : `${response.status} ${response.statusText}`,
+          response.status,
+        );
+        if (response.status >= 500 && attempt + 1 < maxAttempts) {
+          await waitForServerReadRetry();
+          continue;
+        }
+        throw error;
+      }
+      return (await response.json()) as T;
+    } catch (error) {
+      const aborted =
+        (error instanceof DOMException && error.name === "AbortError") ||
+        controller.signal.aborted;
+      const retryable =
+        !aborted &&
+        !(error instanceof ApiGetHttpError && error.status < 500) &&
+        attempt + 1 < maxAttempts;
+      if (retryable) {
+        await waitForServerReadRetry();
+        continue;
+      }
+      return {
+        ...fallback,
+        safety: fallback.safety ?? FALLBACK_SAFETY,
+        apiError: aborted
+          ? "Request timed out after 60s (backend may be waiting on a provider such as Futu OpenD)."
+          : error instanceof Error
+            ? error.message
+            : "API unavailable",
+      };
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  return fallback;
 }
 
 export function getHealth() {
@@ -2627,7 +2675,7 @@ const FALLBACK_ACCOUNT: PaperAccountResponse = {
 };
 
 export function getPaperAccount() {
-  return apiGet<PaperAccountResponse>("/api/paper/account", FALLBACK_ACCOUNT);
+  return apiGet<PaperAccountResponse>("/api/paper/account", FALLBACK_ACCOUNT, true);
 }
 
 export function getPaperAccountLedger(limit = 50, offset = 0) {
@@ -2676,6 +2724,7 @@ export function getPaperAccountEquityCurve(days = 7, limit = 200, offset = 0) {
       points: [],
       safety: FALLBACK_SAFETY,
     },
+    true,
   );
 }
 
@@ -2702,6 +2751,7 @@ export function getPaperAccountPerformance(range: PaperPerformanceRange = "7d") 
       warnings: [],
       safety: FALLBACK_SAFETY,
     },
+    true,
   );
 }
 

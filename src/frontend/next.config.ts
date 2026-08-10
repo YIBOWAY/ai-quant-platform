@@ -58,6 +58,11 @@ const nextConfig: NextConfig = {
   },
   async rewrites() {
     return [
+      // Keep locale stripping relative so Next routes it internally. Doing
+      // this with an absolute middleware rewrite can turn a local
+      // 127.0.0.1 request into a self-proxy to normalized `localhost`.
+      { source: "/en/:path*", destination: "/:path*" },
+      { source: "/zh/:path*", destination: "/:path*" },
       {
         source: "/api/:path*",
         destination: `${API_REWRITE_ORIGIN}/api/:path*`,
