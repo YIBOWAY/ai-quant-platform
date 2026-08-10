@@ -13,6 +13,17 @@ from quant_system.factors.market_cross_section import read_market_cross_section
 router = APIRouter()
 MarketCrossSectionReader = Callable[..., dict[str, Any]]
 
+# User-input errors map to 400: bad basket/symbols at the factor layer plus
+# data-layer request validation failures (unnormalizable tickers such as
+# BRK.B / US.SPY, duplicate normalized symbols, bad windows). Upstream Futu
+# or data-contract failures stay 503. Fail-closed: no sample/empty fallback.
+_CLIENT_ERROR_CODES = frozenset(
+    {
+        "market_cross_section_invalid_request",
+        "historical_prices_invalid_request",
+    }
+)
+
 
 def get_market_cross_section_reader() -> MarketCrossSectionReader:
     return read_market_cross_section
@@ -41,12 +52,22 @@ def market_cross_section(
             },
         )
     symbol_list = None
-    if symbols:
+    if symbols is not None:
         symbol_list = [part.strip() for part in symbols.split(",") if part.strip()]
+        if not symbol_list:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "market_cross_section_invalid_request",
+                    "provider": "futu",
+                    "provider_code": "market_cross_section_invalid_request",
+                    "message": "symbols must contain at least one non-empty symbol",
+                },
+            )
     try:
         return reader(settings=settings, basket=basket, symbols=symbol_list)
     except HistoricalPriceReadError as exc:
-        status = 400 if exc.code == "market_cross_section_invalid_request" else 503
+        status = 400 if exc.code in _CLIENT_ERROR_CODES else 503
         raise HTTPException(
             status_code=status,
             detail={

@@ -97,6 +97,7 @@ AI 行业资讯：
 跨市场观察：
 
 - `/asia-radar` 用 12 只美国上市国家 ETF 做只读跨市场热力图、排名与动态 K 型分化。
+- `/market-cross-section` 用预设标的篮子（AI/半导体关注、美股板块 ETF 或显式 symbol 白名单）做只读 YTD 热力图与排序表；与亚洲雷达共享数据通路，不共享宇宙。
 - 数据严格来自 Futu 1d QFQ 日线，专用 API 失败即报 400/503，不回退 sample。
 - Phase 1 不提供 PE/PB、ERP、行业拥挤度或个股风险名单。
 

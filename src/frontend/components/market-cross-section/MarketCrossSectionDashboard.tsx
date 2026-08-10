@@ -71,8 +71,16 @@ const copy = {
   },
 } as const;
 
-export function MarketCrossSectionView({ locale }: { locale: Locale }) {
-  const [basket, setBasket] = useState<"ai_watch" | "us_sectors">("ai_watch");
+export type MarketCrossSectionBasket = "ai_watch" | "us_sectors";
+
+export function MarketCrossSectionView({
+  initialBasket,
+  locale,
+}: {
+  initialBasket?: MarketCrossSectionBasket;
+  locale: Locale;
+}) {
+  const [basket, setBasket] = useState<MarketCrossSectionBasket>(initialBasket ?? "ai_watch");
   const [data, setData] = useState<MarketCrossSectionResponse | null>(null);
   const [error, setError] = useState("");
   const [requestId, setRequestId] = useState(0);
@@ -95,6 +103,15 @@ export function MarketCrossSectionView({ locale }: { locale: Locale }) {
     };
   }, [basket, requestId]);
 
+  const handleBasketChange = (next: MarketCrossSectionBasket) => {
+    if (next === basket) return;
+    // Clear the old basket's rows while the new request is in flight so the
+    // page never shows a new-basket highlight over stale old-basket data.
+    setError("");
+    setData(null);
+    setBasket(next);
+  };
+
   if (error) {
     return (
       <MarketCrossSectionUnavailable
@@ -114,7 +131,7 @@ export function MarketCrossSectionView({ locale }: { locale: Locale }) {
       basket={basket}
       data={data}
       locale={locale}
-      onBasketChange={setBasket}
+      onBasketChange={handleBasketChange}
     />
   );
 }
@@ -125,10 +142,10 @@ export function MarketCrossSectionDashboard({
   locale,
   onBasketChange,
 }: {
-  basket: "ai_watch" | "us_sectors";
+  basket: MarketCrossSectionBasket;
   data: MarketCrossSectionResponse;
   locale: Locale;
-  onBasketChange?: (basket: "ai_watch" | "us_sectors") => void;
+  onBasketChange?: (basket: MarketCrossSectionBasket) => void;
 }) {
   const text = copy[locale];
   const ranked = useMemo(
@@ -163,20 +180,28 @@ export function MarketCrossSectionDashboard({
               ["ai_watch", text.aiWatch],
               ["us_sectors", text.usSectors],
             ] as const
-          ).map(([id, label]) => (
-            <button
-              className={`rounded-full border px-3 py-1.5 font-semibold transition ${
-                basket === id
-                  ? "border-accent-success/60 bg-accent-success/10 text-accent-success"
-                  : "border-border-subtle text-text-secondary hover:border-white/25"
-              }`}
-              key={id}
-              onClick={() => onBasketChange?.(id)}
-              type="button"
-            >
-              {label}
-            </button>
-          ))}
+          ).map(([id, fallback]) => {
+            // Prefer the backend-issued basket_label for the loaded basket;
+            // fall back to local copy when the field is absent (custom
+            // cross-sections) or for the inactive pill.
+            const label =
+              basket === id && data.basket_label ? data.basket_label[locale] : fallback;
+            return (
+              <button
+                className={`rounded-full border px-3 py-1.5 font-semibold transition ${
+                  basket === id
+                    ? "border-accent-success/60 bg-accent-success/10 text-accent-success"
+                    : "border-border-subtle text-text-secondary hover:border-white/25"
+                }`}
+                data-basket-pill={id}
+                key={id}
+                onClick={() => onBasketChange?.(id)}
+                type="button"
+              >
+                {label}
+              </button>
+            );
+          })}
         </div>
       </header>
 
@@ -204,9 +229,6 @@ export function MarketCrossSectionDashboard({
                     <div className="font-mono text-xs text-white/65">#{row.rank}</div>
                     <div className="mt-1 text-base font-semibold text-white">{row.symbol}</div>
                   </div>
-                  <span className="rounded-md bg-black/20 px-2 py-1 font-mono text-xs text-white">
-                    ETF
-                  </span>
                 </div>
                 <div className="mt-6 font-data-mono text-2xl font-semibold text-white">
                   {formatPct(row.returns.ytd_pct)}
@@ -258,6 +280,18 @@ export function MarketCrossSectionDashboard({
         </section>
 
         <footer className="border-t border-border-subtle py-5 text-xs text-text-secondary">
+          <details className="mb-4 rounded-xl border border-border-subtle bg-bg-card p-4">
+            <summary className="cursor-pointer font-semibold text-text-primary">
+              {text.methodology}
+            </summary>
+            <ul className="mt-3 space-y-1 font-mono text-[11px]">
+              {Object.entries(data.methodology).map(([key, value]) => (
+                <li data-methodology-item={key} key={key}>
+                  {key}: {value}
+                </li>
+              ))}
+            </ul>
+          </details>
           {text.readOnly}
         </footer>
       </div>

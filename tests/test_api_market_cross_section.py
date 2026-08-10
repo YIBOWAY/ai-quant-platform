@@ -88,3 +88,66 @@ def test_cross_section_provider_failure_is_503_without_sample(tmp_path) -> None:
     assert response.status_code == 503
     assert response.json()["detail"]["code"] == "market_cross_section_provider_unavailable"
     assert "sample" not in response.text.lower()
+
+
+def test_cross_section_data_layer_invalid_request_is_400(tmp_path) -> None:
+    # User-input failures raised by the data layer (e.g. unnormalizable
+    # tickers, duplicate normalized symbols) are client errors, not 503s.
+    def fail(*, settings, basket=None, symbols=None, today=None):
+        raise HistoricalPriceReadError(
+            code="historical_prices_invalid_request",
+            provider="futu",
+            message="duplicate normalized symbol: SPY",
+        )
+
+    app = create_app(output_dir=tmp_path)
+    app.dependency_overrides[get_market_cross_section_reader] = lambda: fail
+    client = TestClient(app)
+
+    response = client.get("/api/market-cross-section?symbols=SPY,US.SPY")
+
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert detail["code"] == "market_cross_section_invalid_request"
+    assert detail["provider_code"] == "historical_prices_invalid_request"
+
+
+def test_cross_section_rejects_blank_symbols_parameter(tmp_path) -> None:
+    app = create_app(output_dir=tmp_path)
+    client = TestClient(app)
+
+    response = client.get("/api/market-cross-section?symbols=,,,")
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "market_cross_section_invalid_request"
+
+
+def test_cross_section_rejects_basket_and_symbols_together(tmp_path) -> None:
+    app = create_app(output_dir=tmp_path)
+    client = TestClient(app)
+
+    response = client.get("/api/market-cross-section?basket=ai_watch&symbols=SPY")
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "market_cross_section_invalid_request"
+
+
+def test_cross_section_rejects_invalid_symbol_characters(tmp_path) -> None:
+    app = create_app(output_dir=tmp_path)
+    client = TestClient(app)
+
+    for symbols in ("A$%", "BRK.B", "US.SPY"):
+        response = client.get(f"/api/market-cross-section?symbols={symbols}")
+        assert response.status_code == 400, symbols
+        assert response.json()["detail"]["code"] == "market_cross_section_invalid_request"
+
+
+def test_cross_section_rejects_too_many_symbols(tmp_path) -> None:
+    app = create_app(output_dir=tmp_path)
+    client = TestClient(app)
+
+    symbols = ",".join(f"S{index}" for index in range(17))
+    response = client.get(f"/api/market-cross-section?symbols={symbols}")
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "market_cross_section_invalid_request"

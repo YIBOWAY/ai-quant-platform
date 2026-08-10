@@ -35,7 +35,14 @@ bash scripts/local_mac_stack.sh status
 Use `restart` after backend or environment changes. `start` and `restart` both
 run the production frontend build before installing/reloading the jobs. Use
 `build` to compile without restarting, `logs` to tail stable files under
-`data/_runtime/logs/`, and `stop` for an intentional full stop. The script:
+`data/_runtime/logs/`, and `stop` for an intentional full stop.
+
+When invoking the script from a non-interactive runner (AI tool shells, CI),
+export `USER` and `HOME` first — the backend env file references `$USER` under
+`set -u` and aborts with `USER: unbound variable` otherwise. Note that a
+running stack does not pick up new backend routes or frontend pages until
+`restart` (or `build` + `restart`) completes; a stale process answers 404 for
+routes added after it started. The script:
 
 1. opens Docker Desktop if necessary and starts the existing
    `quantplatform-db` container without recreating its volume;

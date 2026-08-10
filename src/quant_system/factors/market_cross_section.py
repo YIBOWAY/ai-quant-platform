@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
@@ -71,7 +72,13 @@ _MIN_HISTORY_BARS = 64
 _SPARKLINE_BARS = 90
 _LOOKBACK_CALENDAR_DAYS = 419
 _MAX_CUSTOM_SYMBOLS = 16
-_SYMBOL_PATTERN = tuple("ABCDEFGHIJKLMNOPQRSTUVWXYZ.")
+# Custom symbols must be plain US tickers (letters/digits only, no dots).
+# FutuMarketDataProvider.normalize_symbol rejects dotted codes such as BRK.B
+# for plain US market data and rewrites US.-prefixed codes — accepting either
+# here would fail downstream or desync the universe from the price snapshot.
+# So the whitelist rejects them up front with an explicit 400 instead of
+# pretending to support them. Full-string match, not a first-character check.
+_SYMBOL_PATTERN = re.compile(r"[A-Z0-9]{1,12}")
 
 
 def read_market_cross_section(
@@ -161,11 +168,13 @@ def _resolve_universe(
     basket: str | None,
     symbols: list[str] | None,
 ) -> tuple[tuple[str, ...], str | None, dict[str, str] | None]:
-    if symbols:
+    if symbols is not None and basket is not None:
+        raise _invalid_request("pass either basket or symbols, not both")
+    if symbols is not None:
         cleaned = []
         for raw in symbols:
             symbol = raw.upper().strip()
-            if not symbol or len(symbol) > 12 or not symbol.startswith(_SYMBOL_PATTERN):
+            if _SYMBOL_PATTERN.fullmatch(symbol) is None:
                 raise _invalid_request(f"invalid symbol {raw!r}")
             if symbol not in cleaned:
                 cleaned.append(symbol)

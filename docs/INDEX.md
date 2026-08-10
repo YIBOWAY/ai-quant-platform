@@ -181,6 +181,7 @@ rows；操作只看 [local-stack runbook](runbooks/agent-v0-2-local-stack.md)。
 | [guides/paper-trading.md](guides/paper-trading.md) | 模拟交易 `/paper-trading` |
 | [guides/position-map.md](guides/position-map.md) | 持仓地图 `/position-map` |
 | [guides/asia-radar.md](guides/asia-radar.md) | 亚洲雷达 `/asia-radar`（12 只 Futu 真实日线 ETF 代理；失败不回退 sample） |
+| [guides/market-cross-section.md](guides/market-cross-section.md) | 市场横截面 `/market-cross-section`（预设篮子热力图 + 排序表；严格 Futu，失败不回退 sample） |
 | [guides/ai-news.md](guides/ai-news.md) | AI 新闻研究流 `/ai-news`（双源 Facade：AI HOT 主源 + Horizon 热备；auto failover） |
 | [guides/hermes-sessions.md](guides/hermes-sessions.md) | Hermes official API 会话读取、密钥边界、故障排查与下一阶段连接架构 |
 | [design/paper_trading_position_map_redesign.md](design/paper_trading_position_map_redesign.md) | 模拟交易 + 持仓地图**重设计**（设计文档 + 分阶段实现计划） |
@@ -344,6 +345,7 @@ rows；操作只看 [local-stack runbook](runbooks/agent-v0-2-local-stack.md)。
 | `/options-tools` | 本地 AlphaGBM 风格期权工具箱。 |
 | `/options-buyside` | 买方期权策略助手。 |
 | `/asia-radar` | 亚洲雷达：12 只美国上市国家 ETF 的只读跨市场热力图/排名/动态 K 型。专用 API 强制 `provider=futu`，失败不回退 sample；Phase 1 不展示 PE/PB/ERP/拥挤度/个股风险名单。 |
+| `/market-cross-section` | 市场横截面：预设篮子（AI/半导体关注、美股板块 ETF，或 ≤16 只显式 symbol）的只读 YTD 热力图 + 排序表。与亚洲雷达同一 fail-closed Futu 契约与同口径指标；不共享宇宙。 |
 | `/ai-news` | AI 新闻研究流（AI HOT 主源 + Horizon 热备 Facade），含精选动态、关键词/分类/时间窗筛选、日报、原文链接与实际 provider/served_from。 |
 | `/polymarket` | 只读预测市场研究。 |
 | `/agent-studio` | 过渡期只读候选池检查；展示源码与审计证据，不再提供平台 LLM task 或批准/拒绝控件，并引导返回 Hermes。 |
