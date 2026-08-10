@@ -5,7 +5,7 @@ migration, readiness, service restart, candidate E2E, and database restore.
 The connector runbook covers connector mechanics only and must not duplicate
 this sequence.
 
-The long-running local stack has five independently managed LaunchAgents:
+The long-running local stack has six independently managed LaunchAgents:
 
 - `ai.hermes.gateway` — official Hermes API on `127.0.0.1:8642`;
 - `com.aiquant.backend` — Platform API on `127.0.0.1:8765`;
@@ -13,7 +13,9 @@ The long-running local stack has five independently managed LaunchAgents:
 - `com.aiquant.agent-v02-connector` — installed separately and kept in
   explicit `reconcile_only` unless a bounded candidate/release window is ready;
 - `com.aiquant.factor-automation` — five-minute, dual-Flag, `paper_only`
-  automation and sleeve-maintenance driver.
+  automation and sleeve-maintenance driver;
+- `com.aiquant.asia-radar-refresh` — daily, read-only Asia Radar cache/snapshot
+  refresh, independent of D-33 qualification and execution.
 
 This stack still does not install the optional legacy manual-sleeve schedulers.
 The D-33 driver acts only on `automation_managed` sleeves; its semantic runbook
@@ -40,8 +42,8 @@ run the production frontend build before installing/reloading the jobs. Use
 2. validates the ordinary backend command
    `python -m quant_system.cli serve --host 127.0.0.1 --port 8765`;
 3. runs `npm --prefix src/frontend run build` and serves the production build;
-4. installs the Hermes, backend, frontend, connector, and factor-automation
-   user LaunchAgents;
+4. installs the Hermes, backend, frontend, connector, factor-automation, and
+   Asia Radar refresh user LaunchAgents;
 5. requires the prior Hermes PID and port to remain quiescent before replacement,
    then waits for PostgreSQL and all three HTTP ports to become ready.
 
@@ -53,11 +55,15 @@ It does not enable real trading: `live_trading_enabled=false` and
 `kill_switch=true` remain independent hard boundaries. Startup never applies a
 database migration. Migration 029 was applied once on 2026-08-10 after backup
 and isolated restore rehearsal. It is the append-only automatic
-promote/demote/daily-quota authority and must not be replayed. D-33 flags grant
-only machine-reviewed `paper_only` land and never authorize a candidate/release
-or live trading.
+promote/demote/daily-quota authority and must not be replayed. D-33 source flags
+default off; the inspected owner runtime enabled all four on 2026-08-10 after
+full acceptance. They grant only machine-reviewed `paper_only` land and never
+authorize a candidate/release or live trading.
 
-## Current source and live boundary
+## Historical source and live boundary (2026-07-31)
+
+The snapshot below is retained as dated evidence and is superseded operationally
+by the 2026-08-10 everyday-operation and migration statements above.
 
 Read-only inspection on 2026-07-31 established this narrow snapshot:
 

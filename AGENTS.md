@@ -54,16 +54,17 @@ data/                     Local cache, fixtures, generated research outputs.
   `/Users/sunyibo/programs/Hermes-quant-agent`.
 - **Current local operations snapshot (2026-08-09):** normal Mac startup is
   `bash scripts/local_mac_stack.sh start`. It owns Docker readiness, the
-  production frontend build, and five user LaunchAgents (Hermes, backend,
-  frontend, connector, factor automation). Do not bind service lifetime to an
+  production frontend build, and six user LaunchAgents (Hermes, backend,
+  frontend, connector, factor automation, Asia Radar refresh). Do not bind service lifetime to an
   AI-tool terminal.
   Hermes replacement requires a stable old-PID/port quiescence window.
   Local trust bypasses identity ceremony only; trust cookies are mode-bound,
   readiness reports `admission_mode=local_trust` without candidate identity,
   while `live_trading_enabled=false`, `kill_switch=true`, migration authority,
   and manual live gates remain independent. D-33 factor automation is a
-  separate, default-OFF dual-Flag path and may create only `paper_only`
-  qualifications; it cannot grant live eligibility.
+  separate, source-default-OFF dual-Flag path and may create only `paper_only`
+  qualifications; the inspected owner runtime enabled all four flags on
+  2026-08-10 after full acceptance, and still cannot grant live eligibility.
 - The only Platform operations authority for the Agent v0.2 local stack is
   [`docs/runbooks/agent-v0-2-local-stack.md`](docs/runbooks/agent-v0-2-local-stack.md).
   Other docs may explain a component, but must link there instead of copying a

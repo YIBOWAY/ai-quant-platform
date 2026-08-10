@@ -24,11 +24,14 @@ In solo-owner trust mode the runtime reports the distinct
 D-33 adds a separate dual-Flag path for verified paper research. It can machine
 review and locally ff-land only `promotion_scope=paper_only`, admit a bounded
 automatic sleeve, and run its paper signal/execution cycle. The live registry
-rejects those factors; GitHub is never auto-pushed. See the HQA
+rejects those factors; GitHub is never auto-pushed. Its source defaults are off;
+the inspected owner runtime enabled all four flags on 2026-08-10 after full
+acceptance. See the HQA
 `/Users/sunyibo/programs/Hermes-quant-agent/docs/runbooks/full-automation-paper.md`.
 
 The normal local runtime is a persistent macOS stack: PostgreSQL in Docker plus
-Hermes, backend, frontend, connector, and factor-automation LaunchAgents. It is not
+Hermes, backend, frontend, connector, factor-automation, and Asia Radar refresh
+LaunchAgents. It is not
 owned by a Codex, Claude Code, or terminal process. Historical migration and
 candidate windows remain evidence only; the sole migration, readiness,
 restart, E2E, and restore authority is the
@@ -77,7 +80,7 @@ bash scripts/local_mac_stack.sh status
 
 `start` opens Docker Desktop when needed, starts the existing
 `quantplatform-db` container, builds the Next.js production bundle, installs or
-refreshes the five user LaunchAgents, and waits for ports `8642`, `8765`, and
+refreshes the six user LaunchAgents, and waits for ports `8642`, `8765`, and
 `3001`. The services survive closing the terminal and switching between AI
 tools. Other supported operations are:
 
