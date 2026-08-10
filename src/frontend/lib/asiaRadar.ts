@@ -5,6 +5,30 @@ export type AsiaRadarCoverage = "proxy";
 export type AsiaRadarLeg = "winner" | "middle" | "laggard";
 export type AsiaRadarProvenance = "futu" | "futu_cache";
 
+export type AsiaRadarLocalIndexPoint = {
+  date: string;
+  close: number;
+  indexed_return_pct: number;
+};
+
+export type AsiaRadarLocalIndex = {
+  status: "available" | "unavailable";
+  index_symbol: string | null;
+  index_name_en: string | null;
+  index_name_zh: string | null;
+  currency: string | null;
+  timezone: string | null;
+  as_of: string | null;
+  provider: "futu" | null;
+  provenance: AsiaRadarProvenance | null;
+  fetched_at: string | null;
+  adjustment: string | null;
+  series: AsiaRadarLocalIndexPoint[];
+  reason_code: string | null;
+  reason: string | null;
+  provider_code: string | null;
+};
+
 export type AsiaRadarMarket = {
   market_id: string;
   name_en: string;
@@ -35,10 +59,11 @@ export type AsiaRadarMarket = {
     adjustment: "qfq";
     provenance: AsiaRadarProvenance;
   };
+  local_index: AsiaRadarLocalIndex;
 };
 
 export type AsiaRadarOverview = {
-  schema_version: "1.0" | "1.1";
+  schema_version: "1.0" | "1.1" | "1.2";
   provider: "futu";
   as_of: string;
   timezone: "America/New_York";

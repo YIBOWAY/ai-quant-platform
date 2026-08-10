@@ -88,7 +88,11 @@ def _contract_invalid(message: str) -> HistoricalPriceReadError:
     )
 
 
-def _normalize_request_symbols(symbols: list[str]) -> list[str]:
+def _normalize_request_symbols(
+    symbols: list[str],
+    *,
+    allow_local_markets: bool = False,
+) -> list[str]:
     if not symbols:
         raise _invalid_request("at least one --symbol is required")
     if len(symbols) > MAX_SYMBOLS:
@@ -100,7 +104,8 @@ def _normalize_request_symbols(symbols: list[str]) -> list[str]:
             raise _invalid_request("symbols must be strings")
         try:
             plain_symbol, _futu_symbol = FutuMarketDataProvider.normalize_symbol(
-                raw_symbol
+                raw_symbol,
+                allow_local_markets=allow_local_markets,
             )
         except FutuProviderError as exc:
             raise _invalid_request(exc.message) from exc
@@ -142,15 +147,24 @@ def read_historical_prices(
     adjustment: str = "qfq",
     provider_builder: ProviderBuilder = build_ohlcv_provider,
     cache: EquityBarCache | None = None,
+    allow_local_markets: bool = False,
 ) -> HistoricalPriceSnapshot:
-    """Read strict multi-symbol Futu QFQ history without storage fallback."""
+    """Read strict multi-symbol Futu QFQ history without storage fallback.
+
+    ``allow_local_markets`` is an explicit opt-in for read-only lanes that
+    need whitelisted local-market codes (HK./JP..). It is off by default so
+    every existing caller keeps the exact US-only contract.
+    """
     if provider != "futu":
         raise _invalid_request("historical prices require explicit provider=futu")
     if interval != "1d":
         raise _invalid_request("historical prices currently require interval=1d")
     if adjustment != "qfq":
         raise _invalid_request("historical prices currently require adjustment=qfq")
-    normalized_symbols = _normalize_request_symbols(symbols)
+    normalized_symbols = _normalize_request_symbols(
+        symbols,
+        allow_local_markets=allow_local_markets,
+    )
     start_date, end_date = _parse_window(start, end)
 
     if cache is not None:
@@ -186,8 +200,15 @@ def read_historical_prices(
         ) from exc
     if source != "futu" or getattr(active_provider, "provider_name", None) != "futu":
         raise _contract_invalid("explicit Futu provider resolved to a different source")
+    fetch_ohlcv = active_provider.fetch_ohlcv
+    if allow_local_markets:
+        fetch_ohlcv = getattr(active_provider, "fetch_local_market_ohlcv", None)
+        if not callable(fetch_ohlcv):
+            raise _contract_invalid(
+                "explicit Futu provider does not support local-market reads"
+            )
     try:
-        frame = active_provider.fetch_ohlcv(
+        frame = fetch_ohlcv(
             normalized_symbols,
             start=start,
             end=end,

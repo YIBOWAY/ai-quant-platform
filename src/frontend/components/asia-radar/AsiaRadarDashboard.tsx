@@ -5,6 +5,7 @@ import { AlertTriangle, BarChart3, Globe2, RefreshCw, TrendingUp } from "lucide-
 
 import {
   getAsiaRadarOverview,
+  type AsiaRadarLocalIndex,
   type AsiaRadarMarket,
   type AsiaRadarOverview,
 } from "@/lib/asiaRadar";
@@ -43,7 +44,21 @@ const copy = {
     index: "Index",
     etfProxy: "ETF proxy",
     drivers: "Leading drivers",
-    indexEmpty: "Index data is not connected in Phase 1. This tab intentionally contains no substitute series.",
+    localIndex: "Local index",
+    localSession: "local trading day",
+    windowReturn: "Window return",
+    sessions: "sessions",
+    indexNote:
+      "Display-only: each lane keeps its own currency and trading calendar. The local index is never blended into the USD ETF proxy metrics.",
+    indexPendingTitle: "Local index not connected",
+    indexErrorTitle: "Local index temporarily unavailable",
+    indexErrorHint: "No substitute curve was used; the ETF proxy tab is unaffected.",
+    indexReasonPermission:
+      "The Futu account has no A-share index quote permission; CSI 300 (SH.000300) unlocks once it is enabled in Futu.",
+    indexReasonFormat:
+      "Futu OpenD does not support this market's index code format; a dedicated channel (TWSE / Twelve Data) is planned.",
+    indexReasonChannel: "No verified local index channel for this market yet.",
+    indexReasonMissing: "Local index data was not loaded for this market.",
     driversEmpty: "Driver mapping is reserved for Phase 2. No stock weights or contribution figures are shown yet.",
     close: "Latest close",
     methodology: "Methodology",
@@ -81,7 +96,21 @@ const copy = {
     index: "指数",
     etfProxy: "ETF 代理",
     drivers: "龙头驱动",
-    indexEmpty: "Phase 1 尚未接入指数数据，本页签有意保持为空，不以代理曲线冒充指数。",
+    localIndex: "本地指数",
+    localSession: "本地交易日",
+    windowReturn: "区间收益",
+    sessions: "个交易日",
+    indexNote:
+      "仅作展示对照：两条序列各自使用本地币种与本地交易日历，指数不与美元 ETF 代理混合计算任何指标。",
+    indexPendingTitle: "本地指数待接入",
+    indexErrorTitle: "本地指数暂不可用",
+    indexErrorHint: "未用任何替代曲线冒充指数；ETF 代理页签不受影响。",
+    indexReasonPermission:
+      "Futu 账户未开通 A 股指数行情权限；开通后可接入沪深300（SH.000300）。",
+    indexReasonFormat:
+      "Futu OpenD 不支持该市场的指数代码格式，待接入专用通道（TWSE / Twelve Data）。",
+    indexReasonChannel: "该市场指数暂无已验证的本地数据通道。",
+    indexReasonMissing: "该市场的本地指数数据未加载。",
     driversEmpty: "龙头映射留待 Phase 2。本页暂不展示个股权重或贡献数字。",
     close: "最新收盘",
     methodology: "口径",
@@ -505,7 +534,7 @@ function MarketDetail({
         ))}
       </div>
       <div className="min-h-36 py-5" role="tabpanel">
-        {tab === "index" ? <EmptyDetail message={text.indexEmpty} /> : null}
+        {tab === "index" ? <LocalIndexPanel locale={locale} market={market} /> : null}
         {tab === "drivers" ? <EmptyDetail message={text.driversEmpty} /> : null}
         {tab === "proxy" ? (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
@@ -532,6 +561,222 @@ function MarketDetail({
         </ul>
       </details>
     </section>
+  );
+}
+
+export function LocalIndexPanel({
+  locale,
+  market,
+}: {
+  locale: Locale;
+  market: AsiaRadarMarket;
+}) {
+  const text = copy[locale];
+  const index = market.local_index;
+  if (!index) {
+    return (
+      <PendingIndexDetail
+        locale={locale}
+        name={null}
+        reason={text.indexReasonMissing}
+      />
+    );
+  }
+  if (index.status !== "available") {
+    const name = locale === "zh" ? index.index_name_zh : index.index_name_en;
+    if (index.reason_code === "provider_error") {
+      return (
+        <div
+          className="rounded-xl border border-accent-danger/40 bg-bg-base/40 p-5"
+          data-local-index-state="provider_error"
+        >
+          <div className="flex items-center gap-2 text-sm font-semibold text-accent-danger">
+            <AlertTriangle size={15} /> {text.indexErrorTitle}
+          </div>
+          <div className="mt-2 font-mono text-xs text-text-secondary">
+            {name} · {index.index_symbol}
+          </div>
+          <p className="mt-2 font-mono text-xs text-accent-danger">{index.reason}</p>
+          <p className="mt-2 text-xs text-text-secondary">{text.indexErrorHint}</p>
+        </div>
+      );
+    }
+    return (
+      <PendingIndexDetail
+        locale={locale}
+        name={name}
+        reason={localIndexReasonCopy(text, index)}
+      />
+    );
+  }
+
+  const series = index.series;
+  const lastPoint = series.at(-1);
+  const indexName = locale === "zh" ? index.index_name_zh : index.index_name_en;
+  const etfLast = market.history.at(-1);
+  return (
+    <div data-local-index-state="available">
+      <div className="flex flex-wrap items-center gap-2 text-[10px]">
+        <span className="rounded-full border border-warning/40 bg-warning/10 px-2.5 py-1 font-semibold text-warning">
+          {text.localIndex}
+        </span>
+        <span className="rounded-full border border-border-subtle px-2.5 py-1 font-mono text-text-secondary">
+          {index.index_symbol} · {index.currency}
+        </span>
+        <span className="rounded-full border border-border-subtle px-2.5 py-1 font-mono text-text-secondary">
+          {text.localSession} · {index.timezone}
+        </span>
+        {index.provenance ? (
+          <span className="rounded-full border border-border-subtle px-2.5 py-1 font-mono text-text-secondary">
+            {index.provenance === "futu_cache" ? text.cached : text.live}
+          </span>
+        ) : null}
+        <span className="font-mono text-text-secondary">
+          {text.asOf} {index.as_of}
+        </span>
+      </div>
+      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        <div className="rounded-xl border border-border-subtle bg-bg-base/40 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+            <span className="font-semibold text-text-primary">
+              {indexName} · {index.index_symbol}
+            </span>
+            <span className="font-mono text-warning">
+              {text.localIndex} · {index.currency}
+            </span>
+          </div>
+          <Sparkline
+            label={`${indexName} ${text.localIndex}`}
+            stroke="var(--color-warning)"
+            values={series.map((point) => point.indexed_return_pct)}
+          />
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 font-mono text-xs text-text-secondary">
+            <span>
+              {text.close}: {lastPoint ? `${lastPoint.close.toFixed(2)} ${index.currency}` : "—"}
+            </span>
+            <ReturnValue locale={locale} value={lastPoint?.indexed_return_pct ?? null} />
+          </div>
+          <div className="mt-1 font-mono text-[10px] text-text-secondary">
+            {series.length} {text.sessions} · {text.localSession} · {index.timezone}
+          </div>
+        </div>
+        <div className="rounded-xl border border-border-subtle bg-bg-base/40 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+            <span className="font-semibold text-text-primary">
+              {market.symbol} · {text.etfProxy}
+            </span>
+            <span className="font-mono text-info">{text.etfProxy} · USD</span>
+          </div>
+          <Sparkline
+            label={`${market.symbol} ${text.etfProxy}`}
+            stroke="var(--color-info)"
+            values={market.history.map((point) => point.indexed_return_pct)}
+          />
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 font-mono text-xs text-text-secondary">
+            <span>
+              {text.close}: {etfLast ? `${etfLast.close.toFixed(2)} USD` : "—"}
+            </span>
+            <ReturnValue locale={locale} value={etfLast?.indexed_return_pct ?? null} />
+          </div>
+          <div className="mt-1 font-mono text-[10px] text-text-secondary">
+            {market.history.length} {text.sessions} · {market.meta.timezone}
+          </div>
+        </div>
+      </div>
+      <p className="mt-3 text-xs text-text-secondary">{text.indexNote}</p>
+    </div>
+  );
+}
+
+function ReturnValue({
+  locale,
+  value,
+}: {
+  locale: Locale;
+  value: number | null;
+}) {
+  const text = copy[locale];
+  if (value == null) return <span>{text.windowReturn} —</span>;
+  return (
+    <span className={value >= 0 ? "text-accent-success" : "text-accent-danger"}>
+      {text.windowReturn} {formatPct(value)}
+    </span>
+  );
+}
+
+function PendingIndexDetail({
+  locale,
+  name,
+  reason,
+}: {
+  locale: Locale;
+  name: string | null;
+  reason: string;
+}) {
+  const text = copy[locale];
+  return (
+    <div
+      className="rounded-xl border border-dashed border-border-subtle p-5"
+      data-local-index-state="pending"
+    >
+      <div className="text-sm font-semibold text-text-secondary">
+        {text.indexPendingTitle}
+      </div>
+      {name ? (
+        <div className="mt-1 font-mono text-xs text-text-secondary">{name}</div>
+      ) : null}
+      <p className="mt-2 text-sm text-text-secondary">{reason}</p>
+    </div>
+  );
+}
+
+function localIndexReasonCopy(
+  text: (typeof copy)[Locale],
+  index: AsiaRadarLocalIndex,
+): string {
+  switch (index.reason_code) {
+    case "permission_not_granted":
+      return text.indexReasonPermission;
+    case "market_format_unsupported":
+      return text.indexReasonFormat;
+    case "no_verified_channel":
+      return text.indexReasonChannel;
+    default:
+      return index.reason ?? text.indexReasonMissing;
+  }
+}
+
+function Sparkline({
+  label,
+  stroke,
+  values,
+}: {
+  label: string;
+  stroke: string;
+  values: number[];
+}) {
+  if (!values.length) return null;
+  const minimum = Math.min(0, ...values);
+  const maximum = Math.max(0, ...values);
+  const points = polylinePoints(values, minimum, maximum);
+  return (
+    <svg
+      aria-label={label}
+      className="mt-3 h-[150px] w-full overflow-visible rounded-xl bg-bg-base/50"
+      data-local-index-chart
+      role="img"
+      viewBox="0 0 720 240"
+    >
+      <line
+        stroke="currentColor"
+        strokeOpacity={0.15}
+        x1={24}
+        x2={696}
+        y1={120}
+        y2={120}
+      />
+      <polyline fill="none" points={points} stroke={stroke} strokeWidth={3} />
+    </svg>
   );
 }
 

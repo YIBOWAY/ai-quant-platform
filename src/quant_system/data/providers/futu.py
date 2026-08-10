@@ -58,6 +58,12 @@ def _default_sdk_loader() -> SdkBindings:
 
 class FutuMarketDataProvider:
     provider_name = "futu"
+    # Read-only whitelist of non-US Futu code prefixes verified against the
+    # local OpenD (2026-08-11): HK. covers Hong Kong indices/stocks, JP.. is
+    # the double-dot Japan index format (e.g. JP..N225). SH/SZ/KS/TW stay
+    # rejected. Acceptance is opt-in via normalize_symbol/fetch callers so the
+    # generic US-only paths keep their exact historical behavior.
+    local_market_prefixes: ClassVar[tuple[str, ...]] = ("HK.", "JP..")
     snapshot_batch_size = 400
     option_chain_max_span_days = 30
     option_quotes_cache_ttl_seconds = 900.0
@@ -106,6 +112,46 @@ class FutuMarketDataProvider:
         end: str,
         interval: str = "1d",
     ) -> pd.DataFrame:
+        return self._fetch_ohlcv(
+            symbols,
+            start=start,
+            end=end,
+            interval=interval,
+            allow_local_markets=False,
+        )
+
+    def fetch_local_market_ohlcv(
+        self,
+        symbols: list[str],
+        *,
+        start: str,
+        end: str,
+        interval: str = "1d",
+    ) -> pd.DataFrame:
+        """Fetch daily bars for whitelisted local-market codes (HK./JP..).
+
+        Read-only extension used by the Asia Radar local-index lane. US
+        tickers keep working here, but the generic ``fetch_ohlcv`` entry point
+        stays US-only so existing callers (including ``/ohlcv``) are
+        bit-for-bit unchanged.
+        """
+        return self._fetch_ohlcv(
+            symbols,
+            start=start,
+            end=end,
+            interval=interval,
+            allow_local_markets=True,
+        )
+
+    def _fetch_ohlcv(
+        self,
+        symbols: list[str],
+        *,
+        start: str,
+        end: str,
+        interval: str,
+        allow_local_markets: bool,
+    ) -> pd.DataFrame:
         if not symbols:
             raise FutuProviderError("invalid_symbol", "at least one symbol is required")
 
@@ -117,7 +163,10 @@ class FutuMarketDataProvider:
         try:
             rows: list[dict[str, object]] = []
             for symbol in symbols:
-                plain_symbol, futu_symbol = self.normalize_symbol(symbol)
+                plain_symbol, futu_symbol = self.normalize_symbol(
+                    symbol,
+                    allow_local_markets=allow_local_markets,
+                )
                 rows.extend(
                     self._fetch_symbol_rows(
                         context=context,
@@ -356,7 +405,11 @@ class FutuMarketDataProvider:
         cls._option_quotes_range_cache.clear()
 
     @staticmethod
-    def normalize_symbol(symbol: str) -> tuple[str, str]:
+    def normalize_symbol(
+        symbol: str,
+        *,
+        allow_local_markets: bool = False,
+    ) -> tuple[str, str]:
         normalized = symbol.upper().strip()
         if not normalized:
             raise FutuProviderError("invalid_symbol", "symbol must not be empty")
@@ -365,6 +418,18 @@ class FutuMarketDataProvider:
             if not plain_symbol:
                 raise FutuProviderError("invalid_symbol", f"invalid Futu US symbol: {symbol}")
             return plain_symbol, normalized
+        if allow_local_markets:
+            for prefix in FutuMarketDataProvider.local_market_prefixes:
+                if normalized.startswith(prefix):
+                    local_code = normalized[len(prefix) :]
+                    if not local_code or "." in local_code:
+                        raise FutuProviderError(
+                            "invalid_symbol",
+                            f"invalid Futu local market symbol: {symbol}",
+                        )
+                    # Keep the market prefix in the plain symbol so cache keys
+                    # and snapshot rows can never collide with US tickers.
+                    return normalized, normalized
         if "." in normalized:
             raise FutuProviderError(
                 "invalid_symbol",

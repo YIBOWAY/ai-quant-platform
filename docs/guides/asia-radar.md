@@ -62,3 +62,20 @@ curl -fsS 'http://127.0.0.1:8765/api/asia-radar/overview?provider=futu'
 
 若页面显示 provider 错误，应恢复 OpenD 后重试；不要用 sample 数据“修复”页面。
 
+## 本地指数页签（Phase 2 Slice 2A，2026-08-11 起）
+
+市场详情的「指数」页签对部分市场展示**真实本地指数**，与 ETF 代理并排对照：
+
+- 中国香港 → 恒生指数 `HK.800000`（HKD，Asia/Hong_Kong）；日本 → 日经225
+  `JP..N225`（JPY，Asia/Tokyo）。两者均来自本机 Futu OpenD 真实日线（经
+  `normalize_symbol(allow_local_markets=True)` opt-in 通道；通用 `/ohlcv` 与美股
+  路径仍拒绝这两类代码）。
+- 其余 10 个市场保持「待接入」空态并如实标注原因：A 股指数权限未开通
+  （`permission_not_granted`，在 Futu 侧开通后可解锁沪深300）、Futu 不支持
+  韩/台市场格式（`market_format_unsupported`）、其余无已验证通道
+  （`no_verified_channel`）。**不会**用 ETF 代理曲线冒充指数。
+- 指数只做展示对照：本地币种、本地交易日历（HK 16:00 / TYO 15:00 收盘纪律），
+  独立 as_of；不与 ETF 代理（美元、美股日历）混合计算任何指标。指数失败只会
+  让该市场页签显示不可用，不影响 12 ETF 主宇宙。响应 schema_version 为 1.2，
+  `local_index` overlay 挂在每个 market 上。
+

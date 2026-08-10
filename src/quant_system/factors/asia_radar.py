@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
@@ -13,8 +14,10 @@ from quant_system.data.equity_bar_cache import EquityBarCache
 from quant_system.data.price_history import (
     HistoricalPriceReadError,
     HistoricalPriceSnapshot,
+    ProviderBuilder,
     read_historical_prices,
 )
+from quant_system.data.provider_factory import build_ohlcv_provider
 
 ASIA_ETF_SYMBOLS = (
     "EWY",
@@ -56,11 +59,118 @@ METHODOLOGY = {
 }
 
 TIMEZONE = "America/New_York"
-_NEW_YORK = ZoneInfo(TIMEZONE)
 _SESSION_CLOSE = time(16, 0)
 _MIN_HISTORY_BARS = 64
 _SPARKLINE_BARS = 90
 _LOOKBACK_CALENDAR_DAYS = 419
+
+
+@dataclass(frozen=True)
+class LocalIndexSpec:
+    """Whitelisted local index verified against the local Futu OpenD."""
+
+    market_id: str
+    symbol: str
+    name_en: str
+    name_zh: str
+    currency: str
+    timezone: str
+    session_close: time
+
+
+# Slice 2A: only Hong Kong and Japan have verified local-index channels
+# (2026-08-11 OpenD probe). Local indices are a display-only comparison lane:
+# they are never blended into the USD ETF proxy metrics.
+LOCAL_INDEX_SPECS: tuple[LocalIndexSpec, ...] = (
+    LocalIndexSpec(
+        market_id="hong-kong",
+        symbol="HK.800000",
+        name_en="Hang Seng Index",
+        name_zh="恒生指数",
+        currency="HKD",
+        timezone="Asia/Hong_Kong",
+        session_close=time(16, 0),
+    ),
+    LocalIndexSpec(
+        market_id="japan",
+        symbol="JP..N225",
+        name_en="Nikkei 225",
+        name_zh="日经 225 指数",
+        currency="JPY",
+        timezone="Asia/Tokyo",
+        session_close=time(15, 0),
+    ),
+)
+
+# Honest pending state for the other ten markets:
+# (reason_code, reason, intended index name en/zh when one is known).
+LOCAL_INDEX_PENDING: dict[str, tuple[str, str, str | None, str | None]] = {
+    "china-a": (
+        "permission_not_granted",
+        "Futu account has no A-share index quote permission; "
+        "CSI 300 (SH.000300) unlocks once the permission is enabled in Futu.",
+        "CSI 300",
+        "沪深300",
+    ),
+    "south-korea": (
+        "market_format_unsupported",
+        "Futu OpenD does not support KS market codes; "
+        "KOSPI awaits a Twelve Data/KRX channel.",
+        "KOSPI",
+        "KOSPI 指数",
+    ),
+    "taiwan": (
+        "market_format_unsupported",
+        "Futu OpenD does not support TW market codes; "
+        "TAIEX awaits the keyless TWSE channel (Slice 2B).",
+        "TAIEX",
+        "台湾加权指数",
+    ),
+    "india": (
+        "no_verified_channel",
+        "No verified local index channel for this market yet.",
+        None,
+        None,
+    ),
+    "indonesia": (
+        "no_verified_channel",
+        "No verified local index channel for this market yet.",
+        None,
+        None,
+    ),
+    "singapore": (
+        "no_verified_channel",
+        "No verified local index channel for this market yet.",
+        None,
+        None,
+    ),
+    "thailand": (
+        "no_verified_channel",
+        "No verified local index channel for this market yet.",
+        None,
+        None,
+    ),
+    "malaysia": (
+        "no_verified_channel",
+        "No verified local index channel for this market yet.",
+        None,
+        None,
+    ),
+    "australia": (
+        "no_verified_channel",
+        "No verified local index channel for this market yet.",
+        None,
+        None,
+    ),
+    "philippines": (
+        "no_verified_channel",
+        "No verified local index channel for this market yet.",
+        None,
+        None,
+    ),
+}
+
+LocalIndexOverlayReader = Any  # callable(settings=, now=, cache=) -> dict[str, dict]
 
 
 def read_asia_radar_summary(
@@ -140,10 +250,14 @@ def read_asia_radar_overview(
     now: datetime | None = None,
     cache: EquityBarCache | None | bool = True,
     cache_path: str | Path | None = None,
+    local_index_reader: LocalIndexOverlayReader | None = None,
 ) -> dict[str, Any]:
     """Read the fixed Asia ETF universe from Futu (with optional bar cache).
 
-    Calculates Phase 1 metrics.
+    Calculates Phase 1 metrics, then attaches per-market local-index overlays
+    (Slice 2A). Overlay failures degrade only the affected market's
+    ``local_index`` field; the ETF main path keeps its existing fail-closed
+    503 contract.
     """
     clock = now or datetime.now(tz=UTC)
     if clock.tzinfo is None:
@@ -162,7 +276,193 @@ def read_asia_radar_overview(
         adjustment="qfq",
         cache=active_cache,
     )
-    return build_asia_radar_overview(snapshot, session_end=active_day)
+    overview = build_asia_radar_overview(snapshot, session_end=active_day)
+    overlay_reader = local_index_reader or read_local_index_overlays
+    try:
+        overlays = overlay_reader(settings=settings, now=clock, cache=active_cache)
+    except Exception:  # noqa: BLE001 - index lane must never 503 the ETF main path
+        overlays = {}
+    return attach_local_index_overlays(overview, overlays)
+
+
+def read_local_index_overlays(
+    *,
+    settings: Settings,
+    now: datetime | None = None,
+    cache: EquityBarCache | None = None,
+    provider_builder: ProviderBuilder = build_ohlcv_provider,
+) -> dict[str, dict[str, Any]]:
+    """Read whitelisted local indices (HK/JP) for the Asia Radar index tab.
+
+    Display-only lane: every one of the 12 markets gets an explicit overlay —
+    available ones carry real Futu series, the rest an honest pending or
+    provider-error reason. This reader never raises.
+    """
+    clock = now or datetime.now(tz=UTC)
+    if clock.tzinfo is None:
+        clock = clock.replace(tzinfo=UTC)
+    specs = {spec.market_id: spec for spec in LOCAL_INDEX_SPECS}
+    overlays: dict[str, dict[str, Any]] = {}
+    for market_id, _name_en, _name_zh in _MARKETS.values():
+        spec = specs.get(market_id)
+        if spec is None:
+            overlays[market_id] = _pending_local_index_overlay(market_id)
+            continue
+        overlays[market_id] = _read_local_index_overlay(
+            spec,
+            settings=settings,
+            clock=clock,
+            cache=cache,
+            provider_builder=provider_builder,
+        )
+    return overlays
+
+
+def attach_local_index_overlays(
+    overview: dict[str, Any],
+    overlays: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    """Attach local-index overlays after ETF metrics are computed.
+
+    This is the single integration point between the two lanes: index series
+    never enter ``build_asia_radar_overview`` (returns/volatility/drawdown/
+    K-shape), so no cross-currency or cross-calendar metric can be mixed.
+    """
+    for market in overview.get("markets", []):
+        overlay = overlays.get(market.get("market_id"))
+        if overlay is None:
+            overlay = _local_index_overlay_base()
+            overlay.update(
+                {
+                    "reason_code": "overlay_missing",
+                    "reason": "Local index overlay was not loaded for this market.",
+                }
+            )
+        market["local_index"] = overlay
+    overview["schema_version"] = "1.2"
+    return overview
+
+
+def _read_local_index_overlay(
+    spec: LocalIndexSpec,
+    *,
+    settings: Settings,
+    clock: datetime,
+    cache: EquityBarCache | None,
+    provider_builder: ProviderBuilder,
+) -> dict[str, Any]:
+    end_day = _last_completed_local_session(clock, spec.timezone, spec.session_close)
+    start_day = end_day - timedelta(days=_LOOKBACK_CALENDAR_DAYS)
+    try:
+        snapshot = read_historical_prices(
+            settings=settings,
+            symbols=[spec.symbol],
+            start=start_day.isoformat(),
+            end=end_day.isoformat(),
+            provider="futu",
+            interval="1d",
+            adjustment="qfq",
+            provider_builder=provider_builder,
+            cache=cache,
+            allow_local_markets=True,
+        )
+    except HistoricalPriceReadError as exc:
+        return _error_local_index_overlay(
+            spec,
+            reason=exc.message,
+            provider_code=exc.provider_code or exc.code,
+        )
+    except Exception as exc:  # noqa: BLE001 - overlay lane must never break the ETF path
+        return _error_local_index_overlay(
+            spec,
+            reason=f"local index read failed: {type(exc).__name__}",
+            provider_code=type(exc).__name__,
+        )
+    rows = snapshot.series[0]["rows"]
+    display = rows[-_SPARKLINE_BARS:]
+    first_close = float(display[0]["close"])
+    series = [
+        {
+            "date": row["date"],
+            "close": round(float(row["close"]), 6),
+            "indexed_return_pct": _round_pct(float(row["close"]) / first_close - 1.0),
+        }
+        for row in display
+    ]
+    return {
+        "status": "available",
+        "index_symbol": spec.symbol,
+        "index_name_en": spec.name_en,
+        "index_name_zh": spec.name_zh,
+        "currency": spec.currency,
+        "timezone": spec.timezone,
+        "as_of": rows[-1]["date"],
+        "provider": "futu",
+        "provenance": "futu_cache" if snapshot.source == "futu_cache" else "futu",
+        "fetched_at": snapshot.fetched_at,
+        "adjustment": snapshot.adjustment,
+        "series": series,
+        "reason_code": None,
+        "reason": None,
+        "provider_code": None,
+    }
+
+
+def _local_index_overlay_base() -> dict[str, Any]:
+    return {
+        "status": "unavailable",
+        "index_symbol": None,
+        "index_name_en": None,
+        "index_name_zh": None,
+        "currency": None,
+        "timezone": None,
+        "as_of": None,
+        "provider": None,
+        "provenance": None,
+        "fetched_at": None,
+        "adjustment": None,
+        "series": [],
+        "reason_code": None,
+        "reason": None,
+        "provider_code": None,
+    }
+
+
+def _pending_local_index_overlay(market_id: str) -> dict[str, Any]:
+    reason_code, reason, name_en, name_zh = LOCAL_INDEX_PENDING[market_id]
+    overlay = _local_index_overlay_base()
+    overlay.update(
+        {
+            "index_name_en": name_en,
+            "index_name_zh": name_zh,
+            "reason_code": reason_code,
+            "reason": reason,
+        }
+    )
+    return overlay
+
+
+def _error_local_index_overlay(
+    spec: LocalIndexSpec,
+    *,
+    reason: str,
+    provider_code: str,
+) -> dict[str, Any]:
+    overlay = _local_index_overlay_base()
+    overlay.update(
+        {
+            "index_symbol": spec.symbol,
+            "index_name_en": spec.name_en,
+            "index_name_zh": spec.name_zh,
+            "currency": spec.currency,
+            "timezone": spec.timezone,
+            "provider": "futu",
+            "reason_code": "provider_error",
+            "reason": reason,
+            "provider_code": provider_code,
+        }
+    )
+    return overlay
 
 
 def build_asia_radar_overview(
@@ -242,9 +542,17 @@ def _resolve_cache(
 
 
 def _last_completed_us_session(now: datetime) -> date:
-    local = now.astimezone(_NEW_YORK)
+    return _last_completed_local_session(now, TIMEZONE, _SESSION_CLOSE)
+
+
+def _last_completed_local_session(
+    now: datetime,
+    timezone: str,
+    session_close: time,
+) -> date:
+    local = now.astimezone(ZoneInfo(timezone))
     candidate = local.date()
-    if local.weekday() >= 5 or local.time() < _SESSION_CLOSE:
+    if local.weekday() >= 5 or local.time() < session_close:
         candidate -= timedelta(days=1)
     while candidate.weekday() >= 5:
         candidate -= timedelta(days=1)

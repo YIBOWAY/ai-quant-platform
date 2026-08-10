@@ -80,6 +80,49 @@ def test_futu_provider_rejects_non_us_symbol_format() -> None:
         FutuMarketDataProvider.normalize_symbol("HK.00700")
 
 
+def test_futu_provider_local_markets_stay_rejected_by_default() -> None:
+    # The US-only default is the generic-path contract: /ohlcv and every
+    # existing caller keep rejecting local-market codes bit-for-bit.
+    for code in ("HK.800000", "JP..N225", "hk.800700"):
+        with pytest.raises(FutuProviderError, match="expects plain US tickers"):
+            FutuMarketDataProvider.normalize_symbol(code)
+
+
+def test_futu_provider_normalize_accepts_whitelisted_local_market_codes() -> None:
+    assert FutuMarketDataProvider.normalize_symbol(
+        "HK.800000", allow_local_markets=True
+    ) == ("HK.800000", "HK.800000")
+    # JP indices use the double-dot Futu format and pass through untouched.
+    assert FutuMarketDataProvider.normalize_symbol(
+        "JP..N225", allow_local_markets=True
+    ) == ("JP..N225", "JP..N225")
+    assert FutuMarketDataProvider.normalize_symbol(
+        "hk.800700", allow_local_markets=True
+    ) == ("HK.800700", "HK.800700")
+    # US behavior is identical under the opt-in flag.
+    assert FutuMarketDataProvider.normalize_symbol(
+        "aapl", allow_local_markets=True
+    ) == ("AAPL", "US.AAPL")
+    assert FutuMarketDataProvider.normalize_symbol(
+        "US.NVDA", allow_local_markets=True
+    ) == ("NVDA", "US.NVDA")
+
+
+def test_futu_provider_normalize_rejects_non_whitelisted_local_codes() -> None:
+    for code in (
+        "SH.000300",  # A-share index: no permission, not whitelisted
+        "SZ.399001",
+        "KS.005930",  # OpenD does not support the KS market format
+        "TW.2330",  # OpenD does not support the TW market format
+        "JP.N225",  # single-dot JP is not the verified index format
+        "JP..",  # empty local code
+        "HK.",  # empty local code
+        "JP..N225.X",  # extra dotted segment
+    ):
+        with pytest.raises(FutuProviderError):
+            FutuMarketDataProvider.normalize_symbol(code, allow_local_markets=True)
+
+
 def test_futu_provider_converts_history_kline_to_canonical_schema() -> None:
     data = pd.DataFrame(
         [
@@ -111,6 +154,47 @@ def test_futu_provider_converts_history_kline_to_canonical_schema() -> None:
     assert fake_context.calls[0]["autype"] == "QFQ"
     assert fake_context.calls[0]["session"] == "NONE"
     assert fake_context.closed is True
+
+
+def test_futu_provider_local_market_fetch_passes_double_dot_code_through() -> None:
+    data = pd.DataFrame(
+        [
+            {
+                "time_key": "2026-08-10 00:00:00",
+                "open": 39000.0,
+                "high": 39200.0,
+                "low": 38800.0,
+                "close": 39100.0,
+                "volume": 0,
+            }
+        ]
+    )
+    fake_context = _FakeContext([(0, data, None)])
+    provider = FutuMarketDataProvider(
+        context_factory=lambda host, port: fake_context,
+        sdk_loader=_sdk,
+    )
+
+    frame = provider.fetch_local_market_ohlcv(
+        ["JP..N225"], start="2026-08-10", end="2026-08-10"
+    )
+
+    assert fake_context.calls[0]["code"] == "JP..N225"
+    assert frame.loc[0, "symbol"] == "JP..N225"
+    assert frame.loc[0, "provider"] == "futu"
+    assert frame.loc[0, "price_adjustment"] == "qfq"
+
+
+def test_futu_provider_generic_fetch_still_rejects_local_market_codes() -> None:
+    fake_context = _FakeContext([])
+    provider = FutuMarketDataProvider(
+        context_factory=lambda host, port: fake_context,
+        sdk_loader=_sdk,
+    )
+
+    with pytest.raises(FutuProviderError, match="expects plain US tickers"):
+        provider.fetch_ohlcv(["HK.800000"], start="2026-08-10", end="2026-08-10")
+    assert fake_context.calls == []
 
 
 def test_futu_provider_constructor_does_not_create_option_cache(tmp_path) -> None:
