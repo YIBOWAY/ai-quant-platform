@@ -66,3 +66,43 @@ class AsiaRadarOverviewResponse(BaseModel):
     methodology: dict[str, str]
     markets: list[AsiaRadarMarketResponse]
     k_shape: AsiaRadarKShapeResponse
+
+
+class AsiaRadarMarketSummaryResponse(BaseModel):
+    symbol: str
+    market_id: str
+    name_en: str
+    name_zh: str
+    rank: int
+    k_leg: Literal["winner", "middle", "laggard"]
+    ytd_pct: float
+    week_pct: float
+    month_pct: float
+    volatility_pct: float
+    max_drawdown_pct: float
+    as_of: str
+
+
+class AsiaRadarSummaryResponse(BaseModel):
+    """Lightweight, read-only summary for daily-brief / notification surfaces.
+
+    Same fail-closed contract as the overview: no sample data, no estimated
+    valuation metrics, no narrative generation.
+    """
+
+    schema_version: Literal["1.1"]
+    provider: Literal["futu"]
+    as_of: str
+    timezone: Literal["America/New_York"]
+    fetched_at: str
+    provenance: Literal["futu", "futu_cache"]
+    status: Literal["available", "unavailable"]
+    market_count: int
+    winner_symbols: list[str]
+    laggard_symbols: list[str]
+    spread_pct: float | None
+    top_ytd_symbol: str | None
+    top_ytd_pct: float | None
+    bottom_ytd_symbol: str | None
+    bottom_ytd_pct: float | None
+    markets: list[AsiaRadarMarketSummaryResponse]

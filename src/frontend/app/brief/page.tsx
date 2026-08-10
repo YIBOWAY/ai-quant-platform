@@ -45,6 +45,7 @@ import {
   type BriefPerformanceRange,
 } from "@/lib/briefPerformance";
 import {
+  getCachedAsiaRadarSummary,
   getCachedBriefMarketDataHistory,
   getCachedBriefPaperAccount,
   getCachedBriefPaperAccountEquityCurve,
@@ -355,12 +356,38 @@ function _semisVsSoftwareNote(
     : `; software (IGV) outperformed semis (SOXX) by ${formatPercent(Math.abs(diff))}`;
 }
 
+function buildAsiaRadarNote(
+  envelope: { summary?: import("@/lib/asiaRadar").AsiaRadarSummary; apiError?: string },
+  locale: "en" | "zh",
+): string {
+  const zh = locale === "zh";
+  if (!envelope.summary || envelope.summary.status !== "available") {
+    return zh ? "亚洲雷达数据暂不可用。" : "Asia Radar is unavailable today.";
+  }
+  const summary = envelope.summary;
+  const top = summary.top_ytd_symbol;
+  const bottom = summary.bottom_ytd_symbol;
+  const spread = summary.spread_pct;
+  if (!top || !bottom || spread === null || spread === undefined) {
+    return zh
+      ? `亚洲雷达覆盖 ${summary.market_count} 个市场（截至 ${summary.as_of}）。`
+      : `Asia Radar covers ${summary.market_count} markets as of ${summary.as_of}.`;
+  }
+  const winners = summary.winner_symbols.join("/");
+  const laggards = summary.laggard_symbols.join("/");
+  if (zh) {
+    return `亚洲雷达（截至 ${summary.as_of}）：${winners} 领跑、${laggards} 落后，YTD 前三后三篮子分化 ${formatPercent(Math.abs(spread))}。`;
+  }
+  return `Asia Radar (as of ${summary.as_of}): ${winners} lead while ${laggards} lag, with a ${formatPercent(Math.abs(spread))} YTD spread between the top-three and bottom-three baskets.`;
+}
+
 function buildLede({
   text,
   equity,
   paperReturn,
   performanceLabel,
   marketNote,
+  asiaRadarNote,
   digestCount,
 }: {
   text: BriefCopy;
@@ -368,21 +395,23 @@ function buildLede({
   paperReturn: string;
   performanceLabel: string;
   marketNote: string;
+  asiaRadarNote: string;
   digestCount: number;
 }) {
   if (text === copy.zh) {
     return (
       <>
         今晨，模拟盘权益报 <strong>{equity}</strong>，{performanceLabel}收益{" "}
-        <strong>{paperReturn}</strong>；平台市场手记：{marketNote} 另整理{" "}
-        <strong>{formatCount(digestCount)}</strong> 条 AI 业内情报。
+        <strong>{paperReturn}</strong>；平台市场手记：{marketNote} {asiaRadarNote}{" "}
+        另整理 <strong>{formatCount(digestCount)}</strong> 条 AI 业内情报。
       </>
     );
   }
   return (
     <>
       This morning, paper equity prints at <strong>{equity}</strong> with a{" "}
-      <strong>{paperReturn}</strong> {performanceLabel} paper return; platform market note: {marketNote} It has set{" "}
+      <strong>{paperReturn}</strong> {performanceLabel} paper return; platform market note: {marketNote}{" "}
+      {asiaRadarNote} It has set{" "}
       <strong>{formatCount(digestCount)}</strong> AI intelligence items in type.
     </>
   );
@@ -394,6 +423,7 @@ function buildArchivedLede({
   paperReturn,
   performanceLabel,
   marketNote,
+  asiaRadarNote,
   digestCount,
 }: {
   locale: "en" | "zh";
@@ -401,12 +431,13 @@ function buildArchivedLede({
   paperReturn: string;
   performanceLabel: string;
   marketNote: string;
+  asiaRadarNote: string;
   digestCount: number;
 }) {
   if (locale === "zh") {
-    return `今晨，模拟盘权益报 ${equity}，${performanceLabel}收益 ${paperReturn}；平台市场手记：${marketNote} 另整理 ${formatCount(digestCount)} 条 AI 业内情报。`;
+    return `今晨，模拟盘权益报 ${equity}，${performanceLabel}收益 ${paperReturn}；平台市场手记：${marketNote} ${asiaRadarNote} 另整理 ${formatCount(digestCount)} 条 AI 业内情报。`;
   }
-  return `This morning, paper equity prints at ${equity} with a ${paperReturn} ${performanceLabel} paper return. Platform market note: ${marketNote} It has set ${formatCount(digestCount)} AI intelligence items in type.`;
+  return `This morning, paper equity prints at ${equity} with a ${paperReturn} ${performanceLabel} paper return. Platform market note: ${marketNote} ${asiaRadarNote} It has set ${formatCount(digestCount)} AI intelligence items in type.`;
 }
 
 function finiteNumber(value: number, fallback = 0) {
@@ -719,6 +750,7 @@ export default async function BriefPage({ searchParams }: BriefPageProps) {
     qqqHistory,
     soxxHistory,
     igvHistory,
+    asiaRadar,
     archivedEnvelope,
     archiveList,
   ] = await Promise.all([
@@ -738,6 +770,7 @@ export default async function BriefPage({ searchParams }: BriefPageProps) {
     getCachedBriefMarketDataHistory("QQQ", briefDateKey(marketStart), briefDateKey(today), "1d"),
     getCachedBriefMarketDataHistory("SOXX", briefDateKey(marketStart), briefDateKey(today), "1d"),
     getCachedBriefMarketDataHistory("IGV", briefDateKey(marketStart), briefDateKey(today), "1d"),
+    getCachedAsiaRadarSummary(),
     getLatestBriefIssue({ locale }),
     getBriefIssueList({ locale, limit: 12 }),
   ]);
@@ -773,6 +806,7 @@ export default async function BriefPage({ searchParams }: BriefPageProps) {
     marketSnapshot("IGV", igvHistory),
   ];
   const marketNote = buildMarketNote(marketSnapshots, text);
+  const asiaRadarNote = buildAsiaRadarNote(asiaRadar, locale);
   const logEntries = buildBriefLogEntries({
     runs: recentRuns.runs,
     candidates: candidates.candidates,
@@ -810,6 +844,7 @@ export default async function BriefPage({ searchParams }: BriefPageProps) {
     qqqHistory.apiError,
     soxxHistory.apiError,
     igvHistory.apiError,
+    asiaRadar.apiError,
     ...(paperAccount.warnings ?? []),
     ...selectedPerformance.warnings,
     ...masterPerformance.warnings,
@@ -831,6 +866,7 @@ export default async function BriefPage({ searchParams }: BriefPageProps) {
       paperReturn: formatSignedPointReturn(paperPeriodReturn),
       performanceLabel: rangeLabel,
       marketNote,
+      asiaRadarNote,
       digestCount: digestItems.length,
     }),
     account: {
@@ -897,6 +933,24 @@ export default async function BriefPage({ searchParams }: BriefPageProps) {
       as_of: isoTimestamp(snapshot.asOf),
     })),
     market_note: marketNote,
+    asia_radar_note: asiaRadarNote,
+    asia_radar: asiaRadar.summary
+      ? {
+          status: asiaRadar.summary.status,
+          provider: asiaRadar.summary.provider,
+          as_of: asiaRadar.summary.as_of,
+          timezone: asiaRadar.summary.timezone,
+          provenance: asiaRadar.summary.provenance,
+          market_count: asiaRadar.summary.market_count,
+          winner_symbols: asiaRadar.summary.winner_symbols,
+          laggard_symbols: asiaRadar.summary.laggard_symbols,
+          spread_pct: asiaRadar.summary.spread_pct,
+          top_ytd_symbol: asiaRadar.summary.top_ytd_symbol,
+          top_ytd_pct: asiaRadar.summary.top_ytd_pct,
+          bottom_ytd_symbol: asiaRadar.summary.bottom_ytd_symbol,
+          bottom_ytd_pct: asiaRadar.summary.bottom_ytd_pct,
+        }
+      : null,
     ai_news: digestItems,
     hermes_log: logEntries.map((entry) => ({
       timestamp: isoTimestamp(entry.timestamp),
@@ -1047,6 +1101,7 @@ export default async function BriefPage({ searchParams }: BriefPageProps) {
               paperReturn: formatSignedPointReturn(paperPeriodReturn),
               performanceLabel: rangeLabel,
               marketNote,
+              asiaRadarNote,
               digestCount: digestItems.length,
             })}
           </p>

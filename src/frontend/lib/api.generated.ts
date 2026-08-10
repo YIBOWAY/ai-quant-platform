@@ -129,6 +129,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/asia-radar/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Asia Radar Summary */
+        get: operations["asia_radar_summary_api_asia_radar_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/owner/bootstrap": {
         parameters: {
             query?: never;
@@ -2636,6 +2653,36 @@ export interface components {
             /** Volatility Pct */
             volatility_pct: number;
         };
+        /** AsiaRadarMarketSummaryResponse */
+        AsiaRadarMarketSummaryResponse: {
+            /** As Of */
+            as_of: string;
+            /**
+             * K Leg
+             * @enum {string}
+             */
+            k_leg: "winner" | "middle" | "laggard";
+            /** Market Id */
+            market_id: string;
+            /** Max Drawdown Pct */
+            max_drawdown_pct: number;
+            /** Month Pct */
+            month_pct: number;
+            /** Name En */
+            name_en: string;
+            /** Name Zh */
+            name_zh: string;
+            /** Rank */
+            rank: number;
+            /** Symbol */
+            symbol: string;
+            /** Volatility Pct */
+            volatility_pct: number;
+            /** Week Pct */
+            week_pct: number;
+            /** Ytd Pct */
+            ytd_pct: number;
+        };
         /** AsiaRadarMetaResponse */
         AsiaRadarMetaResponse: {
             /**
@@ -2651,12 +2698,22 @@ export interface components {
              */
             currency: "USD";
             /**
+             * Provenance
+             * @enum {string}
+             */
+            provenance: "futu" | "futu_cache";
+            /**
              * Provider
              * @constant
              */
             provider: "futu";
             /** Symbol */
             symbol: string;
+            /**
+             * Timezone
+             * @constant
+             */
+            timezone: "America/New_York";
         };
         /** AsiaRadarOverviewResponse */
         AsiaRadarOverviewResponse: {
@@ -2672,15 +2729,25 @@ export interface components {
                 [key: string]: string;
             };
             /**
+             * Provenance
+             * @enum {string}
+             */
+            provenance: "futu" | "futu_cache";
+            /**
              * Provider
              * @constant
              */
             provider: "futu";
             /**
              * Schema Version
+             * @enum {string}
+             */
+            schema_version: "1.0" | "1.1";
+            /**
+             * Timezone
              * @constant
              */
-            schema_version: "1.0";
+            timezone: "America/New_York";
         };
         /** AsiaRadarReturnsResponse */
         AsiaRadarReturnsResponse: {
@@ -2690,6 +2757,62 @@ export interface components {
             week_pct: number;
             /** Ytd Pct */
             ytd_pct: number;
+        };
+        /**
+         * AsiaRadarSummaryResponse
+         * @description Lightweight, read-only summary for daily-brief / notification surfaces.
+         *
+         *     Same fail-closed contract as the overview: no sample data, no estimated
+         *     valuation metrics, no narrative generation.
+         */
+        AsiaRadarSummaryResponse: {
+            /** As Of */
+            as_of: string;
+            /** Bottom Ytd Pct */
+            bottom_ytd_pct: number | null;
+            /** Bottom Ytd Symbol */
+            bottom_ytd_symbol: string | null;
+            /** Fetched At */
+            fetched_at: string;
+            /** Laggard Symbols */
+            laggard_symbols: string[];
+            /** Market Count */
+            market_count: number;
+            /** Markets */
+            markets: components["schemas"]["AsiaRadarMarketSummaryResponse"][];
+            /**
+             * Provenance
+             * @enum {string}
+             */
+            provenance: "futu" | "futu_cache";
+            /**
+             * Provider
+             * @constant
+             */
+            provider: "futu";
+            /**
+             * Schema Version
+             * @constant
+             */
+            schema_version: "1.1";
+            /** Spread Pct */
+            spread_pct: number | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "available" | "unavailable";
+            /**
+             * Timezone
+             * @constant
+             */
+            timezone: "America/New_York";
+            /** Top Ytd Pct */
+            top_ytd_pct: number | null;
+            /** Top Ytd Symbol */
+            top_ytd_symbol: string | null;
+            /** Winner Symbols */
+            winner_symbols: string[];
         };
         /** BacktestBenchmarkSnapshot */
         BacktestBenchmarkSnapshot: {
@@ -8758,6 +8881,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AsiaRadarOverviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    asia_radar_summary_api_asia_radar_summary_get: {
+        parameters: {
+            query?: {
+                provider?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AsiaRadarSummaryResponse"];
                 };
             };
             /** @description Validation Error */

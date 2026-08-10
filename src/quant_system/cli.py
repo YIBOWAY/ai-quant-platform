@@ -521,6 +521,100 @@ def ingest_sample(
         raise typer.Exit(code=1)
 
 
+@data_app.command("asia-radar-refresh")
+def data_asia_radar_refresh(
+    snapshot_dir: Annotated[
+        str | None,
+        typer.Option(
+            "--snapshot-dir",
+            help=(
+                "Directory for daily Asia Radar overview snapshots. "
+                "Defaults to <data>/api_runs/asia_radar."
+            ),
+        ),
+    ] = None,
+    cache_path: Annotated[
+        str | None,
+        typer.Option(
+            "--cache-path",
+            help="Override EquityBarCache DuckDB path. Defaults to <data>/futu_equity_bars.duckdb.",
+        ),
+    ] = None,
+    write_snapshot: Annotated[
+        bool,
+        typer.Option(
+            "--write-snapshot/--no-write-snapshot",
+            help="Persist the daily overview JSON snapshot after refreshing bars.",
+        ),
+    ] = True,
+) -> None:
+    """Refresh the fixed 12-ETF Asia Radar universe into the bar cache and persist today's overview.
+
+    Read-only research utility: it never places orders, mutates accounts, or
+    falls back to sample data. Failure exits non-zero and keeps the previous
+    snapshot.
+    """
+    from quant_system.factors.asia_radar import read_asia_radar_overview
+
+    try:
+        settings = load_settings()
+    except Exception as exc:
+        error = HistoricalPriceReadError(
+            code="historical_prices_configuration_error",
+            message="platform settings are invalid for Asia Radar refresh",
+            provider_code=type(exc).__name__,
+        )
+        _emit_json({"ok": False, "error": error.to_dict()})
+        raise typer.Exit(code=1) from exc
+
+    output_root = (
+        Path(snapshot_dir)
+        if snapshot_dir is not None
+        else Path(settings.data.data_dir) / "api_runs" / "asia_radar"
+    )
+    try:
+        with _futu_json_stdout_guard():
+            overview = read_asia_radar_overview(
+                settings=settings,
+                cache=True,
+                cache_path=cache_path,
+            )
+    except HistoricalPriceReadError as exc:
+        _emit_json({"ok": False, "error": exc.to_dict()})
+        raise typer.Exit(code=1) from exc
+
+    snapshot_path: str | None = None
+    if write_snapshot:
+        try:
+            output_root.mkdir(parents=True, exist_ok=True)
+            target = output_root / f"{overview['as_of']}.json"
+            payload = dict(overview)
+            payload["snapshot_written_at"] = pd.Timestamp.now(tz="UTC").isoformat()
+            target.write_text(
+                json.dumps(payload, indent=2, sort_keys=True, allow_nan=False),
+                encoding="utf-8",
+            )
+            snapshot_path = str(target)
+        except OSError as exc:
+            error = HistoricalPriceReadError(
+                code="asia_radar_snapshot_write_failed",
+                message=f"failed to persist Asia Radar snapshot: {exc}",
+            )
+            _emit_json({"ok": False, "error": error.to_dict()})
+            raise typer.Exit(code=1) from exc
+
+    _emit_json(
+        {
+            "ok": True,
+            "as_of": overview["as_of"],
+            "timezone": overview["timezone"],
+            "provenance": overview["provenance"],
+            "market_count": len(overview.get("markets", [])),
+            "snapshot_path": snapshot_path,
+        }
+    )
+
+
 @data_app.command("prices")
 def data_prices(
     symbols: Annotated[

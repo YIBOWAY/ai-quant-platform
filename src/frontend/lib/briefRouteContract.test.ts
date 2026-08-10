@@ -52,6 +52,26 @@ describe("/brief route contract", () => {
     expect(readBriefPage()).not.toContain("/api/health");
   });
 
+  it("keeps the morning lede free of implementation-template meta language", () => {
+    const source = readBriefPage();
+    for (const banned of [
+      "平台模板提示",
+      "确定性模板",
+      "deterministic template",
+      "template lede",
+    ]) {
+      expect(source).not.toContain(banned);
+    }
+  });
+
+  it("includes the Asia Radar summary through the same fail-closed cache path", () => {
+    const source = readBriefPage();
+    expect(source).toContain("getCachedAsiaRadarSummary");
+    expect(source).toContain("buildAsiaRadarNote");
+    expect(source).toContain("asia_radar_note");
+    expect(source).toContain("亚洲雷达数据暂不可用");
+  });
+
   it("reuses dashboard formatting, run-link, and locale helpers", () => {
     const source = readBriefPage();
 
@@ -89,7 +109,6 @@ describe("/brief route contract", () => {
     expect(source).toContain("target=\"_blank\"");
     expect(source).toContain("rel=\"noreferrer noopener\"");
     expect(source).toContain("Compiled from platform facts");
-    expect(source).toContain("template");
     expect(source).toContain("live trading");
     expect(source).toContain("never implied active");
     expect(source).toContain("payload={archivePayload}");

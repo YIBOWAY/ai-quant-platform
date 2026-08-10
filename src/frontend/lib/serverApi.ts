@@ -34,3 +34,12 @@ export const getCachedBriefPaperAccountEquityCurve = unstable_cache(
   ["brief-paper-account-equity-curve-v1"],
   { revalidate: 1 },
 );
+
+export const getCachedAsiaRadarSummary = unstable_cache(
+  async () => {
+    const { getAsiaRadarSummarySafe } = await import("@/lib/asiaRadar");
+    return getAsiaRadarSummarySafe();
+  },
+  ["brief-asia-radar-summary-v1"],
+  { revalidate: 300 },
+);

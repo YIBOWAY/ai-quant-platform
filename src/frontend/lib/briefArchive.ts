@@ -192,6 +192,26 @@ const briefArchivePayloadSchema = z
         .strict(),
     ),
     market_note: z.string().min(1),
+    asia_radar_note: z.string().min(1).optional(),
+    asia_radar: z
+      .object({
+        status: z.enum(["available", "unavailable"]),
+        provider: z.literal("futu"),
+        as_of: z.string().min(1).nullable(),
+        timezone: z.string().min(1).nullable(),
+        provenance: z.enum(["futu", "futu_cache"]).nullable(),
+        market_count: z.number().int().nonnegative(),
+        winner_symbols: z.array(z.string()),
+        laggard_symbols: z.array(z.string()),
+        spread_pct: z.number().finite().nullable(),
+        top_ytd_symbol: z.string().nullable(),
+        top_ytd_pct: z.number().finite().nullable(),
+        bottom_ytd_symbol: z.string().nullable(),
+        bottom_ytd_pct: z.number().finite().nullable(),
+      })
+      .strict()
+      .nullable()
+      .optional(),
     ai_news: z.array(
       z
         .object({

@@ -63,6 +63,76 @@ _SPARKLINE_BARS = 90
 _LOOKBACK_CALENDAR_DAYS = 419
 
 
+def read_asia_radar_summary(
+    *,
+    settings: Settings,
+    today: date | None = None,
+    now: datetime | None = None,
+    cache: EquityBarCache | None | bool = True,
+    cache_path: str | Path | None = None,
+) -> dict[str, Any]:
+    """Read a compact Asia Radar summary from the same fail-closed Futu path.
+
+    Intended for daily-brief / notification surfaces. Contains no valuation
+    estimates and no narrative text.
+    """
+    overview = read_asia_radar_overview(
+        settings=settings,
+        today=today,
+        now=now,
+        cache=cache,
+        cache_path=cache_path,
+    )
+    return build_asia_radar_summary(overview)
+
+
+def build_asia_radar_summary(overview: dict[str, Any]) -> dict[str, Any]:
+    markets = overview.get("markets", [])
+    market_summaries = [
+        {
+            "symbol": market["symbol"],
+            "market_id": market["market_id"],
+            "name_en": market["name_en"],
+            "name_zh": market["name_zh"],
+            "rank": market["rank"],
+            "k_leg": market["k_leg"],
+            "ytd_pct": market["returns"]["ytd_pct"],
+            "week_pct": market["returns"]["week_pct"],
+            "month_pct": market["returns"]["month_pct"],
+            "volatility_pct": market["volatility_pct"],
+            "max_drawdown_pct": market["max_drawdown_pct"],
+            "as_of": market["meta"]["as_of"],
+        }
+        for market in markets
+    ]
+    k_shape = overview.get("k_shape", {})
+    latest_spread = None
+    series = k_shape.get("series") or []
+    if series:
+        latest_spread = series[-1].get("spread_pct")
+    ranked_markets = sorted(markets, key=lambda market: market["rank"])
+    top = ranked_markets[0] if ranked_markets else None
+    bottom = ranked_markets[-1] if ranked_markets else None
+    return {
+        "schema_version": "1.1",
+        "provider": overview["provider"],
+        "as_of": overview["as_of"],
+        "timezone": overview["timezone"],
+        "fetched_at": overview["fetched_at"],
+        "provenance": overview["provenance"],
+        "status": "available",
+        "market_count": len(market_summaries),
+        "winner_symbols": k_shape.get("winners", []),
+        "laggard_symbols": k_shape.get("laggards", []),
+        "spread_pct": latest_spread,
+        "top_ytd_symbol": top["symbol"] if top else None,
+        "top_ytd_pct": top["returns"]["ytd_pct"] if top else None,
+        "bottom_ytd_symbol": bottom["symbol"] if bottom else None,
+        "bottom_ytd_pct": bottom["returns"]["ytd_pct"] if bottom else None,
+        "markets": market_summaries,
+    }
+
+
 def read_asia_radar_overview(
     *,
     settings: Settings,
@@ -71,7 +141,10 @@ def read_asia_radar_overview(
     cache: EquityBarCache | None | bool = True,
     cache_path: str | Path | None = None,
 ) -> dict[str, Any]:
-    """Read the fixed Asia ETF universe from Futu (with optional bar cache) and calculate Phase 1 metrics."""
+    """Read the fixed Asia ETF universe from Futu (with optional bar cache).
+
+    Calculates Phase 1 metrics.
+    """
     clock = now or datetime.now(tz=UTC)
     if clock.tzinfo is None:
         clock = clock.replace(tzinfo=UTC)
