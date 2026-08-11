@@ -43,23 +43,31 @@ _DEFAULT_HQA_ROOT = Path(
 )
 
 
+class D34EnvConfigError(RuntimeError):
+    """Stable owner-actionable blocker emitted at the D-34 CLI seam."""
+
+    def __init__(self, code: str) -> None:
+        self.code = code
+        super().__init__(code)
+
+
 def _existing_env_file(repo: Path) -> Path:
     configured = os.environ.get("QS_D34_ENV_FILE", "").strip()
     candidate = Path(configured).expanduser() if configured else repo / "docker/d34/.env"
     try:
         metadata = candidate.lstat()
     except FileNotFoundError as exc:
-        raise RuntimeError("d34_env_file_required") from exc
+        raise D34EnvConfigError("d34_env_file_required") from exc
     if (
         stat.S_ISLNK(metadata.st_mode)
         or not stat.S_ISREG(metadata.st_mode)
         or stat.S_IMODE(metadata.st_mode) != 0o600
     ):
-        raise RuntimeError("d34_env_file_must_be_owner_only")
+        raise D34EnvConfigError("d34_env_file_must_be_owner_only")
     try:
         lines = candidate.read_text(encoding="utf-8").splitlines()
     except (OSError, UnicodeError) as exc:
-        raise RuntimeError("d34_env_file_unreadable") from exc
+        raise D34EnvConfigError("d34_env_file_unreadable") from exc
     required_models = {"LITELLM_CHAT_MODEL", "LITELLM_EMBEDDING_MODEL"}
     configured_models: set[str] = set()
     configured_names: set[str] = set()
@@ -72,13 +80,13 @@ def _existing_env_file(repo: Path) -> Path:
         if name in required_models and value.strip():
             configured_models.add(name)
     if configured_models != required_models:
-        raise RuntimeError("d34_env_models_required")
+        raise D34EnvConfigError("d34_env_models_required")
     if any(
         name.startswith("LITELLM_")
         and name.endswith(("_KEY", "_TOKEN", "_SECRET", "_PASSWORD"))
         for name in configured_names
     ):
-        raise RuntimeError("d34_env_logged_secret_forbidden")
+        raise D34EnvConfigError("d34_env_logged_secret_forbidden")
     return candidate.resolve()
 
 

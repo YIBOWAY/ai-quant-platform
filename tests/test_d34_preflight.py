@@ -137,3 +137,39 @@ def test_preflight_cli_emits_one_machine_readable_ready_receipt(
     assert payload["ready"] is True
     assert payload["live_execution_enabled"] is False
     assert docker.commands == [("smoke",)]
+
+
+def test_preflight_cli_emits_a_stable_owner_env_blocker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    roots = {name: tmp_path / name for name in ("platform", "hqa", "workspace", "cache")}
+    for root in roots.values():
+        root.mkdir()
+    env_file = tmp_path / "d34.env"
+    env_file.write_text("LITELLM_CHAT_MODEL=test-chat\n", encoding="utf-8")
+    env_file.chmod(0o600)
+    monkeypatch.setenv("QS_D34_ENV_FILE", str(env_file))
+
+    result = runner.invoke(
+        app,
+        [
+            "d34",
+            "preflight",
+            "--platform-root",
+            str(roots["platform"]),
+            "--hqa-root",
+            str(roots["hqa"]),
+            "--workspace-root",
+            str(roots["workspace"]),
+            "--cache-root",
+            str(roots["cache"]),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert json.loads(result.stdout) == {
+        "code": "d34_env_models_required",
+        "contract": "hqa.d34_preflight/v1",
+        "message": "d34_env_models_required",
+        "ready": False,
+    }
