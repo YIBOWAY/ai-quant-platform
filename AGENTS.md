@@ -69,6 +69,12 @@ data/                     Local cache, fixtures, generated research outputs.
   [`docs/runbooks/agent-v0-2-local-stack.md`](docs/runbooks/agent-v0-2-local-stack.md).
   Other docs may explain a component, but must link there instead of copying a
   migration, restart, readiness, or restore ladder.
+- **Checkout role boundary:** edit, test, commit, and push only from
+  `/Users/sunyibo/programs/ai-quant-platform`. The checkout under
+  `Hermes-quant-agent/data/_runtime/agent-v02-work/ai-quant-platform` is a
+  deployment mirror: fetch plus fast-forward only, with no direct development,
+  commit, rebase, or push. Follow the source/deployment contract in the local
+  stack runbook.
 - **Source/live boundary (read-only check, 2026-07-31):** the repository change
   set contains ordered migration source 016–028. Live `quantplatform` exposes
   the inspected 016–027 markers and does not expose the 028 marker. Migration

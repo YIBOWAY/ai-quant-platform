@@ -32,6 +32,48 @@ bash scripts/local_mac_stack.sh start
 bash scripts/local_mac_stack.sh status
 ```
 
+### Source and deployment checkout contract (2026-08-11)
+
+The two local checkouts have different, non-interchangeable roles:
+
+| Role | Path | Allowed Git activity |
+|---|---|---|
+| Development source | `/Users/sunyibo/programs/ai-quant-platform` | edit, test, commit, and push `main` to GitHub |
+| Deployment runtime | `/Users/sunyibo/programs/Hermes-quant-agent/data/_runtime/agent-v02-work/ai-quant-platform` | fetch and fast-forward only; never develop, commit, rebase, or push |
+
+All agents and interactive development tools must edit the development source.
+The runtime checkout contains ignored owner-only environment, logs, caches, and
+generated runtime state; never run `git clean`, reset those files, or delete the
+checkout as part of source synchronization.
+
+Deploy a reviewed source commit with an exact fast-forward:
+
+```bash
+# 1. Develop and verify only in the source checkout.
+cd /Users/sunyibo/programs/ai-quant-platform
+git status --short --branch
+
+# 2. Promote that exact committed main into the runtime checkout.
+cd /Users/sunyibo/programs/Hermes-quant-agent/data/_runtime/agent-v02-work/ai-quant-platform
+git fetch source main
+git merge --ff-only FETCH_HEAD
+test "$(git rev-parse HEAD)" = "$(git -C /Users/sunyibo/programs/ai-quant-platform rev-parse HEAD)"
+
+# 3. Build/restart the persistent stack from the deployment checkout.
+bash scripts/local_mac_stack.sh restart
+bash scripts/local_mac_stack.sh status
+
+# 4. After runtime health and safety verification, publish from source only.
+cd /Users/sunyibo/programs/ai-quant-platform
+git push origin main
+```
+
+In the runtime checkout, `origin` is the GitHub fetch remote and `source` is
+the local development checkout. Runtime push URLs and local commit/push hooks
+are intentionally disabled. If fast-forward is impossible, stop and inspect
+the divergence; do not rebase, force-push, create a merge commit, or edit the
+runtime copy to make it pass.
+
 Use `restart` after backend or environment changes. `start` and `restart` both
 run the production frontend build before installing/reloading the jobs. Use
 `build` to compile without restarting, `logs` to tail stable files under
