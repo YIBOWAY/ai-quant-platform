@@ -193,6 +193,19 @@ class PostgresJobAuthority:
                 ).fetchone()
                 if mandate is None or mandate[2] != "active" or mandate[3] is not True:
                     raise JobAuthorityError("d34_job_conflict", "mandate is not active")
+                emergency = conn.execute(
+                    f"""
+                    SELECT enabled FROM {SCHEMA}.d34_execution_authority_events
+                    WHERE owner_user_id = %s AND workspace_id = %s
+                      AND event_type = 'emergency_stop'
+                    ORDER BY event_seq DESC LIMIT 1
+                    """,
+                    (ROOT_USER_ID, command.workspace_id),
+                ).fetchone()
+                if emergency is not None and emergency[0] is True:
+                    raise JobAuthorityError(
+                        "d34_job_conflict", "emergency stop blocks new research jobs"
+                    )
                 reserved_row = conn.execute(
                     f"""
                     SELECT COALESCE(sum(budget_reserved_usd), 0)
@@ -293,6 +306,14 @@ class PostgresJobAuthority:
                     SELECT job_id FROM {SCHEMA}.d34_experiment_jobs AS job
                     WHERE job.owner_user_id = %s AND job.workspace_id = %s
                       AND job.state = 'queued' AND job.attempt_count < job.max_attempts
+                      AND NOT COALESCE((
+                          SELECT enabled
+                          FROM {SCHEMA}.d34_execution_authority_events AS authority
+                          WHERE authority.owner_user_id = job.owner_user_id
+                            AND authority.workspace_id = job.workspace_id
+                            AND authority.event_type = 'emergency_stop'
+                          ORDER BY authority.event_seq DESC LIMIT 1
+                      ), FALSE)
                       AND EXISTS (
                           SELECT 1 FROM {SCHEMA}.d34_mandates AS mandate
                           WHERE mandate.mandate_id = job.mandate_id

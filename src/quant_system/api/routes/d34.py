@@ -12,6 +12,8 @@ from quant_system.api.dependencies import (
 )
 from quant_system.api.safety.mutation_rate_limit import D34_MANDATE_ROUTE
 from quant_system.api.schemas.d34 import (
+    D34ArtifactListResponse,
+    D34CanaryListResponse,
     D34ExperimentJobListResponse,
     D34MandateCreateRequest,
     D34MandateListResponse,
@@ -31,6 +33,13 @@ from quant_system.hermes.d34_mandate_authority import (
     MandateAuthorityError,
     MandateAuthorityPort,
     PostgresMandateAuthority,
+)
+from quant_system.hermes.d34_registry_authority import (
+    D34Artifact,
+    D34Canary,
+    PostgresRegistryAuthority,
+    RegistryAuthorityError,
+    RegistryAuthorityPort,
 )
 
 router = APIRouter()
@@ -58,6 +67,22 @@ def _job_authority(request: Request, settings: SettingsDep) -> JobAuthorityPort:
 
 def _job_public(value: ExperimentJob | dict[str, object]) -> dict[str, object]:
     return value.to_public_dict() if isinstance(value, ExperimentJob) else value
+
+
+def _registry_authority(request: Request, settings: SettingsDep) -> RegistryAuthorityPort:
+    services = getattr(request.app.state, "services", None)
+    injected = services.get("d34_registry_authority") if isinstance(services, dict) else None
+    if injected is not None:
+        return injected
+    return PostgresRegistryAuthority(settings)
+
+
+def _registry_public(
+    value: D34Artifact | D34Canary | dict[str, object],
+) -> dict[str, object]:
+    if isinstance(value, (D34Artifact, D34Canary)):
+        return value.to_public_dict()
+    return value
 
 
 def _http_error(exc: MandateAuthorityError) -> HTTPException:
@@ -266,4 +291,52 @@ def list_research_jobs(
     return {
         "contract": "hqa.d34_experiment_job-list/v1",
         "items": [_job_public(item) for item in items],
+    }
+
+
+@router.get("/hermes/d34/artifacts", response_model=D34ArtifactListResponse)
+def list_d34_artifacts(
+    request: Request,
+    settings: SettingsDep,
+    owner: OwnerSessionDep,
+    workspace_id: str = Query(default="default", min_length=1, max_length=128),
+    limit: int = Query(default=20, ge=1, le=100),
+) -> dict[str, object]:
+    _ = owner
+    try:
+        items = _registry_authority(request, settings).list_artifacts(
+            workspace_id=workspace_id, limit=limit
+        )
+    except RegistryAuthorityError as exc:
+        raise HTTPException(
+            status_code=422 if exc.code == "d34_registry_validation" else 503,
+            detail={"code": exc.code, "message": exc.message},
+        ) from exc
+    return {
+        "contract": "hqa.d34_artifact-list/v1",
+        "items": [_registry_public(item) for item in items],
+    }
+
+
+@router.get("/hermes/canaries", response_model=D34CanaryListResponse)
+def list_d34_canaries(
+    request: Request,
+    settings: SettingsDep,
+    owner: OwnerSessionDep,
+    workspace_id: str = Query(default="default", min_length=1, max_length=128),
+    limit: int = Query(default=20, ge=1, le=100),
+) -> dict[str, object]:
+    _ = owner
+    try:
+        items = _registry_authority(request, settings).list_canaries(
+            workspace_id=workspace_id, limit=limit
+        )
+    except RegistryAuthorityError as exc:
+        raise HTTPException(
+            status_code=422 if exc.code == "d34_registry_validation" else 503,
+            detail={"code": exc.code, "message": exc.message},
+        ) from exc
+    return {
+        "contract": "hqa.d34_canary-list/v1",
+        "items": [_registry_public(item) for item in items],
     }

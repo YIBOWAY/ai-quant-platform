@@ -619,6 +619,7 @@ class PaperStrategySleeveService:
             raise StrategyExecutionPlanError("unsupported_execution_window")
         if not signal.proposed_orders:
             raise StrategyExecutionPlanError("no_proposed_orders")
+        plan_metadata = dict(metadata or {})
         if sleeve.metadata.get("automation_managed") is True:
             from quant_system.execution.factor_automation_safety import (
                 FactorAutomationLimitError,
@@ -646,17 +647,33 @@ class PaperStrategySleeveService:
                 * reference_prices.get(lot.symbol.upper(), lot.avg_cost)
                 for lot in lots
             )
+            raw_context = plan_metadata.get("paper_execution_policy_context", {})
+            policy_context = raw_context if isinstance(raw_context, dict) else {}
             try:
-                validate_auto_execution_orders(
+                policy_decision = validate_auto_execution_orders(
                     orders=signal.proposed_orders,
                     sleeve_equity=sleeve_equity,
                     nav=account.equity(account_prices),
                     aggregate_symbol_values=aggregate_symbol_values,
+                    source=str(sleeve.metadata.get("automation_source", "d33")),
+                    account_id=account.account_id,
+                    sleeve_id=sleeve.sleeve_id,
+                    emergency_stop=policy_context.get("emergency_stop") is True,
+                    paper_execution_enabled=(
+                        policy_context.get("paper_execution_enabled", True) is True
+                    ),
+                    mandate_active=policy_context.get("mandate_active") is True,
+                    mandate_paper_execution_allowed=(
+                        policy_context.get("mandate_paper_execution_allowed") is True
+                    ),
                 )
             except FactorAutomationLimitError as exc:
                 raise StrategyExecutionPlanError(
                     f"automation_{exc.code}"
                 ) from exc
+            plan_metadata["paper_execution_policy_decision"] = (
+                policy_decision.to_dict()
+            )
         existing = self.storage.latest_execution_for_signal(
             sleeve.sleeve_id,
             signal.signal_id,
@@ -669,7 +686,7 @@ class PaperStrategySleeveService:
             signal=signal,
             execution_window=execution_window,
             target_date=target_date or date.today().isoformat(),
-            metadata=metadata,
+            metadata=plan_metadata,
         )
         self.storage.append_execution(plan)
         return plan

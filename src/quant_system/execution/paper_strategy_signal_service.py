@@ -8,6 +8,7 @@ import pandas as pd
 
 from quant_system.backtest.strategy import MeanReversionTopN, ScoreSignalStrategy
 from quant_system.config.settings import Settings
+from quant_system.d34.artifact_factor import load_d34_paper_factor_registry
 from quant_system.data.provider_factory import build_ohlcv_provider
 from quant_system.execution.account import PaperAccount
 from quant_system.execution.paper_strategy_sleeves import (
@@ -188,7 +189,16 @@ class PaperStrategySignalService:
         # D-20 resident-path purity: the registry factory can only construct the
         # default examples + promoted, code-reviewed set. Candidate execution is
         # confined to the exact-ID/digest one-shot research loader.
-        registry = build_factor_registry()
+        if config.metadata.get("automation_source") == "d34":
+            registry = load_d34_paper_factor_registry(
+                code_path=str(config.metadata.get("artifact_code_path", "")),
+                expected_code_digest=str(
+                    config.metadata.get("candidate_code_digest", "")
+                ),
+                expected_factor_id=str(config.metadata.get("factor_id", "")),
+            )
+        else:
+            registry = build_factor_registry()
         factor_ids = config.factor_ids or registry.factor_ids()
         factors = [
             registry.create(factor_id, lookback=config.lookback)

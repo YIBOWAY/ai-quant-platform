@@ -45,6 +45,7 @@ def _config() -> StrategyConfig:
 def _metadata(*, manifest_digest: str = MANIFEST_DIGEST) -> dict[str, object]:
     return {
         "automation_managed": True,
+        "automation_source": "d33",
         "factor_id": "factor-auto-1",
         "manifest_digest": manifest_digest,
         "automation_policy_digest": POLICY_DIGEST,
@@ -280,3 +281,48 @@ def test_execution_order_limits_cover_sleeve_and_cross_sleeve_symbol_exposure() 
             limits=limits,
         )
     assert aggregate_symbol.value.code == "aggregate_symbol_limit"
+
+
+def test_d34_sleeve_execution_requires_current_mandate_context(tmp_path) -> None:
+    account = PaperAccount.open_new(initial_cash=100_000)
+    storage = PaperStrategySleeveStorage(tmp_path)
+    service = PaperStrategySleeveService(storage)
+    sleeve = service.create_sleeve(
+        account,
+        config=_config(),
+        mode=StrategySleeveMode.ALLOCATED,
+        allocated_cash=1_000,
+        metadata={**_metadata(), "automation_source": "d34"},
+    )
+    signal = StrategySignal.create(
+        sleeve=sleeve,
+        signal_date="2026-08-11",
+        data_provider="futu",
+        proposed_orders=[
+            {
+                "symbol": "SPY",
+                "side": "buy",
+                "notional_delta": 100,
+                "reference_price": 500,
+            }
+        ],
+    )
+
+    with pytest.raises(StrategyExecutionPlanError) as blocked:
+        service.create_execution_plan(account, sleeve=sleeve, signal=signal)
+    assert blocked.value.code == "automation_d34_mandate_inactive"
+
+    plan = service.create_execution_plan(
+        account,
+        sleeve=sleeve,
+        signal=signal,
+        metadata={
+            "paper_execution_policy_context": {
+                "paper_execution_enabled": True,
+                "emergency_stop": False,
+                "mandate_active": True,
+                "mandate_paper_execution_allowed": True,
+            }
+        },
+    )
+    assert plan.metadata["paper_execution_policy_context"]["mandate_active"] is True

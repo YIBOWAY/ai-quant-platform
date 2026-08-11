@@ -89,3 +89,57 @@ class D34ExperimentJobResponse(BaseModel):
 class D34ExperimentJobListResponse(BaseModel):
     contract: str = Field(pattern=r"^hqa\.d34_experiment_job-list/v1$")
     items: list[D34ExperimentJobResponse]
+
+
+class D34ArtifactResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    contract: str = Field(pattern=r"^hqa\.d34_artifact/v1$")
+    artifact_id: str
+    mandate_id: str
+    workspace_id: str
+    status: str = Field(pattern=r"^(qualified|canary_active|paused|demoted|rejected|rolled_back)$")
+    qualification_scope: str = Field(pattern=r"^paper_only$")
+    policy_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    snapshot_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    candidate_code_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    qlib_config_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    rdagent_commit: str = Field(pattern=r"^[0-9a-f]{40}$")
+    qlib_commit: str = Field(pattern=r"^[0-9a-f]{40}$")
+    docker_image_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    qlib_receipt_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    platform_receipt_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    comparison_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    policy_decision_id: str
+    created_at: datetime
+    updated_at: datetime
+    version: int = Field(ge=1)
+
+
+class D34ArtifactListResponse(BaseModel):
+    contract: str = Field(pattern=r"^hqa\.d34_artifact-list/v1$")
+    items: list[D34ArtifactResponse]
+
+
+class D34CanaryResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    contract: str = Field(pattern=r"^hqa\.d34_canary/v1$")
+    canary_id: str
+    artifact_id: str
+    mandate_id: str
+    workspace_id: str
+    sleeve_id: str
+    status: str = Field(pattern=r"^(provisioning|running|paused|demoted|rolled_back)$")
+    allocated_cash: Decimal = Field(ge=Decimal("0"))
+    nav_fraction: Decimal = Field(ge=Decimal("0"), le=Decimal("1"))
+    daily_pnl: Decimal
+    drawdown_fraction: Decimal = Field(ge=Decimal("0"))
+    created_at: datetime
+    updated_at: datetime
+    version: int = Field(ge=1)
+
+
+class D34CanaryListResponse(BaseModel):
+    contract: str = Field(pattern=r"^hqa\.d34_canary-list/v1$")
+    items: list[D34CanaryResponse]

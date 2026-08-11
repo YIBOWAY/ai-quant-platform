@@ -537,6 +537,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/hermes/canaries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List D34 Canaries */
+        get: operations["list_d34_canaries_api_hermes_canaries_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hermes/d34/artifacts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List D34 Artifacts */
+        get: operations["list_d34_artifacts_api_hermes_d34_artifacts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/hermes/gateway": {
         parameters: {
             query?: never;
@@ -2153,6 +2187,40 @@ export interface paths {
         get: operations["effective_paper_safety_api_safety_effective_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/safety/effective/v2": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Effective D34 Safety */
+        get: operations["effective_d34_safety_api_safety_effective_v2_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/safety/emergency-stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set D34 Emergency Stop */
+        post: operations["set_d34_emergency_stop_api_safety_emergency_stop_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4208,6 +4276,158 @@ export interface components {
             v2_durable_live?: false | null;
             workspace: components["schemas"]["WorkspaceRefResponse"];
         };
+        /** D34ArtifactListResponse */
+        D34ArtifactListResponse: {
+            /** Contract */
+            contract: string;
+            /** Items */
+            items: components["schemas"]["D34ArtifactResponse"][];
+        };
+        /** D34ArtifactResponse */
+        D34ArtifactResponse: {
+            /** Artifact Id */
+            artifact_id: string;
+            /** Candidate Code Digest */
+            candidate_code_digest: string;
+            /** Comparison Digest */
+            comparison_digest: string;
+            /** Contract */
+            contract: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Docker Image Digest */
+            docker_image_digest: string;
+            /** Mandate Id */
+            mandate_id: string;
+            /** Platform Receipt Digest */
+            platform_receipt_digest: string;
+            /** Policy Decision Id */
+            policy_decision_id: string;
+            /** Policy Digest */
+            policy_digest: string;
+            /** Qlib Commit */
+            qlib_commit: string;
+            /** Qlib Config Digest */
+            qlib_config_digest: string;
+            /** Qlib Receipt Digest */
+            qlib_receipt_digest: string;
+            /** Qualification Scope */
+            qualification_scope: string;
+            /** Rdagent Commit */
+            rdagent_commit: string;
+            /** Snapshot Digest */
+            snapshot_digest: string;
+            /** Status */
+            status: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Version */
+            version: number;
+            /** Workspace Id */
+            workspace_id: string;
+        };
+        /** D34AutomationSafety */
+        D34AutomationSafety: {
+            /** Active Canaries */
+            active_canaries: number;
+            /** Mandate Active */
+            mandate_active: boolean;
+            /** Queued Jobs */
+            queued_jobs: number;
+            /** Running Jobs */
+            running_jobs: number;
+        };
+        /** D34BudgetSafety */
+        D34BudgetSafety: {
+            /** Limit Usd */
+            limit_usd: string | null;
+            /** Remaining Usd */
+            remaining_usd: string | null;
+            /** Spent Usd */
+            spent_usd: string | null;
+            /** Warning */
+            warning: boolean;
+            /** Warning Fraction */
+            warning_fraction: string | null;
+        };
+        /** D34CanaryListResponse */
+        D34CanaryListResponse: {
+            /** Contract */
+            contract: string;
+            /** Items */
+            items: components["schemas"]["D34CanaryResponse"][];
+        };
+        /** D34CanaryResponse */
+        D34CanaryResponse: {
+            /** Allocated Cash */
+            allocated_cash: string;
+            /** Artifact Id */
+            artifact_id: string;
+            /** Canary Id */
+            canary_id: string;
+            /** Contract */
+            contract: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Daily Pnl */
+            daily_pnl: string;
+            /** Drawdown Fraction */
+            drawdown_fraction: string;
+            /** Mandate Id */
+            mandate_id: string;
+            /** Nav Fraction */
+            nav_fraction: string;
+            /** Sleeve Id */
+            sleeve_id: string;
+            /** Status */
+            status: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Version */
+            version: number;
+            /** Workspace Id */
+            workspace_id: string;
+        };
+        /** D34CanarySafety */
+        D34CanarySafety: {
+            /** Active Count */
+            active_count: number;
+            /** Allocated Cash */
+            allocated_cash: string;
+        };
+        /** D34EmergencySafety */
+        D34EmergencySafety: {
+            /** Active */
+            active: boolean;
+            /** Created At */
+            created_at: string | null;
+            /** Reason */
+            reason: string | null;
+        };
+        /** D34EmergencyStopRequest */
+        D34EmergencyStopRequest: {
+            /** Enabled */
+            enabled: boolean;
+            /** Reason */
+            reason: string;
+            /**
+             * Workspace Id
+             * @default default
+             */
+            workspace_id: string;
+        };
         /** D34ExperimentJobListResponse */
         D34ExperimentJobListResponse: {
             /** Contract */
@@ -4259,6 +4479,13 @@ export interface components {
             version: number;
             /** Workspace Id */
             workspace_id: string;
+        };
+        /** D34LegacySafety */
+        D34LegacySafety: {
+            /** Auto Land Enabled */
+            auto_land_enabled: boolean;
+            /** Mode Enabled */
+            mode_enabled: boolean;
         };
         /** D34MandateCreateRequest */
         D34MandateCreateRequest: {
@@ -4370,12 +4597,50 @@ export interface components {
             /** Workspace Id */
             workspace_id: string;
         };
+        /** D34MandateSafety */
+        D34MandateSafety: {
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Mandate Id */
+            mandate_id: string;
+            /** Paper Execution Allowed */
+            paper_execution_allowed: boolean;
+            /** Remaining Seconds */
+            remaining_seconds: number;
+            /** Status */
+            status: string;
+        };
         /** D34MandateTransitionRequest */
         D34MandateTransitionRequest: {
             /** Expected Version */
             expected_version: number;
             /** Reason */
             reason: string;
+        };
+        /** D34QuotaSafety */
+        D34QuotaSafety: {
+            /** Max New Canaries Per Day */
+            max_new_canaries_per_day: number;
+            /** New Canaries Today */
+            new_canaries_today: number;
+        };
+        /** D34RiskSafety */
+        D34RiskSafety: {
+            /** Max Daily Loss */
+            max_daily_loss: number;
+            /** Max Drawdown */
+            max_drawdown: number;
+            /** Max Sleeve Cash */
+            max_sleeve_cash: string;
+            /** Max Sleeve Nav Fraction */
+            max_sleeve_nav_fraction: number;
+            /** Max Symbol Nav Fraction */
+            max_symbol_nav_fraction: number;
+            /** Max Total Nav Fraction */
+            max_total_nav_fraction: number;
         };
         /** DualVerticalAcceptanceResponse */
         DualVerticalAcceptanceResponse: {
@@ -4480,6 +4745,27 @@ export interface components {
              * @enum {string}
              */
             status: "open" | "closed";
+        };
+        /** EffectiveD34SafetyResponse */
+        EffectiveD34SafetyResponse: {
+            active_mandate: components["schemas"]["D34MandateSafety"] | null;
+            /** Blockers */
+            blockers: string[];
+            budget: components["schemas"]["D34BudgetSafety"];
+            canaries: components["schemas"]["D34CanarySafety"];
+            /** Contract */
+            contract: string;
+            d33: components["schemas"]["D34LegacySafety"];
+            d34: components["schemas"]["D34AutomationSafety"];
+            emergency_stop: components["schemas"]["D34EmergencySafety"];
+            /** Live Execution Enabled */
+            live_execution_enabled: boolean;
+            /** Paper Execution Enabled */
+            paper_execution_enabled: boolean;
+            quota: components["schemas"]["D34QuotaSafety"];
+            risk: components["schemas"]["D34RiskSafety"];
+            /** Workspace Id */
+            workspace_id: string;
         };
         /** EffectivePaperSafetyResponse */
         EffectivePaperSafetyResponse: {
@@ -10049,6 +10335,70 @@ export interface operations {
             };
         };
     };
+    list_d34_canaries_api_hermes_canaries_get: {
+        parameters: {
+            query?: {
+                workspace_id?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["D34CanaryListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_d34_artifacts_api_hermes_d34_artifacts_get: {
+        parameters: {
+            query?: {
+                workspace_id?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["D34ArtifactListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     hermes_gateway_status_api_hermes_gateway_get: {
         parameters: {
             query?: never;
@@ -13208,6 +13558,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EffectivePaperSafetyResponse"];
+                };
+            };
+        };
+    };
+    effective_d34_safety_api_safety_effective_v2_get: {
+        parameters: {
+            query?: {
+                workspace_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EffectiveD34SafetyResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_d34_emergency_stop_api_safety_emergency_stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["D34EmergencyStopRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EffectiveD34SafetyResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

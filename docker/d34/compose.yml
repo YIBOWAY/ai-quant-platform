@@ -1,0 +1,27 @@
+services:
+  d34-research:
+    image: ${D34_IMAGE_REF:-hqa-d34-rdagent-qlib:0.1.0}
+    build:
+      context: ../..
+      dockerfile: docker/d34/Dockerfile
+      args:
+        RDAGENT_COMMIT: 274e274d5dbb72cc2ea139d1a7c93d73ce9b1198
+        QLIB_COMMIT: da920b7f954f48ab1bb64117c976710de198373e
+    user: "0:0"
+    network_mode: bridge
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    env_file:
+      - path: ${D34_ENV_FILE:-.env.d34}
+        required: false
+    environment:
+      D34_IMAGE_REF: ${D34_IMAGE_REF:-hqa-d34-rdagent-qlib:0.1.0}
+      D34_FUTU_HOST: host.docker.internal
+      D34_FUTU_PORT: "11111"
+    volumes:
+      - ${D34_PLATFORM_ROOT:?set D34_PLATFORM_ROOT}:/workspace/platform
+      - ${D34_HQA_ROOT:?set D34_HQA_ROOT}:/workspace/hqa
+      - ${D34_WORKSPACE_ROOT:?set D34_WORKSPACE_ROOT}:/workspace/d34
+      - ${D34_CACHE_ROOT:?set D34_CACHE_ROOT}:/workspace/cache
+      - /var/run/docker.sock:/var/run/docker.sock
+    working_dir: /workspace/d34

@@ -133,4 +133,54 @@ BEGIN
     END LOOP;
 END $$;
 
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'quant_migrator') THEN
+        ALTER TABLE quant_system.d34_experiment_jobs_meta OWNER TO quant_migrator;
+        ALTER TABLE quant_system.d34_experiment_jobs OWNER TO quant_migrator;
+        ALTER TABLE quant_system.d34_experiment_attempts OWNER TO quant_migrator;
+        ALTER TABLE quant_system.d34_job_events OWNER TO quant_migrator;
+        ALTER TABLE quant_system.d34_budget_events OWNER TO quant_migrator;
+        ALTER SEQUENCE quant_system.d34_job_events_event_seq_seq OWNER TO quant_migrator;
+        ALTER SEQUENCE quant_system.d34_budget_events_event_seq_seq OWNER TO quant_migrator;
+    END IF;
+
+    REVOKE ALL ON TABLE
+        quant_system.d34_experiment_jobs_meta,
+        quant_system.d34_experiment_jobs,
+        quant_system.d34_experiment_attempts,
+        quant_system.d34_job_events,
+        quant_system.d34_budget_events
+        FROM PUBLIC;
+    REVOKE ALL ON SEQUENCE
+        quant_system.d34_job_events_event_seq_seq,
+        quant_system.d34_budget_events_event_seq_seq
+        FROM PUBLIC;
+
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'quant_runtime') THEN
+        GRANT SELECT ON TABLE quant_system.d34_experiment_jobs_meta TO quant_runtime;
+        GRANT SELECT, INSERT, UPDATE ON TABLE
+            quant_system.d34_experiment_jobs,
+            quant_system.d34_experiment_attempts
+            TO quant_runtime;
+        GRANT SELECT, INSERT ON TABLE
+            quant_system.d34_job_events,
+            quant_system.d34_budget_events
+            TO quant_runtime;
+        GRANT USAGE, SELECT ON SEQUENCE
+            quant_system.d34_job_events_event_seq_seq,
+            quant_system.d34_budget_events_event_seq_seq
+            TO quant_runtime;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'quant_readonly') THEN
+        GRANT SELECT ON TABLE
+            quant_system.d34_experiment_jobs_meta,
+            quant_system.d34_experiment_jobs,
+            quant_system.d34_experiment_attempts,
+            quant_system.d34_job_events,
+            quant_system.d34_budget_events
+            TO quant_readonly;
+    END IF;
+END $$;
+
 COMMIT;

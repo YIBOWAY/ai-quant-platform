@@ -12,6 +12,11 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from quant_system.execution.paper_execution_policy import (
+    PaperExecutionBatch,
+    PaperExecutionDecision,
+    PaperExecutionPolicy,
+)
 from quant_system.execution.paper_strategy_sleeves import StrategySleeve
 from quant_system.risk.models import RiskLimits
 
@@ -106,6 +111,7 @@ def admit_auto_sleeve(
         allocated_cash=allocation,
         metadata={
             "automation_managed": True,
+            "automation_source": "d33",
             "factor_id": normalized_factor,
             "manifest_digest": normalized_manifest,
             "automation_policy_digest": normalized_policy,
@@ -163,33 +169,34 @@ def validate_auto_execution_orders(
     nav: float,
     aggregate_symbol_values: Mapping[str, float],
     limits: FactorAutomationLimits | None = None,
-) -> None:
-    active = limits or FactorAutomationLimits()
-    normalized_sleeve_equity = _positive_finite(
-        sleeve_equity,
-        code="invalid_sleeve_equity",
+    source: str = "d33",
+    workspace_id: str = "local-default",
+    account_id: str = "legacy-paper-account",
+    sleeve_id: str = "legacy-auto-sleeve",
+    emergency_stop: bool = False,
+    paper_execution_enabled: bool = True,
+    mandate_active: bool = False,
+    mandate_paper_execution_allowed: bool = False,
+) -> PaperExecutionDecision:
+    decision = PaperExecutionPolicy(limits or FactorAutomationLimits()).evaluate_batch(
+        PaperExecutionBatch(
+            source=source,
+            workspace_id=workspace_id,
+            account_id=account_id,
+            sleeve_id=sleeve_id,
+            orders=orders,
+            sleeve_equity=sleeve_equity,
+            nav=nav,
+            aggregate_symbol_values=aggregate_symbol_values,
+            emergency_stop=emergency_stop,
+            paper_execution_enabled=paper_execution_enabled,
+            mandate_active=mandate_active,
+            mandate_paper_execution_allowed=mandate_paper_execution_allowed,
+        )
     )
-    normalized_nav = _positive_finite(nav, code="invalid_nav")
-    projected = {
-        str(symbol).upper().strip(): float(value)
-        for symbol, value in aggregate_symbol_values.items()
-    }
-    for order in orders:
-        symbol = str(order.get("symbol", "")).upper().strip()
-        try:
-            delta = float(order["notional_delta"])
-        except (KeyError, TypeError, ValueError) as exc:
-            raise FactorAutomationLimitError("invalid_order_notional") from exc
-        if not symbol or not math.isfinite(delta):
-            raise FactorAutomationLimitError("invalid_order_notional")
-        if abs(delta) > active.max_order_value + 1e-9:
-            raise FactorAutomationLimitError("order_value_limit")
-        if abs(delta) > normalized_sleeve_equity * active.max_sleeve_symbol_fraction + 1e-9:
-            raise FactorAutomationLimitError("sleeve_symbol_limit")
-        projected[symbol] = projected.get(symbol, 0.0) + delta
-        aggregate_limit = normalized_nav * active.max_aggregate_symbol_nav_fraction
-        if abs(projected[symbol]) > aggregate_limit + 1e-9:
-            raise FactorAutomationLimitError("aggregate_symbol_limit")
+    if not decision.allowed:
+        raise FactorAutomationLimitError(decision.blockers[0])
+    return decision
 
 
 __all__ = [
