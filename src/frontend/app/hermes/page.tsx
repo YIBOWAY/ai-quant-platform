@@ -1,4 +1,5 @@
 import { HermesSessionDeepLinkBinder } from "@/components/hermes/sessions/HermesSessionDeepLinkBinder";
+import { D34ResearchWorkbench } from "@/components/hermes/d34";
 import {
   HermesTodayView,
   RecentResults,
@@ -57,6 +58,7 @@ export default async function HermesWorkbenchPage({
         <HermesSessionDeepLinkBinder hermesSessionId={deepLinkedSessionId} />
       ) : null}
       <div className="flex flex-col gap-6">
+        <D34ResearchWorkbench locale={locale} />
         <HermesTodayView artifacts={artifacts} locale={locale} model={overview} />
         <TodayResults
           hqaConclusions={[]}

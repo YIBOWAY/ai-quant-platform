@@ -17,6 +17,9 @@ QLIB_COMMIT = "da920b7f954f48ab1bb64117c976710de198373e"
 
 
 def _head(path: str) -> str:
+    marker = Path(path) / ".hqa-upstream-commit"
+    if marker.is_file():
+        return marker.read_text(encoding="utf-8").strip()
     return subprocess.check_output(
         ["git", "-C", path, "rev-parse", "HEAD"], text=True, timeout=10
     ).strip()
@@ -166,10 +169,12 @@ def main() -> int:
         choices=(
             "versions",
             "qlib-smoke",
+            "qlib-adapt",
             "llm-smoke",
             "futu-smoke",
             "docker-smoke",
             "smoke",
+            "research",
             "rdagent",
             "qrun",
         ),
@@ -178,6 +183,57 @@ def main() -> int:
     parsed = parser.parse_args()
     if parsed.command in {"rdagent", "qrun"}:
         os.execvp(parsed.command, [parsed.command, *parsed.args])
+    if parsed.command == "research":
+        research_parser = argparse.ArgumentParser(prog="d34 research")
+        research_parser.add_argument("--request", required=True)
+        research_parser.add_argument(
+            "--output-root", default="/workspace/d34/research-results"
+        )
+        research_args = research_parser.parse_args(parsed.args)
+        from quant_system.d34.rdagent_qlib_runtime import (  # noqa: PLC0415
+            run_container_research,
+        )
+
+        result = run_container_research(
+            request_path=research_args.request,
+            output_root=research_args.output_root,
+        )
+        print(json.dumps(result, sort_keys=True))
+        return 0
+    if parsed.command == "qlib-adapt":
+        adapter_parser = argparse.ArgumentParser(prog="d34 qlib-adapt")
+        adapter_parser.add_argument("--snapshot-id", required=True)
+        adapter_parser.add_argument("--snapshot-digest", required=True)
+        adapter_parser.add_argument("--snapshot-parquet", required=True)
+        adapter_parser.add_argument("--output-root", required=True)
+        adapter_args = adapter_parser.parse_args(parsed.args)
+        from quant_system.d34.qlib_adapter import build_qlib_provider  # noqa: PLC0415
+
+        receipt = build_qlib_provider(
+            snapshot_id=adapter_args.snapshot_id,
+            snapshot_digest=adapter_args.snapshot_digest,
+            snapshot_parquet=adapter_args.snapshot_parquet,
+            qlib_repo="/opt/qlib",
+            qlib_commit=QLIB_COMMIT,
+            output_root=adapter_args.output_root,
+            python_executable=sys.executable,
+        )
+        print(
+            json.dumps(
+                {
+                    "contract": receipt.contract,
+                    "snapshot_id": receipt.snapshot_id,
+                    "snapshot_digest": receipt.snapshot_digest,
+                    "qlib_commit": receipt.qlib_commit,
+                    "provider_uri": str(receipt.provider_uri),
+                    "source_digest": receipt.source_digest,
+                    "provider_digest": receipt.provider_digest,
+                    "receipt_digest": receipt.receipt_digest,
+                },
+                sort_keys=True,
+            )
+        )
+        return 0
     functions = {
         "versions": versions,
         "qlib-smoke": qlib_smoke,

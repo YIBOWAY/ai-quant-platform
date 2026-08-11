@@ -78,6 +78,9 @@ from quant_system.execution.account_snapshot import (
     materialize_account_view,
     resolve_account_quotes,
 )
+from quant_system.execution.d34_execution_context import (
+    resolve_d34_execution_policy_context,
+)
 from quant_system.execution.paper_strategy_execution_service import (
     PaperStrategyExecutionService,
 )
@@ -1496,6 +1499,16 @@ def create_strategy_sleeve_execution(
         )
         if signal is None:
             raise not_found_404("strategy_signal", request.signal_id)
+        execution_metadata = dict(request.metadata)
+        if str(sleeve.metadata.get("automation_source", "d33")) == "d34":
+            execution_metadata["paper_execution_policy_context"] = (
+                resolve_d34_execution_policy_context(
+                    settings,
+                    workspace_id=str(
+                        sleeve.metadata.get("workspace_id", "default")
+                    ),
+                )
+            )
         try:
             execution = service.create_execution_plan(
                 account,
@@ -1503,7 +1516,7 @@ def create_strategy_sleeve_execution(
                 signal=signal,
                 execution_window=request.execution_window,
                 target_date=request.target_date,
-                metadata=request.metadata,
+                metadata=execution_metadata,
             )
         except StrategyExecutionPlanError as exc:
             raise HTTPException(

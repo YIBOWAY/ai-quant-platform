@@ -36,6 +36,7 @@ from quant_system.api.safety.local_session import (
 )
 from quant_system.backtest.pipeline import BacktestRunResult, run_sample_backtest
 from quant_system.config.settings import load_settings, reload_settings
+from quant_system.d34.cli import d34_app
 from quant_system.data.pipeline import IngestionResult, run_sample_ingestion, run_tiingo_ingestion
 from quant_system.data.price_history import (
     HistoricalPriceReadError,
@@ -3832,6 +3833,7 @@ app.add_typer(prediction_market_app, name="prediction-market")
 app.add_typer(options_app, name="options")
 app.add_typer(hermes_app, name="hermes")
 app.add_typer(news_app, name="news")
+app.add_typer(d34_app, name="d34")
 
 
 @news_app.command("horizon-ingest")

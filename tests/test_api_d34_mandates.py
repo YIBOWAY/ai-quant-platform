@@ -80,6 +80,25 @@ class _MandateAuthority:
         self.active["version"] = expected_version + 1
         return self.active
 
+    def renew(
+        self,
+        *,
+        mandate_id: str,
+        duration_days: int,
+        expected_version: int,
+        reason: str,
+    ) -> dict[str, object]:
+        assert self.active is not None
+        assert self.active["mandate_id"] == mandate_id
+        assert self.active["version"] == expected_version
+        assert duration_days == 30
+        assert reason
+        expires_at = self.active["expires_at"]
+        assert isinstance(expires_at, datetime)
+        self.active["expires_at"] = expires_at + timedelta(days=duration_days)
+        self.active["version"] = expected_version + 1
+        return self.active
+
 
 def _headers() -> dict[str, str]:
     return {
@@ -188,3 +207,23 @@ def test_owner_pauses_resumes_and_revokes_mandate_with_cas(tmp_path: Path) -> No
     )
     assert listing.status_code == 200, listing.text
     assert listing.json()["items"][0]["status"] == "revoked"
+
+
+def test_owner_renews_mandate_without_recreating_policy(tmp_path: Path) -> None:
+    client, csrf = _client(tmp_path)
+    created = client.post(
+        "/api/hermes/mandates",
+        json={"workspace_id": "default", "duration_days": 30},
+        headers={**_headers(), CSRF_HEADER_NAME: csrf},
+    ).json()
+
+    renewed = client.post(
+        f"/api/hermes/mandates/{created['mandate_id']}/renew",
+        json={"duration_days": 30, "expected_version": 1, "reason": "next cycle"},
+        headers={**_headers(), CSRF_HEADER_NAME: csrf},
+    )
+
+    assert renewed.status_code == 200, renewed.text
+    assert renewed.json()["version"] == 2
+    assert renewed.json()["policy_digest"] == created["policy_digest"]
+    assert renewed.json()["expires_at"] > created["expires_at"]

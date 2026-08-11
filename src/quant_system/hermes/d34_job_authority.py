@@ -93,6 +93,13 @@ class JobLease:
     lease_id: str
 
 
+@dataclass(frozen=True)
+class LeasedJobInput:
+    job_id: str
+    input_digest: str
+    input_document: dict[str, object]
+
+
 class JobAuthorityPort(Protocol):
     def list(
         self, *, workspace_id: str, limit: int, state: str | None
@@ -407,6 +414,32 @@ class PostgresJobAuthority:
             ) from exc
         return job
 
+    def read_leased_input(self, *, job_id: str, lease_id: str) -> LeasedJobInput:
+        if not job_id.startswith("job-") or not lease_id.startswith("lease-"):
+            raise JobAuthorityError("d34_job_validation", "job lease identity is invalid")
+        try:
+            with self._database().connect() as conn:
+                row = conn.execute(
+                    f"""
+                    SELECT input_digest, input_document
+                    FROM {SCHEMA}.d34_experiment_jobs
+                    WHERE job_id = %s AND lease_id = %s
+                      AND owner_user_id = %s AND state IN ('leased', 'running')
+                    """,
+                    (job_id, lease_id, ROOT_USER_ID),
+                ).fetchone()
+        except (DatabaseUnavailable, psycopg.Error) as exc:
+            raise JobAuthorityError(
+                "d34_job_unavailable", "D-34 job authority is unavailable"
+            ) from exc
+        if row is None or not isinstance(row[1], dict):
+            raise JobAuthorityError("d34_job_conflict", "job lease is stale")
+        return LeasedJobInput(
+            job_id=job_id,
+            input_digest=str(row[0]),
+            input_document=dict(row[1]),
+        )
+
     def heartbeat(self, *, job_id: str, lease_id: str, lease_seconds: int = 900) -> ExperimentJob:
         if not 30 <= lease_seconds <= 86400:
             raise JobAuthorityError("d34_job_validation", "heartbeat duration is invalid")
@@ -620,5 +653,6 @@ __all__ = [
     "JobAuthorityError",
     "JobAuthorityPort",
     "JobLease",
+    "LeasedJobInput",
     "PostgresJobAuthority",
 ]

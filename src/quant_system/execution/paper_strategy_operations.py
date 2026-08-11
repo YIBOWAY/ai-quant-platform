@@ -9,6 +9,9 @@ from quant_system.config.settings import Settings
 from quant_system.execution.account import DEFAULT_INITIAL_CASH, PaperAccount
 from quant_system.execution.account_repository import PaperAccountBootstrapRequired
 from quant_system.execution.account_storage import PaperAccountStorage
+from quant_system.execution.d34_execution_context import (
+    resolve_d34_execution_policy_context,
+)
 from quant_system.execution.paper_strategy_execution_service import (
     PaperStrategyExecutionError,
     PaperStrategyExecutionService,
@@ -215,12 +218,27 @@ class PaperStrategyOperationsRunner:
         settings: Settings,
         price_source: PaperPriceSource | None = None,
         today: Callable[[], date] = date.today,
+        paper_execution_context_provider: Callable[
+            [StrategySleeve], Mapping[str, Any]
+        ]
+        | None = None,
     ) -> None:
         self.account_storage = account_storage
         self.sleeve_storage = sleeve_storage
         self.settings = settings
         self.price_source = price_source or PaperPriceSource(settings)
         self.today = today
+        self.paper_execution_context_provider = (
+            paper_execution_context_provider or self._paper_execution_context
+        )
+
+    def _paper_execution_context(self, sleeve: StrategySleeve) -> Mapping[str, Any]:
+        if str(sleeve.metadata.get("automation_source", "d33")) != "d34":
+            return {}
+        return resolve_d34_execution_policy_context(
+            self.settings,
+            workspace_id=str(sleeve.metadata.get("workspace_id", "default")),
+        )
 
     def generate_signal_once(
         self,
@@ -320,13 +338,17 @@ class PaperStrategyOperationsRunner:
                 account = PaperAccount.open_new(account_id=self.account_storage.account_id)
             sleeve = self.sleeve_storage.load_sleeve(sleeve_id)
             signal = self._load_signal(sleeve_id, signal_id)
+            plan_metadata = dict(metadata or {})
+            if str(sleeve.metadata.get("automation_source", "d33")) == "d34":
+                context = self.paper_execution_context_provider(sleeve)
+                plan_metadata["paper_execution_policy_context"] = dict(context)
             return sleeve_service.create_execution_plan(
                 account,
                 sleeve=sleeve,
                 signal=signal,
                 execution_window=execution_window,
                 target_date=self._target_date(target_date),
-                metadata=dict(metadata or {}),
+                metadata=plan_metadata,
             )
 
     def process_pending_executions_once(

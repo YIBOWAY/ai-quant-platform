@@ -51,3 +51,12 @@ def test_open_local_runtime_mounts_repos_socket_and_cleans_container(tmp_path: P
     assert receipt.image_digest == "sha256:" + "a" * 64
     assert receipt.output["contract"] == "hqa.d34_container_versions/v1"
     assert len(receipt.receipt_digest) == 64
+
+
+def test_dockerfile_pins_exact_upstream_tarball_bytes() -> None:
+    dockerfile = Path("docker/d34/Dockerfile").read_text(encoding="utf-8")
+    assert "codeload.github.com/microsoft/qlib/tar.gz/${QLIB_COMMIT}" in dockerfile
+    assert "codeload.github.com/microsoft/RD-Agent/tar.gz/${RDAGENT_COMMIT}" in dockerfile
+    assert "016ec8f5d415e4b4251412e60a395154332cb2db0239c20a522b04de6198131f" in dockerfile
+    assert "c3af9e4f153a5ef407deaa2a04b281be62d3fd7c380e2ca647d30cec5b7bc07c" in dockerfile
+    assert "sha256sum --check" in dockerfile

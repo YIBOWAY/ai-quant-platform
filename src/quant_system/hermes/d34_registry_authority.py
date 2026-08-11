@@ -115,6 +115,10 @@ class ProvisionCanaryCommand:
 
 
 class RegistryAuthorityPort(Protocol):
+    def get_canary(
+        self, canary_id: str
+    ) -> D34Canary | dict[str, object]: ...
+
     def list_artifacts(
         self, *, workspace_id: str, limit: int
     ) -> list[D34Artifact | dict[str, object]]: ...
@@ -238,6 +242,26 @@ class PostgresRegistryAuthority:
         )
         return [_canary(row) for row in rows]
 
+    def get_canary(self, canary_id: str) -> D34Canary:
+        if not canary_id.startswith("canary-") or len(canary_id) > 256:
+            raise RegistryAuthorityError(
+                "d34_registry_validation", "canary id is invalid"
+            )
+        try:
+            with self._database().connect() as conn:
+                row = conn.execute(
+                    f"SELECT {_CANARY_COLUMNS} FROM {SCHEMA}.d34_canaries "
+                    "WHERE canary_id = %s AND owner_user_id = %s",
+                    (canary_id, ROOT_USER_ID),
+                ).fetchone()
+        except (DatabaseUnavailable, psycopg.Error) as exc:
+            raise RegistryAuthorityError(
+                "d34_registry_unavailable", "D-34 Artifact Registry is unavailable"
+            ) from exc
+        if row is None:
+            raise RegistryAuthorityError("d34_registry_not_found", "canary not found")
+        return _canary(row)
+
     def _database(self):
         database = get_database(self._settings)
         if database is None:
@@ -301,6 +325,7 @@ class PostgresRegistryAuthority:
         decision_id = f"decision-{comparison.comparison_digest[:32]}"
         artifact_id = f"artifact-{comparison.comparison_digest[:32]}"
         outcome = "accepted" if comparison.accepted else "rejected"
+        expected_job_state = "succeeded" if comparison.accepted else "rejected"
         try:
             with self._database().connect() as conn, conn.transaction():
                 job = conn.execute(
@@ -316,7 +341,7 @@ class PostgresRegistryAuthority:
                     or str(job[0]) != command.mandate_id
                     or str(job[1]) != str(ROOT_USER_ID)
                     or str(job[2]) != command.workspace_id
-                    or str(job[3]) != "succeeded"
+                    or str(job[3]) != expected_job_state
                 ):
                     raise RegistryAuthorityError(
                         "d34_registry_conflict", "research job is not eligible for evaluation"

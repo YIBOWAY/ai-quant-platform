@@ -111,6 +111,15 @@ class MandateAuthorityPort(Protocol):
         reason: str,
     ) -> Mandate | dict[str, object]: ...
 
+    def renew(
+        self,
+        *,
+        mandate_id: str,
+        duration_days: int,
+        expected_version: int,
+        reason: str,
+    ) -> Mandate | dict[str, object]: ...
+
 
 def _policy_document(command: CreateMandateCommand) -> dict[str, object]:
     return {
@@ -384,6 +393,82 @@ class PostgresMandateAuthority:
                         event_type,
                         mandate.version,
                         Jsonb({"reason": reason.strip()}),
+                    ),
+                )
+        except MandateAuthorityError:
+            raise
+        except (DatabaseUnavailable, psycopg.Error) as exc:
+            raise MandateAuthorityError(
+                "d34_mandate_unavailable", "D-34 mandate authority is unavailable"
+            ) from exc
+        return mandate
+
+    def renew(
+        self,
+        *,
+        mandate_id: str,
+        duration_days: int,
+        expected_version: int,
+        reason: str,
+    ) -> Mandate:
+        if (
+            not mandate_id.startswith("mandate-")
+            or not 1 <= duration_days <= 365
+            or expected_version < 1
+            or not 1 <= len(reason.strip()) <= 1000
+        ):
+            raise MandateAuthorityError("d34_mandate_validation", "mandate renewal is invalid")
+        try:
+            with self._database().connect() as conn, conn.transaction():
+                row = conn.execute(
+                    f"""
+                    UPDATE {SCHEMA}.d34_mandates
+                    SET expires_at = GREATEST(expires_at, clock_timestamp())
+                                     + make_interval(days => %s),
+                        updated_at = clock_timestamp(),
+                        version = version + 1
+                    WHERE mandate_id = %s
+                      AND owner_user_id = %s
+                      AND version = %s
+                      AND status IN ('active', 'paused')
+                    RETURNING {_MANDATE_COLUMNS}
+                    """,
+                    (duration_days, mandate_id, ROOT_USER_ID, expected_version),
+                ).fetchone()
+                if row is None:
+                    exists = conn.execute(
+                        f"SELECT status, version FROM {SCHEMA}.d34_mandates "
+                        "WHERE mandate_id = %s AND owner_user_id = %s",
+                        (mandate_id, ROOT_USER_ID),
+                    ).fetchone()
+                    if exists is None:
+                        raise MandateAuthorityError(
+                            "d34_mandate_not_found", "mandate not found"
+                        )
+                    raise MandateAuthorityError(
+                        "d34_mandate_conflict",
+                        "mandate status or version changed; refresh before retrying",
+                    )
+                mandate = _mandate_from_row(row)
+                conn.execute(
+                    f"""
+                    INSERT INTO {SCHEMA}.d34_mandate_events (
+                        event_id, mandate_id, owner_user_id, workspace_id,
+                        event_type, mandate_version, event_data
+                    ) VALUES (%s, %s, %s, %s, 'renewed', %s, %s)
+                    """,
+                    (
+                        f"mandate-event-{uuid4()}",
+                        mandate_id,
+                        ROOT_USER_ID,
+                        mandate.workspace_id,
+                        mandate.version,
+                        Jsonb(
+                            {
+                                "duration_days": duration_days,
+                                "reason": reason.strip(),
+                            }
+                        ),
                     ),
                 )
         except MandateAuthorityError:

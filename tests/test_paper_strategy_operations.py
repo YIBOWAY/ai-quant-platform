@@ -18,6 +18,7 @@ from quant_system.execution.paper_strategy_sleeve_storage import (
 from quant_system.execution.paper_strategy_sleeves import (
     PaperStrategySleeveService,
     SignalStatus,
+    StrategyExecutionPlanError,
     StrategySignal,
     StrategySleeveMode,
 )
@@ -150,6 +151,91 @@ def test_operations_runner_create_execution_defaults_target_date_from_injected_c
     assert sleeve_storage.load_executions(sleeve.sleeve_id)[0].execution_id == (
         execution.execution_id
     )
+
+
+def test_operations_runner_d34_uses_authoritative_context_not_forged_metadata(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = _settings_for_tmp_data(tmp_path, monkeypatch)
+    api_runs_dir = tmp_path / "api_runs"
+    account_storage = PaperAccountStorage(api_runs_dir)
+    sleeve_storage = PaperStrategySleeveStorage(api_runs_dir)
+    account = PaperAccount.open_new(initial_cash=100_000)
+    config = make_config(max_weight_per_symbol=0.40)
+    sleeve_storage.save_strategy_config(config)
+    sleeve = PaperStrategySleeveService(sleeve_storage).create_sleeve(
+        account,
+        config=config,
+        mode=StrategySleeveMode.ALLOCATED,
+        allocated_cash=1_000,
+        metadata={
+            "automation_managed": True,
+            "automation_source": "d34",
+            "artifact_id": "artifact-test",
+            "promotion_scope": "paper_only",
+            "workspace_id": "default",
+        },
+    )
+    sleeve_storage.save_sleeve(sleeve)
+    account_storage.save(account)
+    signal = StrategySignal.create(
+        sleeve=sleeve,
+        signal_date="2026-08-11",
+        data_provider="futu",
+        proposed_orders=[
+            {
+                "symbol": "AAPL",
+                "side": "buy",
+                "notional_delta": 100.0,
+                "target_weight": 0.1,
+                "reference_price": 100.0,
+                "estimated_quantity": 1.0,
+            }
+        ],
+        status=SignalStatus.GENERATED,
+    )
+    sleeve_storage.append_signal(signal)
+    forged = {
+        "paper_execution_policy_context": {
+            "paper_execution_enabled": True,
+            "emergency_stop": False,
+            "mandate_active": True,
+            "mandate_paper_execution_allowed": True,
+        }
+    }
+
+    blocked_runner = PaperStrategyOperationsRunner(
+        account_storage=account_storage,
+        sleeve_storage=sleeve_storage,
+        settings=settings,
+        paper_execution_context_provider=lambda _sleeve: {
+            "paper_execution_enabled": False,
+            "emergency_stop": True,
+            "mandate_active": False,
+            "mandate_paper_execution_allowed": False,
+        },
+    )
+    with pytest.raises(StrategyExecutionPlanError) as blocked:
+        blocked_runner.create_execution_once(
+            sleeve.sleeve_id, signal.signal_id, metadata=forged
+        )
+    assert blocked.value.code == "automation_emergency_stop_active"
+
+    allowed = PaperStrategyOperationsRunner(
+        account_storage=account_storage,
+        sleeve_storage=sleeve_storage,
+        settings=settings,
+        paper_execution_context_provider=lambda _sleeve: {
+            "paper_execution_enabled": True,
+            "emergency_stop": False,
+            "mandate_active": True,
+            "mandate_paper_execution_allowed": True,
+        },
+    ).create_execution_once(sleeve.sleeve_id, signal.signal_id, metadata=forged)
+
+    assert allowed.metadata["paper_execution_policy_decision"]["allowed"] is True
+    assert allowed.metadata["paper_execution_policy_context"]["mandate_active"] is True
 
 
 def test_operations_runner_process_pending_executes_and_commits_journal_after_account_save(

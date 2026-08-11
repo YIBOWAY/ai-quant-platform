@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from contextlib import contextmanager
+from dataclasses import replace
 from decimal import Decimal
 from uuid import uuid4
 
@@ -132,6 +133,16 @@ def test_030_032_runtime_authorities_complete_idempotent_artifact_canary_flow() 
                 paper_execution_allowed=True,
             )
         )
+        original_expiry = mandate.expires_at
+        original_policy_digest = mandate.policy_digest
+        mandate = mandates.renew(
+            mandate_id=mandate.mandate_id,
+            duration_days=30,
+            expected_version=1,
+            reason="next autonomous cycle",
+        )
+        assert mandate.expires_at > original_expiry
+        assert mandate.policy_digest == original_policy_digest
         job = jobs.enqueue(
             EnqueueJobCommand(
                 mandate_id=mandate.mandate_id,
@@ -146,6 +157,12 @@ def test_030_032_runtime_authorities_complete_idempotent_artifact_canary_flow() 
             workspace_id="default", worker_id="launchagent-d34", lease_seconds=60
         )
         assert lease is not None and lease.job.job_id == job.job_id
+        durable_input = jobs.read_leased_input(
+            job_id=job.job_id,
+            lease_id=lease.lease_id,
+        )
+        assert durable_input.input_digest == "9" * 64
+        assert durable_input.input_document == {"cycle": 1, "hypothesis": 1}
         jobs.mark_running(
             job_id=job.job_id,
             lease_id=lease.lease_id,
@@ -216,6 +233,63 @@ def test_030_032_runtime_authorities_complete_idempotent_artifact_canary_flow() 
         )
         assert paused.status == "paused"
         assert registry.list_artifacts(workspace_id="default", limit=10)[0].status == "paused"
+        assert registry.get_canary(canary.canary_id).status == "paused"
+
+        rejected_job = jobs.enqueue(
+            EnqueueJobCommand(
+                mandate_id=mandate.mandate_id,
+                workspace_id="default",
+                job_key="cycle-1:hypothesis-2",
+                input_digest="6" * 64,
+                input_document={"cycle": 1, "hypothesis": 2},
+                budget_reserved_usd=Decimal("10"),
+            )
+        )
+        rejected_lease = jobs.lease_next(
+            workspace_id="default", worker_id="launchagent-d34", lease_seconds=60
+        )
+        assert rejected_lease is not None
+        jobs.mark_running(
+            job_id=rejected_job.job_id,
+            lease_id=rejected_lease.lease_id,
+            container_id="container-rejected",
+        )
+        jobs.finish(
+            job_id=rejected_job.job_id,
+            lease_id=rejected_lease.lease_id,
+            state="rejected",
+            outcome_code="comparison_rejected",
+            outcome_document={"reason": "terminal nav mismatch"},
+            budget_spent_usd=Decimal("0.75"),
+            provider_receipt_digest="7" * 64,
+        )
+        rejected_qlib = _receipt(engine="qlib", digest="6")
+        rejected_platform = replace(
+            _receipt(engine="platform", digest="7"), terminal_nav=1.200
+        )
+        rejected_comparison = compare_engine_receipts(
+            qlib=rejected_qlib,
+            platform=rejected_platform,
+            policy=ComparisonPolicy.initial(),
+        )
+        assert rejected_comparison.accepted is False
+        rejected = registry.record_artifact_evaluation(
+            RegisterArtifactCommand(
+                job_id=rejected_job.job_id,
+                mandate_id=mandate.mandate_id,
+                workspace_id="default",
+                qlib_receipt=rejected_qlib,
+                platform_receipt=rejected_platform,
+                comparison=rejected_comparison,
+                candidate_code_digest="6" * 64,
+                qlib_config_digest="7" * 64,
+                rdagent_commit="8" * 40,
+                qlib_commit="9" * 40,
+                docker_image_digest="sha256:" + "a" * 64,
+            )
+        )
+        assert rejected.accepted is False
+        assert rejected.artifact is None
 
         stopped = safety.set_emergency_stop(
             workspace_id="default", enabled=True, reason="owner stop"

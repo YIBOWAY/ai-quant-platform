@@ -151,6 +151,7 @@ install_platform_jobs() {
   bash "$ROOT/scripts/install_agent_v02_stack_launchagents.sh"
   bash "$ROOT/scripts/install_agent_v02_connector_launchagent.sh"
   bash "$ROOT/scripts/install_factor_automation_launchagent.sh"
+  bash "$ROOT/scripts/install_d34_worker_launchagent.sh"
   bash "$ROOT/scripts/install_asia_radar_refresh_launchagent.sh"
 }
 
@@ -242,6 +243,7 @@ bootout_job() {
 
 stop_stack() {
   bootout_job com.aiquant.asia-radar-refresh
+  bootout_job com.aiquant.d34-worker
   bootout_job com.aiquant.factor-automation
   bootout_job com.aiquant.agent-v02-connector
   bootout_job com.aiquant.frontend
@@ -281,6 +283,7 @@ status_stack() {
   print_job_status com.aiquant.frontend
   print_job_status com.aiquant.agent-v02-connector
   print_job_status com.aiquant.factor-automation
+  print_job_status com.aiquant.d34-worker
   print_job_status com.aiquant.asia-radar-refresh
   for endpoint in \
     "hermes=http://127.0.0.1:8642/health" \
@@ -303,6 +306,7 @@ show_logs() {
   echo "frontend_log=$ROOT/data/_runtime/logs/frontend-next.launchd.log"
   echo "connector_log=$ROOT/data/_runtime/logs/agent-v02-connector.launchd.out.log"
   echo "factor_automation_log=$ROOT/data/_runtime/logs/factor-automation.launchd.out.log"
+  echo "d34_worker_log=$ROOT/data/_runtime/logs/d34-worker.launchd.out.log"
   echo "asia_radar_refresh_log=$ROOT/data/_runtime/logs/asia-radar-refresh.launchd.out.log"
 }
 
@@ -314,7 +318,7 @@ Commands:
   start    Start Docker/PostgreSQL, run the production build, install/restart LaunchAgents, and wait for readiness.
   restart  Same as start; all long-running services are replaced by launchd.
   build    Validate the Python backend and run the Next.js production build.
-  stop     Unload all five LaunchAgents and stop the project PostgreSQL container.
+  stop     Unload all seven LaunchAgents and stop the project PostgreSQL container.
   status   Show Docker, launchd, and HTTP readiness without changing state.
   logs     Print the stable log paths.
 EOF

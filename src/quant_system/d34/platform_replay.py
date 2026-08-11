@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import shutil
 import tempfile
 from dataclasses import dataclass
@@ -123,12 +124,30 @@ def _engine_receipt(raw: dict[str, object]) -> EngineReceipt:
 
 
 def _from_manifest(output_dir: Path, raw: dict[str, object]) -> PlatformReplayReceipt:
+    manifest = dict(raw)
+    receipt_digest = str(manifest.pop("receipt_digest"))
+    outputs = manifest.get("output_digests")
+    if (
+        manifest.get("contract") != ENGINE_RECEIPT_CONTRACT
+        or manifest.get("engine") != "platform"
+        or _digest(manifest) != receipt_digest
+        or not isinstance(outputs, dict)
+    ):
+        raise ValueError("platform replay receipt digest mismatch")
+    for filename, expected_digest in outputs.items():
+        path = output_dir / str(filename)
+        if (
+            not path.is_file()
+            or len(str(expected_digest)) != 64
+            or _file_digest(path) != str(expected_digest)
+        ):
+            raise ValueError("platform replay output digest mismatch")
     return PlatformReplayReceipt(
         contract=str(raw["contract"]),
         snapshot_id=str(raw["snapshot_id"]),
         snapshot_digest=str(raw["snapshot_digest"]),
         target_weights_digest=str(raw["target_weights_digest"]),
-        receipt_digest=str(raw["receipt_digest"]),
+        receipt_digest=receipt_digest,
         output_dir=output_dir,
         engine_receipt=_engine_receipt(raw),
     )
@@ -148,7 +167,18 @@ def run_platform_replay(
     whole_share_orders: bool = False,
 ) -> PlatformReplayReceipt:
     """Replay only weights/execution assumptions; factor code is never imported."""
-    if not snapshot_id.startswith("snapshot-") or len(snapshot_digest) != 64:
+    numeric = (initial_cash, commission_bps, slippage_bps, min_order_value)
+    if (
+        not snapshot_id.startswith("snapshot-")
+        or len(snapshot_digest) != 64
+        or any(char not in "0123456789abcdef" for char in snapshot_digest)
+        or any(not math.isfinite(float(value)) for value in numeric)
+        or float(initial_cash) <= 0
+        or float(commission_bps) < 0
+        or float(slippage_bps) < 0
+        or float(min_order_value) < 0
+        or type(whole_share_orders) is not bool
+    ):
         raise PlatformReplayError("platform_replay_validation", "snapshot identity is invalid")
     snapshot_path, weights_path = Path(snapshot_parquet), Path(target_weights_parquet)
     if not snapshot_path.is_file() or not weights_path.is_file():
@@ -195,6 +225,8 @@ def run_platform_replay(
         if (
             receipt.snapshot_digest != snapshot_digest
             or receipt.target_weights_digest != target_digest
+            or str(existing.get("snapshot_parquet_digest"))
+            != _file_digest(snapshot_path)
         ):
             raise PlatformReplayError(
                 "platform_replay_collision", "existing replay receipt mismatches its inputs"

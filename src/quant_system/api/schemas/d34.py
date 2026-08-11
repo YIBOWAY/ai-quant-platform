@@ -61,6 +61,10 @@ class D34MandateTransitionRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=1000)
 
 
+class D34MandateRenewRequest(D34MandateTransitionRequest):
+    duration_days: int = Field(default=30, ge=1, le=365)
+
+
 class D34ExperimentJobResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -143,3 +147,25 @@ class D34CanaryResponse(BaseModel):
 class D34CanaryListResponse(BaseModel):
     contract: str = Field(pattern=r"^hqa\.d34_canary-list/v1$")
     items: list[D34CanaryResponse]
+
+
+class D34CanaryTransitionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1)
+    reason: str = Field(min_length=1, max_length=1000)
+
+
+class D34RollbackRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    workspace_id: str = Field(default="default", min_length=1, max_length=128)
+    reason: str = Field(min_length=1, max_length=1000)
+
+
+class D34RollbackResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    contract: str = Field(pattern=r"^hqa\.d34_rollback/v1$")
+    transitioned: int = Field(ge=0)
+    canary_ids: list[str]

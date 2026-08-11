@@ -5,6 +5,7 @@ from decimal import Decimal, InvalidOperation
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from quant_system.api.dependencies import (
+    ApiRunsDirDep,
     OwnerSessionDep,
     SettingsDep,
     consume_owner_mutation_budget,
@@ -14,11 +15,23 @@ from quant_system.api.safety.mutation_rate_limit import D34_MANDATE_ROUTE
 from quant_system.api.schemas.d34 import (
     D34ArtifactListResponse,
     D34CanaryListResponse,
+    D34CanaryResponse,
+    D34CanaryTransitionRequest,
     D34ExperimentJobListResponse,
     D34MandateCreateRequest,
     D34MandateListResponse,
+    D34MandateRenewRequest,
     D34MandateResponse,
     D34MandateTransitionRequest,
+    D34RollbackRequest,
+    D34RollbackResponse,
+)
+from quant_system.execution.d34_canary_control import (
+    D34CanaryControlError,
+    D34CanaryController,
+)
+from quant_system.execution.paper_strategy_sleeve_storage import (
+    PaperStrategySleeveStorage,
 )
 from quant_system.hermes.d34_job_authority import (
     JOB_STATES,
@@ -83,6 +96,43 @@ def _registry_public(
     if isinstance(value, (D34Artifact, D34Canary)):
         return value.to_public_dict()
     return value
+
+
+def _canary_controller(
+    request: Request,
+    settings: SettingsDep,
+    api_runs_dir: ApiRunsDirDep,
+) -> D34CanaryController:
+    services = getattr(request.app.state, "services", None)
+    injected = services.get("d34_canary_controller") if isinstance(services, dict) else None
+    if injected is not None:
+        return injected
+    return D34CanaryController(
+        registry=_registry_authority(request, settings),
+        sleeve_storage=PaperStrategySleeveStorage(api_runs_dir),
+    )
+
+
+def _canary_http_error(exc: Exception) -> HTTPException:
+    code = str(getattr(exc, "code", "d34_canary_control_unavailable"))
+    status_code = (
+        404
+        if code in {"d34_registry_not_found", "d34_canary_sleeve_missing"}
+        else 409
+        if code in {
+            "d34_registry_conflict",
+            "d34_canary_control_conflict",
+            "d34_canary_sleeve_conflict",
+            "d34_canary_lineage_invalid",
+        }
+        else 422
+        if code in {"d34_registry_validation", "d34_canary_control_validation"}
+        else 503
+    )
+    return HTTPException(
+        status_code=status_code,
+        detail={"code": code, "message": str(getattr(exc, "message", code))},
+    )
 
 
 def _http_error(exc: MandateAuthorityError) -> HTTPException:
@@ -259,6 +309,30 @@ def revoke_mandate(
     )
 
 
+@router.post("/hermes/mandates/{mandate_id}/renew", response_model=D34MandateResponse)
+def renew_mandate(
+    mandate_id: str,
+    body: D34MandateRenewRequest,
+    request: Request,
+    settings: SettingsDep,
+) -> dict[str, object]:
+    owner = require_mutation_security(request)
+    consume_owner_mutation_budget(
+        request, owner_user_id=owner.owner_user_id, route=D34_MANDATE_ROUTE
+    )
+    try:
+        return _public(
+            _authority(request, settings).renew(
+                mandate_id=mandate_id,
+                duration_days=body.duration_days,
+                expected_version=body.expected_version,
+                reason=body.reason,
+            )
+        )
+    except MandateAuthorityError as exc:
+        raise _http_error(exc) from exc
+
+
 @router.get(
     "/hermes/research/jobs",
     response_model=D34ExperimentJobListResponse,
@@ -340,3 +414,85 @@ def list_d34_canaries(
         "contract": "hqa.d34_canary-list/v1",
         "items": [_registry_public(item) for item in items],
     }
+
+
+def _control_canary(
+    *,
+    canary_id: str,
+    action: str,
+    body: D34CanaryTransitionRequest,
+    request: Request,
+    settings: SettingsDep,
+    api_runs_dir: ApiRunsDirDep,
+) -> dict[str, object]:
+    owner = require_mutation_security(request)
+    consume_owner_mutation_budget(
+        request, owner_user_id=owner.owner_user_id, route=D34_MANDATE_ROUTE
+    )
+    try:
+        return _registry_public(
+            _canary_controller(request, settings, api_runs_dir).transition(
+                canary_id=canary_id,
+                action=action,
+                expected_version=body.expected_version,
+                reason=body.reason,
+            )
+        )
+    except (D34CanaryControlError, RegistryAuthorityError) as exc:
+        raise _canary_http_error(exc) from exc
+
+
+@router.post("/hermes/canaries/{canary_id}/pause", response_model=D34CanaryResponse)
+def pause_d34_canary(
+    canary_id: str,
+    body: D34CanaryTransitionRequest,
+    request: Request,
+    settings: SettingsDep,
+    api_runs_dir: ApiRunsDirDep,
+) -> dict[str, object]:
+    return _control_canary(
+        canary_id=canary_id,
+        action="pause",
+        body=body,
+        request=request,
+        settings=settings,
+        api_runs_dir=api_runs_dir,
+    )
+
+
+@router.post("/hermes/canaries/{canary_id}/demote", response_model=D34CanaryResponse)
+def demote_d34_canary(
+    canary_id: str,
+    body: D34CanaryTransitionRequest,
+    request: Request,
+    settings: SettingsDep,
+    api_runs_dir: ApiRunsDirDep,
+) -> dict[str, object]:
+    return _control_canary(
+        canary_id=canary_id,
+        action="demote",
+        body=body,
+        request=request,
+        settings=settings,
+        api_runs_dir=api_runs_dir,
+    )
+
+
+@router.post("/hermes/d34/rollback", response_model=D34RollbackResponse)
+def rollback_d34(
+    body: D34RollbackRequest,
+    request: Request,
+    settings: SettingsDep,
+    api_runs_dir: ApiRunsDirDep,
+) -> dict[str, object]:
+    owner = require_mutation_security(request)
+    consume_owner_mutation_budget(
+        request, owner_user_id=owner.owner_user_id, route=D34_MANDATE_ROUTE
+    )
+    try:
+        result = _canary_controller(request, settings, api_runs_dir).rollback_all(
+            workspace_id=body.workspace_id, reason=body.reason
+        )
+    except (D34CanaryControlError, RegistryAuthorityError) as exc:
+        raise _canary_http_error(exc) from exc
+    return {"contract": "hqa.d34_rollback/v1", **result}

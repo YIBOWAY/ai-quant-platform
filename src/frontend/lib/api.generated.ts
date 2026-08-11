@@ -554,6 +554,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/hermes/canaries/{canary_id}/demote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Demote D34 Canary */
+        post: operations["demote_d34_canary_api_hermes_canaries__canary_id__demote_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hermes/canaries/{canary_id}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pause D34 Canary */
+        post: operations["pause_d34_canary_api_hermes_canaries__canary_id__pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/hermes/d34/artifacts": {
         parameters: {
             query?: never;
@@ -565,6 +599,23 @@ export interface paths {
         get: operations["list_d34_artifacts_api_hermes_d34_artifacts_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hermes/d34/rollback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rollback D34 */
+        post: operations["rollback_d34_api_hermes_d34_rollback_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -634,6 +685,23 @@ export interface paths {
         put?: never;
         /** Pause Mandate */
         post: operations["pause_mandate_api_hermes_mandates__mandate_id__pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hermes/mandates/{mandate_id}/renew": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Renew Mandate */
+        post: operations["renew_mandate_api_hermes_mandates__mandate_id__renew_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4407,6 +4475,13 @@ export interface components {
             /** Allocated Cash */
             allocated_cash: string;
         };
+        /** D34CanaryTransitionRequest */
+        D34CanaryTransitionRequest: {
+            /** Expected Version */
+            expected_version: number;
+            /** Reason */
+            reason: string;
+        };
         /** D34EmergencySafety */
         D34EmergencySafety: {
             /** Active */
@@ -4544,6 +4619,18 @@ export interface components {
             /** Items */
             items: components["schemas"]["D34MandateResponse"][];
         };
+        /** D34MandateRenewRequest */
+        D34MandateRenewRequest: {
+            /**
+             * Duration Days
+             * @default 30
+             */
+            duration_days: number;
+            /** Expected Version */
+            expected_version: number;
+            /** Reason */
+            reason: string;
+        };
         /** D34MandateResponse */
         D34MandateResponse: {
             /** Contract */
@@ -4641,6 +4728,25 @@ export interface components {
             max_symbol_nav_fraction: number;
             /** Max Total Nav Fraction */
             max_total_nav_fraction: number;
+        };
+        /** D34RollbackRequest */
+        D34RollbackRequest: {
+            /** Reason */
+            reason: string;
+            /**
+             * Workspace Id
+             * @default default
+             */
+            workspace_id: string;
+        };
+        /** D34RollbackResponse */
+        D34RollbackResponse: {
+            /** Canary Ids */
+            canary_ids: string[];
+            /** Contract */
+            contract: string;
+            /** Transitioned */
+            transitioned: number;
         };
         /** DualVerticalAcceptanceResponse */
         DualVerticalAcceptanceResponse: {
@@ -10367,6 +10473,76 @@ export interface operations {
             };
         };
     };
+    demote_d34_canary_api_hermes_canaries__canary_id__demote_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                canary_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["D34CanaryTransitionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["D34CanaryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pause_d34_canary_api_hermes_canaries__canary_id__pause_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                canary_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["D34CanaryTransitionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["D34CanaryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_d34_artifacts_api_hermes_d34_artifacts_get: {
         parameters: {
             query?: {
@@ -10386,6 +10562,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["D34ArtifactListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rollback_d34_api_hermes_d34_rollback_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["D34RollbackRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["D34RollbackResponse"];
                 };
             };
             /** @description Validation Error */
@@ -10527,6 +10736,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["D34MandateTransitionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["D34MandateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    renew_mandate_api_hermes_mandates__mandate_id__renew_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mandate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["D34MandateRenewRequest"];
             };
         };
         responses: {

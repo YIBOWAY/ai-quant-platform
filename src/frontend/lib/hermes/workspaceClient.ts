@@ -183,6 +183,23 @@ async function sameOriginJson<T>(
   return (await response.json()) as T;
 }
 
+export function ownerGetJson<T>(path: string, signal?: AbortSignal): Promise<T> {
+  return sameOriginJson<T>(path, { method: "GET", signal });
+}
+
+export function ownerPostJson<T>(
+  path: string,
+  body: unknown,
+  signal?: AbortSignal,
+): Promise<T> {
+  return sameOriginJson<T>(path, {
+    method: "POST",
+    body,
+    csrf: true,
+    signal,
+  });
+}
+
 export type OwnerSessionView = {
   session_id?: string;
   mutation_enabled?: boolean;
