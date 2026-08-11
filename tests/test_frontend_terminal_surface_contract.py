@@ -98,6 +98,7 @@ def test_hermes_workbench_is_read_only_artifact_shelf() -> None:
     today = read(
         "src/frontend/components/hermes/today/HermesTodayView.tsx"
     )
+    copy = read("src/frontend/lib/hermes/copy.ts")
     hermes_index = read("src/frontend/components/hermes/index.ts")
     composer = read("src/frontend/components/hermes/ComposerDock.tsx")
 
@@ -113,11 +114,12 @@ def test_hermes_workbench_is_read_only_artifact_shelf() -> None:
     assert "getAgentCandidates" in source
     assert "getHermesArtifacts" in source
     assert "Promise.all" in source
+    assert "hermesWorkbenchCopy" in today
     assert (
         "Read-only research desk prioritizing action, exceptions, and conclusions. "
         "Submit remains disabled."
-    ) in today
-    assert "以行动、异常与结论为先的只读研究工作台。提交仍保持禁用。" in today
+    ) in copy
+    assert "以行动、异常与结论为先的只读研究工作台。提交仍保持禁用。" in copy
     assert "Read-only skeleton" not in source
     assert "只读骨架" not in source
     assert "streamPlaceholderA" not in source
