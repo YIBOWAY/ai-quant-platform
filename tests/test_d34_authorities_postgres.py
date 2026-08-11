@@ -443,3 +443,68 @@ def test_030_032_runtime_authorities_complete_idempotent_artifact_canary_flow() 
             conn.execute(
                 "UPDATE quant_system.d34_policy_decisions SET decision_document = '{}'::jsonb"
             )
+
+
+def test_expired_d34_external_effect_lease_becomes_durable_outcome_unknown() -> None:
+    with _authorities() as (admin, mandates, jobs, _registry, _policy_audit, safety):
+        mandate = mandates.create(
+            CreateMandateCommand(
+                owner_user_id=ROOT_USER_ID,
+                workspace_id="default",
+                duration_days=30,
+                universe=("SPY", "QQQ", "IWM", "DIA"),
+                hypotheses_per_cycle=1,
+                max_iterations=3,
+                max_experiments_per_iteration=3,
+                max_concurrent_jobs=1,
+                llm_budget_usd=Decimal("100"),
+                llm_warning_fraction=Decimal("0.8"),
+                paper_execution_allowed=True,
+            )
+        )
+        job = jobs.enqueue(
+            EnqueueJobCommand(
+                mandate_id=mandate.mandate_id,
+                workspace_id="default",
+                job_key="cycle-expired:hypothesis-1",
+                input_digest="a" * 64,
+                input_document={"cycle": "expired"},
+                budget_reserved_usd=Decimal("10"),
+            )
+        )
+        lease = jobs.lease_next(
+            workspace_id="default",
+            worker_id="launchagent-d34",
+            lease_seconds=60,
+        )
+        assert lease is not None and lease.job.job_id == job.job_id
+        jobs.mark_running(
+            job_id=job.job_id,
+            lease_id=lease.lease_id,
+            container_id="container-outcome-unknown",
+        )
+        with admin.connect() as conn:
+            conn.execute(
+                "UPDATE quant_system.d34_experiment_jobs "
+                "SET lease_expires_at = clock_timestamp() - interval '1 second' "
+                "WHERE job_id = %s",
+                (job.job_id,),
+            )
+
+        assert jobs.reconcile_expired(workspace_id="default") == 1
+        assert jobs.reconcile_expired(workspace_id="default") == 0
+        unknown = jobs.list(workspace_id="default", limit=10, state="outcome_unknown")
+        assert len(unknown) == 1
+        assert unknown[0].job_id == job.job_id
+        assert unknown[0].outcome_code == "lease_expired"
+        assert unknown[0].budget_spent_usd == Decimal("10.000000")
+        assert (
+            jobs.lease_next(
+                workspace_id="default",
+                worker_id="launchagent-d34",
+                lease_seconds=60,
+            )
+            is None
+        )
+        observed = safety.observe(workspace_id="default")
+        assert observed["budget"]["spent_usd"] == "10.000000"

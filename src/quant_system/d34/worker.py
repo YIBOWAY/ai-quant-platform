@@ -31,6 +31,12 @@ _RESEARCH_OPEN_TIME = time(6, 0)
 _POST_CLOSE_LOCAL_WEEKDAYS = frozenset({1, 2, 3, 4, 5})
 
 
+class _D34WorkerValidationError(ValueError):
+    def __init__(self, code: str) -> None:
+        self.code = code
+        super().__init__(code)
+
+
 def _canonical_json(value: object) -> bytes:
     return json.dumps(
         value,
@@ -473,23 +479,24 @@ class D34CycleWorker:
 
     def _run_lease(self, lease: Any, mandate: Any) -> D34WorkerResult:
         durable = self.jobs.read_leased_input(job_id=lease.job.job_id, lease_id=lease.lease_id)
-        if _digest(durable.input_document) != durable.input_digest:
-            raise ValueError("d34_job_input_digest_mismatch")
         document = durable.input_document
-        if (
-            document.get("mandate_id") != mandate.mandate_id
-            or document.get("mandate_policy_digest") != mandate.policy_digest
-            or document.get("paper_execution_allowed") is not True
-        ):
-            raise ValueError("d34_job_mandate_mismatch")
         job_id = lease.job.job_id
         job_root = self.config.workspace_root / "jobs" / job_id
         job_root.mkdir(parents=True, exist_ok=True)
         phase_path = job_root / "cycle_receipt.json"
         terminal = False
-        phase = "starting"
+        phase = "input_validation"
         research_output: dict[str, object] | None = None
         try:
+            if _digest(document) != durable.input_digest:
+                raise _D34WorkerValidationError("d34_job_input_digest_mismatch")
+            if (
+                document.get("mandate_id") != mandate.mandate_id
+                or document.get("mandate_policy_digest") != mandate.policy_digest
+                or document.get("paper_execution_allowed") is not True
+            ):
+                raise _D34WorkerValidationError("d34_job_mandate_mismatch")
+            phase = "starting"
             self.jobs.mark_running(job_id=job_id, lease_id=lease.lease_id, container_id=None)
             self._heartbeat(lease)
             snapshot_parquet = self.config.workspace_root / str(document["snapshot_parquet"])

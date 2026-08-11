@@ -119,6 +119,59 @@ def test_timeout_cleans_exact_container_and_writes_durable_failure_receipt(
     assert "partial provider output" not in json.dumps(receipt)
 
 
+def test_oom_exit_cleans_exact_container_and_records_returncode(tmp_path: Path) -> None:
+    roots = [tmp_path / name for name in ("workspace", "platform", "hqa", "cache")]
+    for root in roots:
+        root.mkdir()
+    calls: list[list[str]] = []
+
+    def run(command, **kwargs):
+        calls.append(list(command))
+        if command[1:3] == ["image", "inspect"]:
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout="sha256:" + "a" * 64 + "\n",
+                stderr="",
+            )
+        if command[1] == "run":
+            raise subprocess.CalledProcessError(
+                137,
+                command,
+                output="partial research output",
+                stderr="Killed",
+            )
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    runtime = D34DockerRuntime(
+        D34DockerConfig(
+            image_ref="hqa-d34-rdagent-qlib:0.1.0",
+            workspace_root=roots[0],
+            platform_root=roots[1],
+            hqa_root=roots[2],
+            cache_root=roots[3],
+            timeout_seconds=60,
+        ),
+        process_runner=run,
+    )
+
+    with pytest.raises(D34DockerRuntimeError) as failure:
+        runtime.run(job_id="job-oom", command=("research", "--request", "/input.json"))
+
+    assert failure.value.code == "d34_docker_failed"
+    container_name = "hqa-d34-" + hashlib.sha256(b"job-oom").hexdigest()[:20]
+    assert ["docker", "rm", "--force", container_name] in calls
+    receipt = json.loads(
+        (roots[0] / "jobs/job-oom/docker_failure.json").read_text(encoding="utf-8")
+    )
+    assert receipt["code"] == "d34_docker_failed"
+    assert receipt["returncode"] == 137
+    assert receipt["stdout_bytes"] == len("partial research output")
+    assert receipt["stderr_bytes"] == len("Killed")
+    assert "partial research output" not in json.dumps(receipt)
+    assert "Killed" not in json.dumps(receipt)
+
+
 def test_runtime_records_repository_changes_without_resetting_them(tmp_path: Path) -> None:
     roots = [tmp_path / name for name in ("workspace", "platform", "hqa", "cache")]
     for root in roots:

@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-from quant_system.d34.docker_runtime import D34DockerReceipt
+from quant_system.d34.docker_runtime import D34DockerReceipt, D34DockerRuntimeError
 from quant_system.d34.engine_comparison import EngineReceipt
 from quant_system.d34.research_driver import ResearchProposal, render_factor_source
 from quant_system.d34.worker import D34CycleWorker, D34WorkerConfig
@@ -372,6 +372,181 @@ def test_cycle_waits_for_post_close_window_before_snapshot_or_research(
     assert result.paper_cycle == {"sleeves_checked": 0}
     assert jobs.items == []
     assert docker.commands == []
+
+
+def test_cycle_records_futu_unavailable_without_enqueuing_research(tmp_path: Path) -> None:
+    roots = [tmp_path / name for name in ("workspace", "platform", "hqa", "cache")]
+    for path in roots:
+        path.mkdir()
+    mandate = SimpleNamespace(
+        mandate_id="mandate-cycle-12345678",
+        workspace_id="default",
+        status="active",
+        universe=("SPY", "QQQ", "IWM", "DIA"),
+        hypotheses_per_cycle=1,
+        max_iterations=2,
+        max_experiments_per_iteration=2,
+        max_concurrent_jobs=1,
+        llm_budget_usd=Decimal("100"),
+        paper_execution_allowed=True,
+        policy_digest="5" * 64,
+        expires_at=datetime(2026, 9, 1, tzinfo=UTC),
+    )
+
+    class FutuUnavailable:
+        provider_name = "futu"
+
+        def fetch_ohlcv(self, *_args, **_kwargs):
+            error = RuntimeError("Futu OpenD unavailable")
+            error.code = "d34_futu_unavailable"  # type: ignore[attr-defined]
+            raise error
+
+    jobs = Jobs()
+    docker = Docker(roots[0])
+    worker = D34CycleWorker(
+        config=D34WorkerConfig(
+            workspace_root=roots[0],
+            platform_root=roots[1],
+            hqa_root=roots[2],
+            cache_root=roots[3],
+        ),
+        mandates=SimpleNamespace(get_active=lambda **_kwargs: mandate),
+        jobs=jobs,
+        registry=Registry(),
+        docker_runtime=docker,
+        futu_provider=FutuUnavailable(),
+        platform_replay=lambda **_kwargs: pytest.fail("offline Futu replayed"),
+        canary_activator=lambda **_kwargs: pytest.fail("offline Futu activated canary"),
+        safety_observer=lambda: _open_safety(mandate),
+        today=lambda: date(2026, 8, 11),
+        now=lambda: datetime(2026, 8, 11, tzinfo=UTC),
+    )
+
+    result = worker.run_once()
+
+    assert result.status == "failed"
+    assert result.code == "snapshot_futu_unavailable"
+    assert jobs.items == []
+    assert docker.commands == []
+
+
+def test_cycle_rejects_tampered_durable_job_input_without_leaking_the_lease(
+    tmp_path: Path,
+) -> None:
+    roots = [tmp_path / name for name in ("workspace", "platform", "hqa", "cache")]
+    for path in roots:
+        path.mkdir()
+    mandate = SimpleNamespace(
+        mandate_id="mandate-cycle-12345678",
+        workspace_id="default",
+        status="active",
+        universe=("SPY", "QQQ", "IWM", "DIA"),
+        hypotheses_per_cycle=1,
+        max_iterations=2,
+        max_experiments_per_iteration=2,
+        max_concurrent_jobs=1,
+        llm_budget_usd=Decimal("100"),
+        paper_execution_allowed=True,
+        policy_digest="5" * 64,
+        expires_at=datetime(2026, 9, 1, tzinfo=UTC),
+    )
+
+    class TamperedJobs(Jobs):
+        def read_leased_input(self, *, job_id, lease_id):
+            durable = super().read_leased_input(job_id=job_id, lease_id=lease_id)
+            return LeasedJobInput(
+                job_id=durable.job_id,
+                input_digest="0" * 64,
+                input_document=durable.input_document,
+            )
+
+    jobs = TamperedJobs()
+    docker = Docker(roots[0])
+    worker = D34CycleWorker(
+        config=D34WorkerConfig(
+            workspace_root=roots[0],
+            platform_root=roots[1],
+            hqa_root=roots[2],
+            cache_root=roots[3],
+        ),
+        mandates=SimpleNamespace(get_active=lambda **_kwargs: mandate),
+        jobs=jobs,
+        registry=Registry(),
+        docker_runtime=docker,
+        futu_provider=Futu(),
+        platform_replay=lambda **_kwargs: pytest.fail("tampered input replayed"),
+        canary_activator=lambda **_kwargs: pytest.fail("tampered input activated canary"),
+        safety_observer=lambda: _open_safety(mandate),
+        today=lambda: date(2026, 8, 11),
+        now=lambda: datetime(2026, 8, 11, tzinfo=UTC),
+    )
+
+    result = worker.run_once()
+
+    assert result.status == "failed"
+    assert result.code == "d34_job_input_digest_mismatch"
+    assert jobs.finished[0]["state"] == "rejected"
+    assert jobs.finished[0]["budget_spent_usd"] == Decimal("0")
+    assert docker.commands == []
+
+
+def test_cycle_marks_research_container_timeout_outcome_unknown(tmp_path: Path) -> None:
+    roots = [tmp_path / name for name in ("workspace", "platform", "hqa", "cache")]
+    for path in roots:
+        path.mkdir()
+    mandate = SimpleNamespace(
+        mandate_id="mandate-cycle-12345678",
+        workspace_id="default",
+        status="active",
+        universe=("SPY", "QQQ", "IWM", "DIA"),
+        hypotheses_per_cycle=1,
+        max_iterations=2,
+        max_experiments_per_iteration=2,
+        max_concurrent_jobs=1,
+        llm_budget_usd=Decimal("100"),
+        paper_execution_allowed=True,
+        policy_digest="5" * 64,
+        expires_at=datetime(2026, 9, 1, tzinfo=UTC),
+    )
+
+    class TimedOutResearch(Docker):
+        def run(self, *, job_id, command):
+            if command[0] == "research":
+                self.commands.append(tuple(command))
+                raise D34DockerRuntimeError(
+                    "d34_docker_timeout",
+                    "research container exceeded its bounded timeout",
+                )
+            return super().run(job_id=job_id, command=command)
+
+    jobs = Jobs()
+    docker = TimedOutResearch(roots[0])
+    worker = D34CycleWorker(
+        config=D34WorkerConfig(
+            workspace_root=roots[0],
+            platform_root=roots[1],
+            hqa_root=roots[2],
+            cache_root=roots[3],
+        ),
+        mandates=SimpleNamespace(get_active=lambda **_kwargs: mandate),
+        jobs=jobs,
+        registry=Registry(),
+        docker_runtime=docker,
+        futu_provider=Futu(),
+        platform_replay=lambda **_kwargs: pytest.fail("timed out research replayed"),
+        canary_activator=lambda **_kwargs: pytest.fail("timed out research activated canary"),
+        safety_observer=lambda: _open_safety(mandate),
+        today=lambda: date(2026, 8, 11),
+        now=lambda: datetime(2026, 8, 11, tzinfo=UTC),
+    )
+
+    result = worker.run_once()
+
+    assert result.status == "failed"
+    assert result.code == "d34_docker_timeout"
+    assert jobs.finished[0]["state"] == "outcome_unknown"
+    assert jobs.finished[0]["budget_spent_usd"] == Decimal("0")
+    assert [command[0] for command in docker.commands] == ["qlib-adapt", "research"]
 
 
 def test_cycle_runs_futu_to_dual_engine_artifact_and_real_canary(tmp_path: Path) -> None:
