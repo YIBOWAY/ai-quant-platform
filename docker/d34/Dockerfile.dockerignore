@@ -4,7 +4,8 @@
 !README.md
 !pyproject.toml
 !src
-!src/**
+!src/quant_system
+!src/quant_system/**
 !docker
 !docker/d34
 !docker/d34/container_entrypoint.py

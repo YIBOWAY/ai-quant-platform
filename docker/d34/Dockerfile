@@ -106,7 +106,7 @@ RUN python -m pip install \
        "pycryptodome==3.23.0"
 
 COPY pyproject.toml README.md /opt/platform/
-COPY src /opt/platform/src
+COPY src/quant_system /opt/platform/src/quant_system
 RUN python -m pip install --no-build-isolation --no-deps /opt/platform
 
 # The pinned RD-Agent commit publishes metadata and a console script but its

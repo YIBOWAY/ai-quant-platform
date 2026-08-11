@@ -331,6 +331,18 @@ def test_dockerfile_installs_headless_worker_dependencies_not_notebook_stacks() 
     assert '"azureml-mlflow"' not in dockerfile
 
 
+def test_docker_build_context_contains_only_the_python_platform_package() -> None:
+    dockerfile = Path("docker/d34/Dockerfile").read_text(encoding="utf-8")
+    dockerignore = Path("docker/d34/Dockerfile.dockerignore").read_text(
+        encoding="utf-8"
+    )
+
+    assert "COPY src/quant_system /opt/platform/src/quant_system" in dockerfile
+    assert "COPY src /opt/platform/src" not in dockerfile
+    assert "!src/quant_system/**" in dockerignore
+    assert "!src/**" not in dockerignore
+
+
 def test_qlib_smoke_uses_pinned_dump_bin_argument_contract() -> None:
     entrypoint = Path("docker/d34/container_entrypoint.py").read_text(encoding="utf-8")
 
