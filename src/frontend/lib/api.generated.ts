@@ -554,6 +554,109 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/hermes/mandates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Mandates */
+        get: operations["list_mandates_api_hermes_mandates_get"];
+        put?: never;
+        /** Create Mandate */
+        post: operations["create_mandate_api_hermes_mandates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hermes/mandates/active": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Active Mandate */
+        get: operations["active_mandate_api_hermes_mandates_active_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hermes/mandates/{mandate_id}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pause Mandate */
+        post: operations["pause_mandate_api_hermes_mandates__mandate_id__pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hermes/mandates/{mandate_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resume Mandate */
+        post: operations["resume_mandate_api_hermes_mandates__mandate_id__resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hermes/mandates/{mandate_id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoke Mandate */
+        post: operations["revoke_mandate_api_hermes_mandates__mandate_id__revoke_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hermes/research/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Research Jobs */
+        get: operations["list_research_jobs_api_hermes_research_jobs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/hermes/results": {
         parameters: {
             query?: never;
@@ -4104,6 +4207,175 @@ export interface components {
             /** V2 Durable Live */
             v2_durable_live?: false | null;
             workspace: components["schemas"]["WorkspaceRefResponse"];
+        };
+        /** D34ExperimentJobListResponse */
+        D34ExperimentJobListResponse: {
+            /** Contract */
+            contract: string;
+            /** Items */
+            items: components["schemas"]["D34ExperimentJobResponse"][];
+        };
+        /** D34ExperimentJobResponse */
+        D34ExperimentJobResponse: {
+            /** Attempt Count */
+            attempt_count: number;
+            /** Budget Reserved Usd */
+            budget_reserved_usd: string;
+            /** Budget Spent Usd */
+            budget_spent_usd: string;
+            /** Contract */
+            contract: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Heartbeat At */
+            heartbeat_at?: string | null;
+            /** Input Digest */
+            input_digest: string;
+            /** Job Id */
+            job_id: string;
+            /** Job Key */
+            job_key: string;
+            /** Lease Expires At */
+            lease_expires_at?: string | null;
+            /** Lease Owner */
+            lease_owner?: string | null;
+            /** Mandate Id */
+            mandate_id: string;
+            /** Max Attempts */
+            max_attempts: number;
+            /** Outcome Code */
+            outcome_code?: string | null;
+            /** State */
+            state: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Version */
+            version: number;
+            /** Workspace Id */
+            workspace_id: string;
+        };
+        /** D34MandateCreateRequest */
+        D34MandateCreateRequest: {
+            /**
+             * Duration Days
+             * @default 30
+             */
+            duration_days: number;
+            /**
+             * Hypotheses Per Cycle
+             * @default 1
+             */
+            hypotheses_per_cycle: number;
+            /**
+             * Llm Budget Usd
+             * @default 100.00
+             */
+            llm_budget_usd: string;
+            /**
+             * Llm Warning Fraction
+             * @default 0.80
+             */
+            llm_warning_fraction: string;
+            /**
+             * Max Concurrent Jobs
+             * @default 1
+             */
+            max_concurrent_jobs: number;
+            /**
+             * Max Experiments Per Iteration
+             * @default 3
+             */
+            max_experiments_per_iteration: number;
+            /**
+             * Max Iterations
+             * @default 3
+             */
+            max_iterations: number;
+            /**
+             * Paper Execution Allowed
+             * @default true
+             */
+            paper_execution_allowed: boolean;
+            /** Universe */
+            universe?: string[];
+            /**
+             * Workspace Id
+             * @default default
+             */
+            workspace_id: string;
+        };
+        /** D34MandateListResponse */
+        D34MandateListResponse: {
+            /** Contract */
+            contract: string;
+            /** Items */
+            items: components["schemas"]["D34MandateResponse"][];
+        };
+        /** D34MandateResponse */
+        D34MandateResponse: {
+            /** Contract */
+            contract: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Hypotheses Per Cycle */
+            hypotheses_per_cycle: number;
+            /** Llm Budget Usd */
+            llm_budget_usd: string;
+            /** Llm Warning Fraction */
+            llm_warning_fraction: string;
+            /** Mandate Id */
+            mandate_id: string;
+            /** Max Concurrent Jobs */
+            max_concurrent_jobs: number;
+            /** Max Experiments Per Iteration */
+            max_experiments_per_iteration: number;
+            /** Max Iterations */
+            max_iterations: number;
+            /** Owner User Id */
+            owner_user_id: string;
+            /** Paper Execution Allowed */
+            paper_execution_allowed: boolean;
+            /** Policy Digest */
+            policy_digest: string;
+            /**
+             * Starts At
+             * Format: date-time
+             */
+            starts_at: string;
+            /** Status */
+            status: string;
+            /** Universe */
+            universe: string[];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Version */
+            version: number;
+            /** Workspace Id */
+            workspace_id: string;
+        };
+        /** D34MandateTransitionRequest */
+        D34MandateTransitionRequest: {
+            /** Expected Version */
+            expected_version: number;
+            /** Reason */
+            reason: string;
         };
         /** DualVerticalAcceptanceResponse */
         DualVerticalAcceptanceResponse: {
@@ -9793,6 +10065,240 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HermesGatewayStatusResponse"];
+                };
+            };
+        };
+    };
+    list_mandates_api_hermes_mandates_get: {
+        parameters: {
+            query?: {
+                workspace_id?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["D34MandateListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_mandate_api_hermes_mandates_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["D34MandateCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["D34MandateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    active_mandate_api_hermes_mandates_active_get: {
+        parameters: {
+            query?: {
+                workspace_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["D34MandateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pause_mandate_api_hermes_mandates__mandate_id__pause_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mandate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["D34MandateTransitionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["D34MandateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resume_mandate_api_hermes_mandates__mandate_id__resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mandate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["D34MandateTransitionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["D34MandateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_mandate_api_hermes_mandates__mandate_id__revoke_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mandate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["D34MandateTransitionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["D34MandateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_research_jobs_api_hermes_research_jobs_get: {
+        parameters: {
+            query?: {
+                workspace_id?: string;
+                limit?: number;
+                state?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["D34ExperimentJobListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

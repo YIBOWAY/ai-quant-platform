@@ -17,11 +17,13 @@ from collections.abc import Callable
 OWNER_BOOTSTRAP_ROUTE = "owner.bootstrap"
 WORKSPACE_ACT_ROUTE = "workspace.act"
 WORKSPACE_SUBMIT_TURN_ROUTE = "workspace.submit-turn"
+D34_MANDATE_ROUTE = "d34.mandate"
 MUTATION_RATE_LIMIT_ROUTES = frozenset(
     {
         OWNER_BOOTSTRAP_ROUTE,
         WORKSPACE_ACT_ROUTE,
         WORKSPACE_SUBMIT_TURN_ROUTE,
+        D34_MANDATE_ROUTE,
     }
 )
 

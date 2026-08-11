@@ -19,6 +19,7 @@ from quant_system.api.routes import (
     backtest,
     benchmark,
     brief,
+    d34,
     data,
     experiments,
     factors,
@@ -463,6 +464,7 @@ def create_app(
     app.include_router(local_session.router, prefix="/api", tags=["auth"])
     app.include_router(workspace.router, prefix="/api", tags=["workspace"])
     app.include_router(hermes.router, prefix="/api", tags=["hermes"])
+    app.include_router(d34.router, prefix="/api", tags=["d34"])
     app.include_router(settings_routes.router, prefix="/api", tags=["settings"])
     app.include_router(data.router, prefix="/api", tags=["data"])
     app.include_router(market_data.router, prefix="/api", tags=["market-data"])
