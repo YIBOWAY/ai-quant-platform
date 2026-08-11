@@ -4745,6 +4745,12 @@ export interface components {
             canary_ids: string[];
             /** Contract */
             contract: string;
+            /** Jobs Cancelled */
+            jobs_cancelled: number;
+            /** Mandate Id */
+            mandate_id?: string | null;
+            /** Mandate Status */
+            mandate_status?: string | null;
             /** Transitioned */
             transitioned: number;
         };

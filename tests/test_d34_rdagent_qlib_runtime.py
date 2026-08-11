@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 import pandas as pd
 
 from quant_system.d34.rdagent_qlib_runtime import (
+    RDAgentCostMeter,
     RDAgentProposalProvider,
     shifted_target_weights,
 )
@@ -110,3 +112,11 @@ def test_target_weights_shift_scores_to_next_trade_day() -> None:
             "target_weight": 0.99,
         },
     ]
+
+
+def test_rdagent_cost_meter_reports_overrun_instead_of_hiding_it() -> None:
+    meter = RDAgentCostMeter(reservation_usd=1.0)
+    meter._module = SimpleNamespace(ACC_COST=2.75)
+    meter._baseline = 0.25
+
+    assert meter.spent() == 2.5

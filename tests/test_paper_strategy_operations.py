@@ -242,6 +242,90 @@ def test_operations_runner_d34_uses_authoritative_context_not_forged_metadata(
     assert stopped.executions[0].blocked_reason == "automation_emergency_stop_active"
 
 
+def test_execution_rechecks_aggregate_symbol_limit_after_another_canary_fills(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = _settings_for_tmp_data(tmp_path, monkeypatch)
+    api_runs_dir = tmp_path / "api_runs"
+    account_storage = PaperAccountStorage(api_runs_dir)
+    sleeve_storage = PaperStrategySleeveStorage(api_runs_dir)
+    account = PaperAccount.open_new(initial_cash=10_000)
+    config = make_config(max_weight_per_symbol=0.99)
+    sleeve_storage.save_strategy_config(config)
+    service = PaperStrategySleeveService(sleeve_storage)
+    for suffix in ("one", "two"):
+        sleeve = service.create_sleeve(
+            account,
+            config=config,
+            mode=StrategySleeveMode.ALLOCATED,
+            allocated_cash=1_000,
+            sleeve_id=f"sleeve-d34-{suffix}",
+            metadata={
+                "automation_managed": True,
+                "automation_source": "d34",
+                "artifact_id": f"artifact-{suffix}",
+                "promotion_scope": "paper_only",
+                "workspace_id": "default",
+            },
+        )
+        sleeve_storage.save_sleeve(sleeve)
+        signal = StrategySignal.create(
+            sleeve=sleeve,
+            signal_date="2026-08-11",
+            data_provider="futu",
+            proposed_orders=[
+                {
+                    "symbol": "AAPL",
+                    "side": "buy",
+                    "notional_delta": 400.0,
+                    "target_weight": 0.4,
+                    "reference_price": 100.0,
+                }
+            ],
+        )
+        sleeve_storage.append_signal(signal)
+        service.create_execution_plan(
+            account,
+            sleeve=sleeve,
+            signal=signal,
+            target_date="2026-08-12",
+            metadata={
+                "paper_execution_policy_context": {
+                    "paper_execution_enabled": True,
+                    "emergency_stop": False,
+                    "mandate_active": True,
+                    "mandate_paper_execution_allowed": True,
+                }
+            },
+        )
+    account_storage.save(account)
+    runner = PaperStrategyOperationsRunner(
+        account_storage=account_storage,
+        sleeve_storage=sleeve_storage,
+        settings=settings,
+        price_source=FakePriceSource({"AAPL": 100.0}),
+        paper_execution_context_provider=lambda _sleeve: {
+            "paper_execution_enabled": True,
+            "emergency_stop": False,
+            "mandate_active": True,
+            "mandate_paper_execution_allowed": True,
+        },
+    )
+
+    result = runner.process_pending_executions_once(target_date="2026-08-12")
+
+    assert result.processed_count == 2
+    assert result.filled_count == 1
+    assert result.blocked_count == 1
+    assert result.executions[1].blocked_reason == "automation_aggregate_symbol_limit"
+    assert result.executions[1].metadata[
+        "paper_execution_policy_decision_at_execution"
+    ]["blockers"] == ["aggregate_symbol_limit"]
+    assert result.account is not None
+    assert result.account.positions["AAPL"].market_value(100.0) == pytest.approx(400.0)
+
+
 def test_operations_runner_process_pending_executes_and_commits_journal_after_account_save(
     tmp_path,
     monkeypatch,

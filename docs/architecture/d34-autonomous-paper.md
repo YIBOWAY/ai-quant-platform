@@ -35,7 +35,8 @@ replay。两个引擎消费相同的 snapshot、universe、calendar 和 target-w
 
 事件、receipt 和 budget ledger 是 append-only；mutable aggregate 使用 version/CAS。job 状态为
 `queued -> leased -> running -> succeeded|rejected|outcome_unknown|cancelled`。job key、attempt、
-Artifact、canary、预算和 order 都必须幂等。
+Artifact、canary、预算和 order 都必须幂等。租约发放在锁定 Mandate 后按
+`max_concurrent_jobs` 计数，避免多个 worker 越过 Mandate 并发上限。
 
 030–032 只能在单独授权的 operator window 正式 apply。普通 backend、stack 或 LaunchAgent
 启动不迁移数据库。
@@ -46,12 +47,22 @@ Artifact、canary、预算和 order 都必须幂等。
 
 1. 估值所有 D-34 running/paused/demoted/rolled-back held positions，并写 P&L/回撤 observation。
 2. 在执行前重新读取 emergency stop、Mandate 和 paper safety；旧 pending plan 不能穿透新 stop。
-3. 在 next-open 窗口生成/执行 D-34 paper plan。
-4. 恢复 expired lease/outcome-unknown job，或创建下一次 Futu snapshot/research job。
-5. 容器 timeout 留下精确 receipt 并只清理本次容器；不会 reset、删除或提交 repo dirty。
+3. 在 next-open 窗口生成/执行 D-34 paper plan；使用实际开盘价和实际订单金额重新运行
+   `PaperExecutionPolicy`，不能只依赖创建计划时的旧判断。
+4. 已完成研究但尚未写完 Artifact/canary 的 terminal phase 可幂等恢复；过期 lease 收敛为
+   `outcome_unknown` 并保留凭证供核对，不盲目重跑无法证明结果的研究。
+5. 只有上海时区周二至周六 06:00 以后才会刷新 Futu snapshot 或启动新研究；估值、订单维护
+   和 terminal recovery 不受这个研究窗口限制。
+6. 容器 timeout/启动失败留下 `workspace/jobs/<job_id>/docker_failure.json`，记录 image、命令、
+   return code、stdout/stderr 长度与 digest 以及精确容器清理结果，不保存可能含 secret 的原始日志。
 
 日亏 2% 或回撤 10% 时先 pause sleeve，再以版本 CAS 更新 canary。pause/demote/rollback 默认
-hold，不自动 flatten；held positions 继续估值。
+hold，不自动 flatten；held positions 继续估值。新 canary 先以 `paused/awaiting_registry`
+持久化，Registry 记录成功后才 resume，避免进程崩溃留下未登记但已可成交的 sleeve。
+
+`paper-execution-policy/v2` 保留 D-33 的单 sleeve 40% 分散化限制；D-34 的研究语义是
+`top_k=1`，因此不套用该旧限制，而是由单 sleeve 1%、自动 sleeve 合计 10% 和账户级单标的
+合计 5% 约束。所有 D-33/D-34 订单仍走同一个 policy evaluator。
 
 ## 本地 owner API
 
@@ -78,5 +89,5 @@ GET 和 mutation 都要求当前本地 owner session；mutation 还要求现有 
 容器或创建订单。D-34 合回 main、030–032 获得正式 apply 授权并完成 runtime fast-forward 后，
 operator 才能显式启用。
 
-D-33 继续监控已有 sleeve。D-34 rollback 停止新 job、把 D-34 canary 变为 hold；不会删除
-Artifact/receipt，也不会声称已经平仓。
+D-33 继续监控已有 sleeve。D-34 rollback 会暂停当前 Mandate、取消仍 queued 的 job、释放其
+预算预留，并把 D-34 canary 变为 hold；不会删除 Artifact/receipt，也不会声称已经平仓。

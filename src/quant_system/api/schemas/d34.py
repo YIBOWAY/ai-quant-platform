@@ -167,5 +167,8 @@ class D34RollbackResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     contract: str = Field(pattern=r"^hqa\.d34_rollback/v1$")
+    mandate_id: str | None = None
+    mandate_status: str | None = Field(default=None, pattern=r"^paused$")
+    jobs_cancelled: int = Field(ge=0)
     transitioned: int = Field(ge=0)
     canary_ids: list[str]

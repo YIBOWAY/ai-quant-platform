@@ -232,6 +232,21 @@ class Registry:
         return SimpleNamespace(accepted=True, artifact=artifact)
 
 
+def _open_safety(mandate) -> dict[str, object]:
+    return {
+        "research_execution_enabled": True,
+        "research_blockers": [],
+        "paper_execution_enabled": True,
+        "blockers": [],
+        "emergency_stop": {"active": False},
+        "active_mandate": {
+            "mandate_id": mandate.mandate_id,
+            "status": "active",
+            "paper_execution_allowed": True,
+        },
+    }
+
+
 def test_cycle_honors_emergency_stop_before_research_or_futu(tmp_path: Path) -> None:
     roots = [tmp_path / name for name in ("workspace", "platform", "hqa", "cache")]
     for path in roots:
@@ -308,6 +323,57 @@ def test_cycle_runs_paper_canary_operations_even_without_a_new_research_job(
     assert observed == [safety]
 
 
+def test_cycle_waits_for_post_close_window_before_snapshot_or_research(
+    tmp_path: Path,
+) -> None:
+    roots = [tmp_path / name for name in ("workspace", "platform", "hqa", "cache")]
+    for path in roots:
+        path.mkdir()
+    mandate = SimpleNamespace(
+        mandate_id="mandate-cycle-12345678",
+        workspace_id="default",
+        status="active",
+        universe=("SPY", "QQQ", "IWM", "DIA"),
+        hypotheses_per_cycle=1,
+        max_iterations=2,
+        max_experiments_per_iteration=2,
+        max_concurrent_jobs=1,
+        llm_budget_usd=Decimal("100"),
+        paper_execution_allowed=True,
+        policy_digest="5" * 64,
+        expires_at=datetime(2026, 9, 1, tzinfo=UTC),
+    )
+    jobs = Jobs()
+    docker = Docker(roots[0])
+    worker = D34CycleWorker(
+        config=D34WorkerConfig(
+            workspace_root=roots[0],
+            platform_root=roots[1],
+            hqa_root=roots[2],
+            cache_root=roots[3],
+        ),
+        mandates=SimpleNamespace(get_active=lambda **_kwargs: mandate),
+        jobs=jobs,
+        registry=Registry(),
+        docker_runtime=docker,
+        futu_provider=Futu(),
+        platform_replay=lambda **_kwargs: pytest.fail("pre-close cycle replayed"),
+        canary_activator=lambda **_kwargs: pytest.fail("pre-close canary activated"),
+        safety_observer=lambda: _open_safety(mandate),
+        canary_operator=lambda _safety: {"sleeves_checked": 0},
+        today=lambda: date(2026, 8, 11),
+        now=lambda: datetime(2026, 8, 10, 19, tzinfo=UTC),
+    )
+
+    result = worker.run_once()
+
+    assert result.status == "idle"
+    assert result.code == "d34_research_window_closed"
+    assert result.paper_cycle == {"sleeves_checked": 0}
+    assert jobs.items == []
+    assert docker.commands == []
+
+
 def test_cycle_runs_futu_to_dual_engine_artifact_and_real_canary(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     platform = tmp_path / "platform"
@@ -365,6 +431,7 @@ def test_cycle_runs_futu_to_dual_engine_artifact_and_real_canary(tmp_path: Path)
         futu_provider=Futu(),
         platform_replay=replay,
         canary_activator=lambda **kwargs: activated.append(kwargs) or "canary-test",
+        safety_observer=lambda: _open_safety(mandate),
         today=lambda: date(2026, 8, 11),
         now=lambda: datetime(2026, 8, 11, tzinfo=UTC),
     )
@@ -451,6 +518,7 @@ def test_cycle_recovers_registry_to_canary_after_terminal_crash_without_rerunnin
             futu_provider=Futu(),
             platform_replay=replay,
             canary_activator=activate,
+            safety_observer=lambda: _open_safety(mandate),
             today=lambda: date(2026, 8, 11),
             now=lambda: datetime(2026, 8, 11, tzinfo=UTC),
         )
@@ -473,3 +541,109 @@ def test_cycle_recovers_registry_to_canary_after_terminal_crash_without_rerunnin
         (workspace / "jobs" / failed.job_id / "cycle_receipt.json").read_text(encoding="utf-8")
     )
     assert receipt["phase"] == "canary_active"
+
+
+def test_cycle_rechecks_paper_authority_after_research_before_canary(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    platform = tmp_path / "platform"
+    hqa = tmp_path / "hqa"
+    cache = tmp_path / "cache"
+    for path in (workspace, platform, hqa, cache):
+        path.mkdir()
+    jobs, docker, registry = Jobs(), Docker(workspace), Registry()
+    mandate = SimpleNamespace(
+        mandate_id="mandate-cycle-12345678",
+        workspace_id="default",
+        status="active",
+        universe=("SPY", "QQQ", "IWM", "DIA"),
+        hypotheses_per_cycle=1,
+        max_iterations=2,
+        max_experiments_per_iteration=2,
+        max_concurrent_jobs=1,
+        llm_budget_usd=Decimal("100"),
+        paper_execution_allowed=True,
+        policy_digest="5" * 64,
+        expires_at=datetime.now(UTC) + timedelta(days=30),
+    )
+    authority_open = True
+    activated: list[dict[str, object]] = []
+
+    def safety():
+        if authority_open:
+            return _open_safety(mandate)
+        return {
+            "research_execution_enabled": False,
+            "research_blockers": ["emergency_stop_active"],
+            "paper_execution_enabled": False,
+            "blockers": ["emergency_stop_active"],
+            "emergency_stop": {"active": True},
+            "active_mandate": {
+                "mandate_id": mandate.mandate_id,
+                "status": "active",
+                "paper_execution_allowed": True,
+            },
+        }
+
+    def replay(**kwargs):
+        nonlocal authority_open
+        qlib = kwargs.pop("qlib_receipt")
+        authority_open = False
+        return SimpleNamespace(
+            engine_receipt=EngineReceipt(
+                engine="platform",
+                snapshot_digest=qlib.snapshot_digest,
+                universe_digest=qlib.universe_digest,
+                calendar_digest=qlib.calendar_digest,
+                target_weights_digest=qlib.target_weights_digest,
+                daily_returns=qlib.daily_returns,
+                return_dates=qlib.return_dates,
+                terminal_nav=qlib.terminal_nav,
+                terminal_weights=qlib.terminal_weights,
+                receipt_digest="8" * 64,
+            )
+        )
+
+    def make_worker() -> D34CycleWorker:
+        return D34CycleWorker(
+            config=D34WorkerConfig(
+                workspace_root=workspace,
+                platform_root=platform,
+                hqa_root=hqa,
+                cache_root=cache,
+            ),
+            mandates=SimpleNamespace(get_active=lambda **_kwargs: mandate),
+            jobs=jobs,
+            registry=registry,
+            docker_runtime=docker,
+            futu_provider=Futu(),
+            platform_replay=replay,
+            canary_activator=lambda **kwargs: activated.append(kwargs) or "canary-test",
+            safety_observer=safety,
+            today=lambda: date(2026, 8, 11),
+            now=lambda: datetime(2026, 8, 11, tzinfo=UTC),
+        )
+
+    blocked = make_worker().run_once()
+
+    assert blocked.status == "awaiting_paper_authority"
+    assert blocked.code == "emergency_stop_active"
+    assert activated == []
+    assert jobs.finished[0]["state"] == "succeeded"
+    docker_calls = len(docker.commands)
+    receipt = json.loads(
+        (workspace / "jobs" / blocked.job_id / "cycle_receipt.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert receipt["phase"] == "needs_recovery"
+    assert receipt["failed_phase"] == "canary_activation"
+
+    authority_open = True
+    recovered = make_worker().run_once()
+
+    assert recovered.status == "canary_active"
+    assert len(activated) == 1
+    assert len(docker.commands) == docker_calls
+    assert len(jobs.finished) == 1

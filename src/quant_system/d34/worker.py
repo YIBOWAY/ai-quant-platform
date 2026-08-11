@@ -6,10 +6,11 @@ import hashlib
 import json
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, replace
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
@@ -25,6 +26,9 @@ from quant_system.hermes.d34_job_authority import EnqueueJobCommand
 from quant_system.hermes.d34_registry_authority import RegisterArtifactCommand
 
 QLIB_COMMIT = "da920b7f954f48ab1bb64117c976710de198373e"
+_LOCAL_TIMEZONE = ZoneInfo("Asia/Shanghai")
+_RESEARCH_OPEN_TIME = time(6, 0)
+_POST_CLOSE_LOCAL_WEEKDAYS = frozenset({1, 2, 3, 4, 5})
 
 
 def _canonical_json(value: object) -> bytes:
@@ -114,8 +118,10 @@ class D34CycleWorker:
         self.canary_activator = canary_activator
         self.safety_observer = safety_observer or (
             lambda: {
-                "research_execution_enabled": True,
-                "research_blockers": [],
+                "research_execution_enabled": False,
+                "research_blockers": ["d34_safety_unavailable"],
+                "paper_execution_enabled": False,
+                "blockers": ["d34_safety_unavailable"],
             }
         )
         self.canary_operator = canary_operator or (lambda _safety: None)
@@ -128,6 +134,16 @@ class D34CycleWorker:
         except ValueError as exc:
             raise ValueError("d34_workspace_path_invalid") from exc
         return f"/workspace/d34/{relative.as_posix()}"
+
+    def _research_window_open(self) -> bool:
+        observed = self.now()
+        if observed.tzinfo is None or observed.utcoffset() is None:
+            return False
+        local = observed.astimezone(_LOCAL_TIMEZONE)
+        return (
+            local.weekday() in _POST_CLOSE_LOCAL_WEEKDAYS
+            and local.time().replace(tzinfo=None) >= _RESEARCH_OPEN_TIME
+        )
 
     def _host_path(self, raw: object) -> Path:
         prefix = "/workspace/d34/"
@@ -228,6 +244,34 @@ class D34CycleWorker:
             lease_id=lease.lease_id,
             lease_seconds=self.config.lease_seconds,
         )
+
+    def _paper_activation_blocker(self, mandate: Any) -> str | None:
+        try:
+            safety = self.safety_observer()
+        except Exception as exc:  # noqa: BLE001 - authority boundary
+            return str(getattr(exc, "code", "d34_safety_unavailable"))
+        emergency_raw = safety.get("emergency_stop")
+        emergency = emergency_raw if isinstance(emergency_raw, Mapping) else {}
+        if emergency.get("active") is True:
+            return "emergency_stop_active"
+        if safety.get("paper_execution_enabled") is not True:
+            raw_blockers = safety.get("blockers")
+            blockers = (
+                [str(value) for value in raw_blockers]
+                if isinstance(raw_blockers, (list, tuple))
+                else []
+            )
+            return blockers[0] if blockers else "d34_paper_execution_not_authorized"
+        active_raw = safety.get("active_mandate")
+        active = active_raw if isinstance(active_raw, Mapping) else {}
+        if (
+            active.get("mandate_id") != mandate.mandate_id
+            or active.get("status") != "active"
+            or active.get("paper_execution_allowed") is not True
+            or mandate.expires_at <= self.now()
+        ):
+            return "d34_mandate_changed_before_canary_activation"
+        return None
 
     @staticmethod
     def _receipt_from_document(raw: dict[str, object]) -> EngineReceipt:
@@ -368,6 +412,25 @@ class D34CycleWorker:
                         job_id=job_id,
                     )
                 artifact = evaluation.artifact
+                blocker = self._paper_activation_blocker(mandate)
+                if blocker is not None:
+                    _write_json(
+                        phase_path,
+                        {
+                            **phase_document,
+                            "phase": "needs_recovery",
+                            "failed_phase": "canary_activation",
+                            "artifact_id": artifact.artifact_id,
+                            "last_recovery_at": self.now().isoformat(),
+                            "last_recovery_code": blocker,
+                        },
+                    )
+                    return D34WorkerResult(
+                        status="awaiting_paper_authority",
+                        code=blocker,
+                        job_id=job_id,
+                        artifact_id=artifact.artifact_id,
+                    )
                 canary = self.canary_activator(
                     artifact=artifact,
                     factor_id=str(bundle["factor_id"]),
@@ -575,6 +638,25 @@ class D34CycleWorker:
                 return D34WorkerResult(status="rejected", code=outcome_code, job_id=job_id)
             phase = "canary_activation"
             artifact = evaluation.artifact
+            blocker = self._paper_activation_blocker(mandate)
+            if blocker is not None:
+                _write_json(
+                    phase_path,
+                    {
+                        "phase": "needs_recovery",
+                        "failed_phase": phase,
+                        "job_id": job_id,
+                        "artifact_id": artifact.artifact_id,
+                        "code": blocker,
+                        **outcome_document,
+                    },
+                )
+                return D34WorkerResult(
+                    status="awaiting_paper_authority",
+                    code=blocker,
+                    job_id=job_id,
+                    artifact_id=artifact.artifact_id,
+                )
             canary = self.canary_activator(
                 artifact=artifact,
                 factor_id=str(research_output["factor_id"]),
@@ -646,6 +728,18 @@ class D34CycleWorker:
                 status="failed",
                 code=str(getattr(exc, "code", "d34_canary_operation_failed")),
             )
+        mandate = None
+        if safety.get("paper_execution_enabled") is True:
+            mandate = self.mandates.get_active(workspace_id=self.config.workspace_id)
+            if (
+                mandate is not None
+                and mandate.status == "active"
+                and mandate.expires_at > self.now()
+                and mandate.paper_execution_allowed is True
+            ):
+                recovered = self._recover_terminal(mandate)
+                if recovered is not None:
+                    return replace(recovered, paper_cycle=paper_cycle)
         if safety.get("research_execution_enabled") is not True:
             raw_blockers = safety.get("research_blockers")
             blockers = (
@@ -659,7 +753,8 @@ class D34CycleWorker:
                 paper_cycle=paper_cycle,
             )
         self.jobs.reconcile_expired(workspace_id=self.config.workspace_id)
-        mandate = self.mandates.get_active(workspace_id=self.config.workspace_id)
+        if mandate is None:
+            mandate = self.mandates.get_active(workspace_id=self.config.workspace_id)
         if mandate is None:
             return D34WorkerResult(status="idle", code="no_active_mandate", paper_cycle=paper_cycle)
         if (
@@ -668,9 +763,12 @@ class D34CycleWorker:
             or mandate.paper_execution_allowed is not True
         ):
             return D34WorkerResult(status="idle", code="mandate_inactive", paper_cycle=paper_cycle)
-        recovered = self._recover_terminal(mandate)
-        if recovered is not None:
-            return replace(recovered, paper_cycle=paper_cycle)
+        if not self._research_window_open():
+            return D34WorkerResult(
+                status="idle",
+                code="d34_research_window_closed",
+                paper_cycle=paper_cycle,
+            )
         try:
             self._schedule(mandate, self.today())
         except Exception as exc:  # noqa: BLE001 - Futu scheduling boundary

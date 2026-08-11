@@ -5,6 +5,8 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
+
 from quant_system.execution.account import PaperAccount
 from quant_system.execution.account_storage import PaperAccountStorage
 from quant_system.execution.d34_canary_activation import (
@@ -14,15 +16,24 @@ from quant_system.execution.d34_canary_activation import (
 from quant_system.execution.paper_strategy_sleeve_storage import (
     PaperStrategySleeveStorage,
 )
+from quant_system.execution.paper_strategy_sleeves import (
+    PaperStrategySleeveService,
+    StrategySignal,
+    StrategySleeveStatus,
+)
 from quant_system.hermes.d34_registry_authority import D34Artifact
 
 
 class _Registry:
-    def __init__(self) -> None:
+    def __init__(self, *, failures: int = 0) -> None:
         self.commands = []
+        self.failures = failures
 
     def provision_canary(self, command):
         self.commands.append(command)
+        if self.failures:
+            self.failures -= 1
+            raise RuntimeError("registry temporarily unavailable")
         return {
             "contract": "hqa.d34_canary/v1",
             "artifact_id": command.artifact_id,
@@ -57,7 +68,7 @@ def test_artifact_activates_one_real_digest_bound_paper_sleeve_idempotently(
     sleeve_storage = PaperStrategySleeveStorage(tmp_path)
     account = PaperAccount.open_new(initial_cash=100_000)
     account_storage.save(account)
-    registry = _Registry()
+    registry = _Registry(failures=1)
     artifact = D34Artifact(
         artifact_id="artifact-" + "a" * 32,
         mandate_id="mandate-00000000-0000-0000-0000-000000000034",
@@ -91,6 +102,17 @@ def test_artifact_activates_one_real_digest_bound_paper_sleeve_idempotently(
         price_metadata={},
     )
 
+    with pytest.raises(RuntimeError, match="registry temporarily unavailable"):
+        activate_d34_paper_canary(
+            request,
+            account_storage=account_storage,
+            sleeve_storage=sleeve_storage,
+            registry=registry,
+        )
+    awaiting = sleeve_storage.list_sleeves()[0]
+    assert awaiting.status == StrategySleeveStatus.PAUSED
+    assert awaiting.metadata["d34_activation_state"] == "awaiting_registry"
+
     first, first_canary = activate_d34_paper_canary(
         request,
         account_storage=account_storage,
@@ -107,12 +129,48 @@ def test_artifact_activates_one_real_digest_bound_paper_sleeve_idempotently(
     assert replay == first
     assert first_canary == replay_canary
     assert first.initial_allocated_cash == 1000
+    assert first.status == StrategySleeveStatus.RUNNING
     assert first.metadata["automation_source"] == "d34"
     assert first.metadata["artifact_id"] == artifact.artifact_id
+    assert first.metadata["d34_activation_state"] == "active"
+    assert first.metadata["workspace_id"] == artifact.workspace_id
     assert first.metadata["promotion_scope"] == "paper_only"
     config = sleeve_storage.load_strategy_config(first.strategy_config_id)
     assert config.factor_ids == ["d34_generated"]
+    assert config.lookback == 2
+    assert config.top_n == 1
+    assert config.max_weight_per_symbol == 0.99
+    assert config.metadata["workspace_id"] == artifact.workspace_id
     assert config.metadata["artifact_code_path"] == str(code_path.resolve())
+    signal = StrategySignal.create(
+        sleeve=first,
+        signal_date="2026-08-11",
+        data_provider="futu",
+        target_weights={"SPY": 0.99},
+        proposed_orders=[
+            {
+                "symbol": "SPY",
+                "side": "buy",
+                "notional_delta": 990.0,
+                "target_weight": 0.99,
+                "reference_price": 495.0,
+            }
+        ],
+    )
+    plan = PaperStrategySleeveService(sleeve_storage).create_execution_plan(
+        account_storage.load(),  # type: ignore[arg-type]
+        sleeve=first,
+        signal=signal,
+        metadata={
+            "paper_execution_policy_context": {
+                "paper_execution_enabled": True,
+                "emergency_stop": False,
+                "mandate_active": True,
+                "mandate_paper_execution_allowed": True,
+            }
+        },
+    )
+    assert plan.metadata["paper_execution_policy_decision"]["allowed"] is True
     assert len(sleeve_storage.list_sleeves()) == 1
     assert account_storage.load().sleeve_cash[first.sleeve_id] == 1000  # type: ignore[union-attr]
     assert registry.commands[0].allocated_cash == Decimal("1000.0")

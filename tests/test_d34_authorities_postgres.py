@@ -149,10 +149,28 @@ def test_030_032_runtime_authorities_complete_idempotent_artifact_canary_flow() 
                 budget_reserved_usd=Decimal("10"),
             )
         )
+        rejected_job = jobs.enqueue(
+            EnqueueJobCommand(
+                mandate_id=mandate.mandate_id,
+                workspace_id="default",
+                job_key="cycle-1:hypothesis-2",
+                input_digest="6" * 64,
+                input_document={"cycle": 1, "hypothesis": 2},
+                budget_reserved_usd=Decimal("10"),
+            )
+        )
         lease = jobs.lease_next(
             workspace_id="default", worker_id="launchagent-d34", lease_seconds=60
         )
         assert lease is not None and lease.job.job_id == job.job_id
+        assert (
+            jobs.lease_next(
+                workspace_id="default",
+                worker_id="parallel-d34-worker",
+                lease_seconds=60,
+            )
+            is None
+        )
         durable_input = jobs.read_leased_input(
             job_id=job.job_id,
             lease_id=lease.lease_id,
@@ -264,16 +282,6 @@ def test_030_032_runtime_authorities_complete_idempotent_artifact_canary_flow() 
         assert registry.list_artifacts(workspace_id="default", limit=10)[0].status == "paused"
         assert registry.get_canary(canary.canary_id).status == "paused"
 
-        rejected_job = jobs.enqueue(
-            EnqueueJobCommand(
-                mandate_id=mandate.mandate_id,
-                workspace_id="default",
-                job_key="cycle-1:hypothesis-2",
-                input_digest="6" * 64,
-                input_document={"cycle": 1, "hypothesis": 2},
-                budget_reserved_usd=Decimal("10"),
-            )
-        )
         rejected_lease = jobs.lease_next(
             workspace_id="default", worker_id="launchagent-d34", lease_seconds=60
         )
@@ -317,6 +325,33 @@ def test_030_032_runtime_authorities_complete_idempotent_artifact_canary_flow() 
         )
         assert rejected.accepted is False
         assert rejected.artifact is None
+
+        queued_for_rollback = jobs.enqueue(
+            EnqueueJobCommand(
+                mandate_id=mandate.mandate_id,
+                workspace_id="default",
+                job_key="cycle-2:hypothesis-rollback",
+                input_digest="5" * 64,
+                input_document={"cycle": 2, "hypothesis": "rollback"},
+                budget_reserved_usd=Decimal("2"),
+            )
+        )
+        assert jobs.cancel_queued(
+            workspace_id="default", reason="return to D-33"
+        ) == 1
+        assert jobs.cancel_queued(
+            workspace_id="default", reason="return to D-33"
+        ) == 0
+        cancelled = jobs.list(workspace_id="default", limit=100, state="cancelled")
+        assert [item.job_id for item in cancelled] == [queued_for_rollback.job_id]
+        with admin.connect() as conn:
+            released = conn.execute(
+                "SELECT amount_usd, event_data->>'reason' "
+                "FROM quant_system.d34_budget_events "
+                "WHERE job_id = %s AND event_type = 'released'",
+                (queued_for_rollback.job_id,),
+            ).fetchone()
+        assert released == (Decimal("2.000000"), "return to D-33")
 
         stopped = safety.set_emergency_stop(
             workspace_id="default", enabled=True, reason="owner stop"

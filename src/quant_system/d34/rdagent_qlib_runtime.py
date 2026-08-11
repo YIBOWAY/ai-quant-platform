@@ -11,6 +11,7 @@ from typing import Any
 import pandas as pd
 
 from quant_system.d34.research_driver import (
+    D34_TARGET_GROSS_EXPOSURE,
     D34ResearchError,
     D34ResearchRequest,
     QlibExperimentResult,
@@ -20,7 +21,7 @@ from quant_system.d34.research_driver import (
 
 RDAGENT_COMMIT = "274e274d5dbb72cc2ea139d1a7c93d73ce9b1198"
 QLIB_COMMIT = "da920b7f954f48ab1bb64117c976710de198373e"
-RISK_DEGREE = 0.99
+RISK_DEGREE = D34_TARGET_GROSS_EXPOSURE
 ONE_WAY_COST = 0.0006
 
 
@@ -290,7 +291,7 @@ class RDAgentCostMeter:
         observed = float(self._module.ACC_COST) - self._baseline
         if not math.isfinite(observed) or observed < 0:
             return self._reservation
-        return min(observed, self._reservation)
+        return observed
 
 
 def run_container_research(

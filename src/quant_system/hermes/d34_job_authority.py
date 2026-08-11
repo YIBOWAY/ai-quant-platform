@@ -105,6 +105,8 @@ class JobAuthorityPort(Protocol):
         self, *, workspace_id: str, limit: int, state: str | None
     ) -> list[ExperimentJob | dict[str, object]]: ...
 
+    def cancel_queued(self, *, workspace_id: str, reason: str) -> int: ...
+
 
 _COLUMNS = """
 job_id, mandate_id, workspace_id, job_key, state, attempt_count, max_attempts,
@@ -308,10 +310,33 @@ class PostgresJobAuthority:
         lease_id, attempt_id = f"lease-{uuid4()}", f"attempt-{uuid4()}"
         try:
             with self._database().connect() as conn, conn.transaction():
+                mandate = conn.execute(
+                    f"""
+                    SELECT mandate_id, max_concurrent_jobs
+                    FROM {SCHEMA}.d34_mandates
+                    WHERE owner_user_id = %s AND workspace_id = %s
+                      AND status = 'active' AND expires_at > clock_timestamp()
+                    ORDER BY created_at DESC LIMIT 1
+                    FOR UPDATE
+                    """,
+                    (ROOT_USER_ID, workspace_id),
+                ).fetchone()
+                if mandate is None:
+                    return None
+                active = conn.execute(
+                    f"""
+                    SELECT count(*) FROM {SCHEMA}.d34_experiment_jobs
+                    WHERE mandate_id = %s AND state IN ('leased', 'running')
+                    """,
+                    (mandate[0],),
+                ).fetchone()
+                if active is None or int(active[0]) >= int(mandate[1]):
+                    return None
                 candidate = conn.execute(
                     f"""
                     SELECT job_id FROM {SCHEMA}.d34_experiment_jobs AS job
                     WHERE job.owner_user_id = %s AND job.workspace_id = %s
+                      AND job.mandate_id = %s
                       AND job.state = 'queued' AND job.attempt_count < job.max_attempts
                       AND NOT COALESCE((
                           SELECT enabled
@@ -321,15 +346,9 @@ class PostgresJobAuthority:
                             AND authority.event_type = 'emergency_stop'
                           ORDER BY authority.event_seq DESC LIMIT 1
                       ), FALSE)
-                      AND EXISTS (
-                          SELECT 1 FROM {SCHEMA}.d34_mandates AS mandate
-                          WHERE mandate.mandate_id = job.mandate_id
-                            AND mandate.status = 'active'
-                            AND mandate.expires_at > clock_timestamp()
-                      )
                     ORDER BY job.created_at FOR UPDATE SKIP LOCKED LIMIT 1
                     """,
-                    (ROOT_USER_ID, workspace_id),
+                    (ROOT_USER_ID, workspace_id, mandate[0]),
                 ).fetchone()
                 if candidate is None:
                     return None
@@ -370,6 +389,79 @@ class PostgresJobAuthority:
                 "d34_job_unavailable", "D-34 job authority is unavailable"
             ) from exc
         return JobLease(job=job, attempt_id=attempt_id, lease_id=lease_id)
+
+    def cancel_queued(self, *, workspace_id: str, reason: str) -> int:
+        if (
+            _WORKSPACE_RE.fullmatch(workspace_id) is None
+            or not 1 <= len(reason.strip()) <= 1000
+        ):
+            raise JobAuthorityError("d34_job_validation", "job cancellation is invalid")
+        cancelled = 0
+        try:
+            with self._database().connect() as conn, conn.transaction():
+                rows = conn.execute(
+                    f"""
+                    SELECT job_id, mandate_id, budget_reserved_usd
+                    FROM {SCHEMA}.d34_experiment_jobs
+                    WHERE owner_user_id = %s AND workspace_id = %s
+                      AND state = 'queued'
+                    ORDER BY created_at
+                    FOR UPDATE
+                    """,
+                    (ROOT_USER_ID, workspace_id),
+                ).fetchall()
+                for job_id, mandate_id, reserved_raw in rows:
+                    row = conn.execute(
+                        f"""
+                        UPDATE {SCHEMA}.d34_experiment_jobs
+                        SET state = 'cancelled', outcome_code = 'd34_rollback',
+                            outcome_document = %s, finished_at = clock_timestamp(),
+                            updated_at = clock_timestamp(), version = version + 1
+                        WHERE job_id = %s AND state = 'queued'
+                        RETURNING {_COLUMNS}
+                        """,
+                        (
+                            Jsonb(
+                                {
+                                    "reason": reason.strip(),
+                                    "recovery": "create_a_new_job_after_mandate_resume",
+                                }
+                            ),
+                            job_id,
+                        ),
+                    ).fetchone()
+                    if row is None:
+                        continue
+                    job = _from_row(row)
+                    conn.execute(
+                        f"""
+                        INSERT INTO {SCHEMA}.d34_budget_events
+                        (event_id, mandate_id, job_id, event_type, amount_usd, event_data)
+                        VALUES (%s, %s, %s, 'released', %s, %s)
+                        """,
+                        (
+                            f"budget-event-{uuid4()}",
+                            mandate_id,
+                            job_id,
+                            Decimal(str(reserved_raw)),
+                            Jsonb({"reason": reason.strip()}),
+                        ),
+                    )
+                    self._event(
+                        conn,
+                        job=job,
+                        attempt_id=None,
+                        event_type="cancelled",
+                        data={"reason": reason.strip()},
+                    )
+                    cancelled += 1
+        except JobAuthorityError:
+            raise
+        except (DatabaseUnavailable, psycopg.Error) as exc:
+            raise JobAuthorityError(
+                "d34_job_unavailable", "D-34 job authority is unavailable"
+            ) from exc
+        return cancelled
 
     def mark_running(
         self, *, job_id: str, lease_id: str, container_id: str | None

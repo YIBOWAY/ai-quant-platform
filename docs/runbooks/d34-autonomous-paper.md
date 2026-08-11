@@ -30,7 +30,8 @@ docker run --rm \
   hqa-d34-rdagent-qlib:0.1.0 docker-smoke
 ```
 
-LLM/embedding smoke 只从权限 `0600` 的 owner-only env 文件注入真实配置，不把 secret 放进
+LLM/embedding smoke 只从权限严格为 `0600` 的 owner-only 普通文件注入真实配置；symlink、
+目录、组/其他用户可读写的文件都会 fail closed。不要把 secret 放进
 命令或 Git。secret 使用 LiteLLM 原生 provider 变量（例如 `OPENAI_API_KEY`），模型选择使用
 `LITELLM_CHAT_MODEL` / `LITELLM_EMBEDDING_MODEL`；不要把 secret 写入 RD-Agent 的
 `LITELLM_*_API_KEY` 设置，因为 pinned 上游初始化日志会展开这些设置。
@@ -41,7 +42,9 @@ docker run --rm --env-file /absolute/owner-only/d34.env \
 ```
 
 镜像使用开放本机模式：root、bridge、Docker socket、source/workspace/cache 读写挂载。
-作业运行器只提供可配置超时、失败 receipt 和超时后的精确容器清理。
+作业运行器只提供可配置超时、失败 receipt 和精确容器清理。失败凭证位于
+`workspace/jobs/<job_id>/docker_failure.json`，只记录 image/command、返回码、输出字节数与
+SHA-256、容器清理结果，不把可能含 secret 的 stdout/stderr 原文写入凭证。
 
 ## Migration 授权窗口
 
@@ -56,6 +59,20 @@ quant-system migrate --apply --allow 032_d34_artifact_canary.sql --yes
 ```
 
 这些命令是操作格式，不是本文件授予的 apply 权限。029 和更早 migration 不重放。
+
+## Source worktree 验收
+
+purpose worktree 复用主 checkout 的 Python 3.11 `.venv` 时，必须显式把 worktree 的 `src`
+放到 `PYTHONPATH`；否则 editable install 会静默导入主 checkout，造成假验收：
+
+```bash
+cd /Users/sunyibo/programs/.worktrees/d34/ai-quant-platform
+PYTHONPATH="$PWD/src" /Users/sunyibo/programs/ai-quant-platform/.venv/bin/pytest -q
+/Users/sunyibo/programs/ai-quant-platform/ai-quant/bin/ruff check src tests
+```
+
+验收解释器必须是 Python 3.11。不要在 worktree 裸跑 `uv run` 创建一个无意的 `.venv`，也
+不要使用旧 `ai-quant` 环境中的 Python 3.12 运行冻结 release tests。
 
 ## 启用常驻 worker
 
@@ -83,7 +100,8 @@ tail -n 100 data/_runtime/logs/d34-worker.launchd.err.log
 
 `com.aiquant.d34-worker` 每五分钟只跑一次 bounded cycle，不依赖 Codex、Claude 或终端。
 Mandate 未创建/暂停/过期、预算耗尽或 emergency stop 时，它保留已有 canary 估值，但不启动
-新研究；paper 权限关闭时不创建或执行新订单。
+新研究；paper 权限关闭时不创建或执行新订单。新 snapshot/research 只在上海时区周二至
+周六 06:00 以后启动；canary 估值、paper 计划维护和 terminal recovery 每轮仍会执行。
 
 ## 日常检查
 
@@ -94,14 +112,17 @@ Mandate 未创建/暂停/过期、预算耗尽或 emergency stop 时，它保留
 - `/zh/hermes`：owner 工作台；这里没有 live upgrade 操作。
 
 执行前会再次读取 durable emergency stop/Mandate。即使 pending plan 早于 stop 创建，也必须
-转为 blocked，不能成交。日亏 2% 或回撤 10% 时先 pause 本地 sleeve，再以版本 CAS 写入
-Registry；paused/demoted/rolled-back 的 held positions 仍继续估值。
+转为 blocked，不能成交；并且会按实际 next-open 价格、实际订单金额和当前账户/其他 D-34
+sleeve 暴露重新执行统一 Policy，防止多个旧计划累计越过单标的 5% 上限。日亏 2% 或回撤
+10% 时先 pause 本地 sleeve，再以版本 CAS 写入 Registry；paused/demoted/rolled-back 的
+held positions 仍继续估值。新 canary 在 Registry 写成功前保持 `paused/awaiting_registry`。
 
 ## 停止与回滚
 
 紧急事件使用工作台 emergency stop；它停止新研究和新 paper 订单，但不自动平仓。普通
-停用把 `QS_D34_WORKER_ENABLED=false` 后重新运行 stack。D-34 rollback 会停止新 job，并把
-active canary 收敛到 hold；默认不 flatten。D-33 的既有 sleeve 继续由原路径监控。
+停用把 `QS_D34_WORKER_ENABLED=false` 后重新运行 stack。D-34 rollback 会暂停当前 Mandate、
+取消 queued job 并释放对应预算预留，再把 active canary 收敛到 hold；默认不 flatten。
+D-33 的既有 sleeve 继续由原路径监控。
 
 卸载 job：
 

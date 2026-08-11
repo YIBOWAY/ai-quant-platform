@@ -1,9 +1,18 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import subprocess
 from pathlib import Path
 
-from quant_system.d34.docker_runtime import D34DockerConfig, D34DockerRuntime
+import pytest
+
+from quant_system.d34.cli import _existing_env_file
+from quant_system.d34.docker_runtime import (
+    D34DockerConfig,
+    D34DockerRuntime,
+    D34DockerRuntimeError,
+)
 
 
 def test_open_local_runtime_mounts_repos_socket_and_cleans_container(tmp_path: Path) -> None:
@@ -51,6 +60,114 @@ def test_open_local_runtime_mounts_repos_socket_and_cleans_container(tmp_path: P
     assert receipt.image_digest == "sha256:" + "a" * 64
     assert receipt.output["contract"] == "hqa.d34_container_versions/v1"
     assert len(receipt.receipt_digest) == 64
+
+
+def test_timeout_cleans_exact_container_and_writes_durable_failure_receipt(
+    tmp_path: Path,
+) -> None:
+    roots = [tmp_path / name for name in ("workspace", "platform", "hqa", "cache")]
+    for root in roots:
+        root.mkdir()
+    calls: list[list[str]] = []
+
+    def run(command, **kwargs):
+        calls.append(list(command))
+        if command[1:3] == ["image", "inspect"]:
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout="sha256:" + "a" * 64 + "\n",
+                stderr="",
+            )
+        if command[1] == "run":
+            raise subprocess.TimeoutExpired(
+                command,
+                60,
+                output="partial provider output",
+                stderr="provider timeout without secret text",
+            )
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    runtime = D34DockerRuntime(
+        D34DockerConfig(
+            image_ref="hqa-d34-rdagent-qlib:0.1.0",
+            workspace_root=roots[0],
+            platform_root=roots[1],
+            hqa_root=roots[2],
+            cache_root=roots[3],
+            timeout_seconds=60,
+        ),
+        process_runner=run,
+    )
+
+    with pytest.raises(D34DockerRuntimeError) as failure:
+        runtime.run(job_id="job-123", command=("research", "--request", "/input.json"))
+
+    assert failure.value.code == "d34_docker_timeout"
+    container_name = "hqa-d34-" + hashlib.sha256(b"job-123").hexdigest()[:20]
+    assert ["docker", "stop", "--time", "10", container_name] in calls
+    assert ["docker", "rm", "--force", container_name] in calls
+    receipt = json.loads(
+        (roots[0] / "jobs/job-123/docker_failure.json").read_text(encoding="utf-8")
+    )
+    assert receipt["contract"] == "hqa.d34_docker_failure/v1"
+    assert receipt["code"] == "d34_docker_timeout"
+    assert receipt["image_digest"] == "sha256:" + "a" * 64
+    assert receipt["command"] == ["research", "--request", "/input.json"]
+    assert receipt["stdout_bytes"] == len("partial provider output")
+    assert receipt["stderr_bytes"] == len("provider timeout without secret text")
+    assert "partial provider output" not in json.dumps(receipt)
+
+
+@pytest.mark.parametrize("unsafe_kind", ["world_readable", "symlink"])
+def test_runtime_rejects_non_owner_only_provider_env(
+    tmp_path: Path, unsafe_kind: str
+) -> None:
+    roots = [tmp_path / name for name in ("workspace", "platform", "hqa", "cache")]
+    for root in roots:
+        root.mkdir()
+    owner_env = tmp_path / "d34.env"
+    owner_env.write_text("D34_TEST_VALUE=not-a-secret\n", encoding="utf-8")
+    owner_env.chmod(0o600 if unsafe_kind == "symlink" else 0o644)
+    configured = owner_env
+    if unsafe_kind == "symlink":
+        configured = tmp_path / "d34-link.env"
+        configured.symlink_to(owner_env)
+
+    runtime = D34DockerRuntime(
+        D34DockerConfig(
+            image_ref="hqa-d34-rdagent-qlib:0.1.0",
+            workspace_root=roots[0],
+            platform_root=roots[1],
+            hqa_root=roots[2],
+            cache_root=roots[3],
+            env_file=configured,
+            timeout_seconds=60,
+        ),
+        process_runner=lambda *_args, **_kwargs: pytest.fail(
+            "unsafe provider env reached Docker"
+        ),
+    )
+
+    with pytest.raises(D34DockerRuntimeError, match="Docker research request is invalid"):
+        runtime.run(job_id="job-123", command=("versions",))
+
+
+def test_worker_requires_explicit_owner_only_provider_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "platform"
+    repo.mkdir()
+    configured = tmp_path / "owner-d34.env"
+    monkeypatch.setenv("QS_D34_ENV_FILE", str(configured))
+
+    with pytest.raises(RuntimeError, match="d34_env_file_required"):
+        _existing_env_file(repo)
+
+    configured.write_text("D34_TEST_VALUE=not-a-secret\n", encoding="utf-8")
+    configured.chmod(0o600)
+
+    assert _existing_env_file(repo) == configured.resolve()
 
 
 def test_dockerfile_pins_exact_upstream_tarball_bytes() -> None:

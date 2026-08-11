@@ -93,6 +93,35 @@ class _Controller:
         self.calls.append((workspace_id, "rollback", None, reason))
         return {"transitioned": 1, "canary_ids": ["canary-test-1"]}
 
+
+class _Mandates:
+    def __init__(self) -> None:
+        self.calls = []
+        self.mandate = {
+            "contract": "hqa.mandate/v1",
+            "mandate_id": "mandate-test-1",
+            "status": "active",
+            "version": 4,
+        }
+
+    def get_active(self, *, workspace_id):
+        assert workspace_id == "default"
+        return dict(self.mandate)
+
+    def transition(self, *, mandate_id, action, expected_version, reason):
+        self.calls.append((mandate_id, action, expected_version, reason))
+        self.mandate.update(status="paused", version=expected_version + 1)
+        return dict(self.mandate)
+
+
+class _Jobs:
+    def __init__(self) -> None:
+        self.calls = []
+
+    def cancel_queued(self, *, workspace_id, reason):
+        self.calls.append((workspace_id, reason))
+        return 2
+
 def _headers() -> dict[str, str]:
     return {"Origin": ORIGIN, "Sec-Fetch-Site": "same-origin", "Host": "testserver"}
 
@@ -136,7 +165,11 @@ def test_owner_pauses_demotes_and_rolls_back_d34_canaries(tmp_path: Path) -> Non
         bind_address="127.0.0.1",
     )
     controller = _Controller()
+    mandates = _Mandates()
+    jobs = _Jobs()
     app.state.services["d34_canary_controller"] = controller
+    app.state.services["d34_mandate_authority"] = mandates
+    app.state.services["d34_job_authority"] = jobs
     client = TestClient(app)
     bootstrap = client.post(
         "/api/auth/owner/bootstrap",
@@ -173,9 +206,16 @@ def test_owner_pauses_demotes_and_rolls_back_d34_canaries(tmp_path: Path) -> Non
         if key != "safety"
     } == {
         "contract": "hqa.d34_rollback/v1",
+        "mandate_id": "mandate-test-1",
+        "mandate_status": "paused",
+        "jobs_cancelled": 2,
         "transitioned": 1,
         "canary_ids": ["canary-test-1"],
     }
+    assert mandates.calls == [
+        ("mandate-test-1", "pause", 4, "return to D-33")
+    ]
+    assert jobs.calls == [("default", "return to D-33")]
     assert controller.calls == [
         ("canary-test-1", "pause", 1, "owner pause"),
         ("canary-test-1", "demote", 2, "quality degraded"),

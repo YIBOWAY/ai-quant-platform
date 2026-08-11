@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, date, datetime
 from math import isfinite
 from typing import Any, NamedTuple
@@ -46,12 +47,25 @@ class _ExecutionStep(NamedTuple):
     quote: PricedQuote
 
 
+ExecutionPolicyGuard = Callable[
+    [PaperAccount, StrategySleeve, StrategyExecutionPlan, list[dict[str, Any]]],
+    str | None,
+]
+
+
 class PaperStrategyExecutionService:
     """Process Paper Strategy Sleeve execution plans against paper prices."""
 
-    def __init__(self, *, storage, price_source) -> None:
+    def __init__(
+        self,
+        *,
+        storage,
+        price_source,
+        execution_policy_guard: ExecutionPolicyGuard | None = None,
+    ) -> None:
         self.storage = storage
         self.price_source = price_source
+        self.execution_policy_guard = execution_policy_guard
 
     def execute_plan(
         self,
@@ -64,6 +78,26 @@ class PaperStrategyExecutionService:
             self._validate_execution_context(account, sleeve=sleeve, plan=plan)
             quotes = self._load_quotes(plan)
             steps = self._build_steps(plan, quotes)
+            if self.execution_policy_guard is not None:
+                blocker = self.execution_policy_guard(
+                    account,
+                    sleeve,
+                    plan,
+                    [
+                        {
+                            "symbol": step.symbol,
+                            "notional_delta": (
+                                step.gross_value
+                                if step.side == OrderSide.BUY
+                                else -step.gross_value
+                            ),
+                            "execution_price": step.price,
+                        }
+                        for step in steps
+                    ],
+                )
+                if blocker is not None:
+                    raise PaperStrategyExecutionError(blocker)
             self._preflight(account, sleeve=sleeve, steps=steps)
         except PaperStrategyExecutionError as exc:
             if plan.status == StrategyExecutionStatus.PENDING:

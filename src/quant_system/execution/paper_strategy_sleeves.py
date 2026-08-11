@@ -656,6 +656,9 @@ class PaperStrategySleeveService:
                     nav=account.equity(account_prices),
                     aggregate_symbol_values=aggregate_symbol_values,
                     source=str(sleeve.metadata.get("automation_source", "d33")),
+                    workspace_id=str(
+                        sleeve.metadata.get("workspace_id", "local-default")
+                    ),
                     account_id=account.account_id,
                     sleeve_id=sleeve.sleeve_id,
                     emergency_stop=policy_context.get("emergency_stop") is True,

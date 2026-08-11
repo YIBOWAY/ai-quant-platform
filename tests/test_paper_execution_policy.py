@@ -65,6 +65,29 @@ def test_d34_requires_active_paper_enabled_mandate_but_d33_does_not() -> None:
     assert legacy.allowed is True
 
 
+def test_d34_top_one_canary_uses_account_symbol_limit_not_d33_diversification() -> None:
+    policy = PaperExecutionPolicy()
+    values = {
+        "orders": ({"symbol": "SPY", "notional_delta": 990.0},),
+        "sleeve_equity": 1_000.0,
+        "nav": 100_000.0,
+        "aggregate_symbol_values": {},
+    }
+
+    d34 = policy.evaluate_batch(
+        _batch(
+            source="d34",
+            mandate_active=True,
+            mandate_paper_execution_allowed=True,
+            **values,
+        )
+    )
+    d33 = policy.evaluate_batch(_batch(**values))
+
+    assert d34.allowed is True
+    assert d33.blockers == ("sleeve_symbol_limit",)
+
+
 def test_emergency_stop_and_paper_switch_fail_closed_for_both_sources() -> None:
     policy = PaperExecutionPolicy()
 

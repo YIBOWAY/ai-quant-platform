@@ -38,7 +38,8 @@ API，必须同时携带现有 owner session 与 CSRF header，且 body 中提�
 - `queued/leased/running`：研究仍在进行；重启由 durable lease/attempt 恢复。
 - `succeeded`：研究、双引擎比较和 Registry 写入完成；不表示 live 资格。
 - `rejected`：机器 policy 或不可恢复输入失败；不会创建 canary。
-- `outcome_unknown`：容器或进程边界无法证明结果；恢复逻辑先对账，不盲重跑。
+- `outcome_unknown`：容器或进程边界无法证明结果；保留 receipt 等待核对，不盲重跑。
+- `paused/awaiting_registry`：sleeve 已落库但 Registry 尚未确认；重试完成登记后才允许恢复。
 - `paused`：停止新订单，持仓保留并继续估值。
 - `demoted/rolled_back`：不再参与新增 D-34 执行，held positions 仍可观察。
 
@@ -51,7 +52,7 @@ API，必须同时携带现有 owner session 与 CSRF header，且 body 中提�
 | budget exhausted | 续期或创建新 Mandate；不手工改 ledger。 |
 | emergency stop | 先查异常和持仓；确认后由 owner 明确解除。 |
 | Futu unavailable/stale | 恢复 OpenD；系统不回退 sample/Yahoo/community dataset。 |
-| Docker/LLM timeout | 查 job attempt 与 workspace receipt；恢复器会基于 lease/outcome 对账。 |
+| Docker/LLM timeout | 查 job attempt 与 `workspace/jobs/<job_id>/docker_failure.json`；原始输出不写入 receipt。 |
 | digest/comparison reject | 检查 snapshot、target weight、calendar、费用与 receipt；不要运行中放宽 policy。 |
 
 构建、migration、LaunchAgent、日志和回滚命令见

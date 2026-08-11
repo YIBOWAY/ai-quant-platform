@@ -6,17 +6,20 @@ import hashlib
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 from quant_system.d34.artifact_factor import load_d34_paper_factor_registry
+from quant_system.d34.research_driver import D34_TARGET_GROSS_EXPOSURE
 from quant_system.execution.factor_automation_safety import admit_auto_sleeve
 from quant_system.execution.paper_strategy_sleeves import (
     PaperStrategySleeveService,
     StrategyConfig,
     StrategySleeve,
     StrategySleeveMode,
+    StrategySleeveStatus,
 )
 from quant_system.hermes.d34_registry_authority import (
     D34Artifact,
@@ -61,6 +64,7 @@ def _expected_config(
     request: D34CanaryActivationRequest,
     *,
     strategy_config_id: str,
+    lookback: int,
 ) -> StrategyConfig:
     artifact = request.artifact
     metadata = {
@@ -68,6 +72,7 @@ def _expected_config(
         "automation_source": "d34",
         "artifact_id": artifact.artifact_id,
         "mandate_id": artifact.mandate_id,
+        "workspace_id": artifact.workspace_id,
         "factor_id": request.factor_id,
         "artifact_code_path": str(request.artifact_code_path.resolve()),
         "candidate_code_digest": artifact.candidate_code_digest,
@@ -75,6 +80,9 @@ def _expected_config(
         "comparison_digest": artifact.comparison_digest,
         "promotion_scope": "paper_only",
         "reviewer": "auto",
+        "research_lookback": lookback,
+        "research_risk_degree": D34_TARGET_GROSS_EXPOSURE,
+        "research_top_k": 1,
     }
     return StrategyConfig.create(
         strategy_config_id=strategy_config_id,
@@ -85,10 +93,10 @@ def _expected_config(
         symbols=list(request.universe),
         factor_ids=[request.factor_id],
         weights={request.factor_id: 1.0},
-        lookback=20,
-        top_n=max(1, len(request.universe)),
+        lookback=lookback,
+        top_n=1,
         rebalance_frequency="daily",
-        max_weight_per_symbol=0.40,
+        max_weight_per_symbol=D34_TARGET_GROSS_EXPOSURE,
         min_order_value=100.0,
         data_provider=request.provider,
         execution_timing="next_open",
@@ -97,7 +105,7 @@ def _expected_config(
     )
 
 
-def _validate(request: D34CanaryActivationRequest) -> None:
+def _validate(request: D34CanaryActivationRequest) -> int:
     artifact = request.artifact
     if (
         artifact.qualification_scope != "paper_only"
@@ -114,13 +122,14 @@ def _validate(request: D34CanaryActivationRequest) -> None:
     ):
         raise D34CanaryActivationError("d34_canary_request_invalid")
     try:
-        load_d34_paper_factor_registry(
+        factor_registry = load_d34_paper_factor_registry(
             code_path=request.artifact_code_path,
             expected_code_digest=artifact.candidate_code_digest,
             expected_factor_id=request.factor_id,
         )
     except ValueError as exc:
         raise D34CanaryActivationError(str(exc)) from exc
+    return factor_registry.create(request.factor_id).lookback
 
 
 def activate_d34_paper_canary(
@@ -131,9 +140,13 @@ def activate_d34_paper_canary(
     registry: RegistryAuthorityPort,
 ) -> tuple[StrategySleeve, object]:
     """Create the file/account sleeve once, then converge the DB canary."""
-    _validate(request)
+    lookback = _validate(request)
     config_id, sleeve_id = _ids(request.artifact.artifact_id)
-    expected_config = _expected_config(request, strategy_config_id=config_id)
+    expected_config = _expected_config(
+        request,
+        strategy_config_id=config_id,
+        lookback=lookback,
+    )
     service = PaperStrategySleeveService(sleeve_storage)
 
     with account_storage.mutation_lock(), sleeve_storage.mutation_lock():
@@ -175,6 +188,7 @@ def activate_d34_paper_canary(
                 "automation_source": "d34",
                 "artifact_id": request.artifact.artifact_id,
                 "mandate_id": request.artifact.mandate_id,
+                "d34_activation_state": "awaiting_registry",
             }
             sleeve_storage.save_strategy_config(expected_config)
             sleeve = service.create_sleeve(
@@ -185,6 +199,10 @@ def activate_d34_paper_canary(
                 metadata=metadata,
                 sleeve_id=sleeve_id,
             )
+            paused_at = datetime.now(UTC).isoformat()
+            sleeve.status = StrategySleeveStatus.PAUSED
+            sleeve.paused_at = paused_at
+            sleeve.updated_at = paused_at
             sleeve_storage.save_pending_sleeve(sleeve)
             try:
                 account_storage.save(
@@ -209,6 +227,13 @@ def activate_d34_paper_canary(
             workspace_id=request.artifact.workspace_id,
         )
     )
+    with sleeve_storage.mutation_lock():
+        current = sleeve_storage.load_sleeve(sleeve.sleeve_id)
+        if current.metadata.get("d34_activation_state") == "awaiting_registry":
+            current.metadata["d34_activation_state"] = "active"
+            sleeve = service.resume_sleeve(current)
+        else:
+            sleeve = current
     return sleeve, canary
 
 

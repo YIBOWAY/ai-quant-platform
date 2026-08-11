@@ -149,6 +149,18 @@ def _http_error(exc: MandateAuthorityError) -> HTTPException:
     )
 
 
+def _job_http_error(exc: JobAuthorityError) -> HTTPException:
+    status_code = {
+        "d34_job_conflict": 409,
+        "d34_job_validation": 422,
+        "d34_job_unavailable": 503,
+    }.get(exc.code, 503)
+    return HTTPException(
+        status_code=status_code,
+        detail={"code": exc.code, "message": exc.message},
+    )
+
+
 @router.post(
     "/hermes/mandates",
     response_model=D34MandateResponse,
@@ -358,10 +370,7 @@ def list_research_jobs(
             state=state,
         )
     except JobAuthorityError as exc:
-        raise HTTPException(
-            status_code=422 if exc.code == "d34_job_validation" else 503,
-            detail={"code": exc.code, "message": exc.message},
-        ) from exc
+        raise _job_http_error(exc) from exc
     return {
         "contract": "hqa.d34_experiment_job-list/v1",
         "items": [_job_public(item) for item in items],
@@ -489,10 +498,40 @@ def rollback_d34(
     consume_owner_mutation_budget(
         request, owner_user_id=owner.owner_user_id, route=D34_MANDATE_ROUTE
     )
+    mandate_id: str | None = None
+    mandate_status: str | None = None
     try:
+        mandates = _authority(request, settings)
+        active = mandates.get_active(workspace_id=body.workspace_id)
+        if active is not None:
+            active_public = _public(active)
+            mandate_id = str(active_public["mandate_id"])
+            if active_public["status"] == "active":
+                active = mandates.transition(
+                    mandate_id=mandate_id,
+                    action="pause",
+                    expected_version=int(active_public["version"]),
+                    reason=body.reason,
+                )
+                active_public = _public(active)
+            mandate_status = str(active_public["status"])
+        jobs_cancelled = _job_authority(request, settings).cancel_queued(
+            workspace_id=body.workspace_id,
+            reason=body.reason,
+        )
         result = _canary_controller(request, settings, api_runs_dir).rollback_all(
             workspace_id=body.workspace_id, reason=body.reason
         )
+    except MandateAuthorityError as exc:
+        raise _http_error(exc) from exc
+    except JobAuthorityError as exc:
+        raise _job_http_error(exc) from exc
     except (D34CanaryControlError, RegistryAuthorityError) as exc:
         raise _canary_http_error(exc) from exc
-    return {"contract": "hqa.d34_rollback/v1", **result}
+    return {
+        "contract": "hqa.d34_rollback/v1",
+        "mandate_id": mandate_id,
+        "mandate_status": mandate_status,
+        "jobs_cancelled": jobs_cancelled,
+        **result,
+    }

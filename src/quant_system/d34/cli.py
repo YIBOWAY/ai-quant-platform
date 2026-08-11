@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import stat
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated
@@ -41,10 +42,20 @@ _DEFAULT_HQA_ROOT = Path(
 )
 
 
-def _existing_env_file(repo: Path) -> Path | None:
+def _existing_env_file(repo: Path) -> Path:
     configured = os.environ.get("QS_D34_ENV_FILE", "").strip()
     candidate = Path(configured).expanduser() if configured else repo / "docker/d34/.env"
-    return candidate.resolve() if candidate.is_file() else None
+    try:
+        metadata = candidate.lstat()
+    except FileNotFoundError as exc:
+        raise RuntimeError("d34_env_file_required") from exc
+    if (
+        stat.S_ISLNK(metadata.st_mode)
+        or not stat.S_ISREG(metadata.st_mode)
+        or stat.S_IMODE(metadata.st_mode) != 0o600
+    ):
+        raise RuntimeError("d34_env_file_must_be_owner_only")
+    return candidate.resolve()
 
 
 def build_local_worker(

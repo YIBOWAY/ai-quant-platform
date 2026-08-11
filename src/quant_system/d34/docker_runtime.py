@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import stat
 import subprocess
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -75,6 +76,17 @@ class D34DockerRuntime:
             self.config.hqa_root,
             self.config.cache_root,
         )
+        env_file_invalid = False
+        if self.config.env_file is not None:
+            try:
+                metadata = self.config.env_file.lstat()
+                env_file_invalid = (
+                    stat.S_ISLNK(metadata.st_mode)
+                    or not stat.S_ISREG(metadata.st_mode)
+                    or stat.S_IMODE(metadata.st_mode) != 0o600
+                )
+            except OSError:
+                env_file_invalid = True
         if (
             not re.fullmatch(r"job-[A-Za-z0-9._:-]{1,200}", job_id)
             or not self.config.image_ref.strip()
@@ -82,10 +94,7 @@ class D34DockerRuntime:
             or any(not isinstance(value, str) or not value for value in command)
             or not 30 <= self.config.timeout_seconds <= 86400
             or any(not Path(root).resolve().is_dir() for root in roots)
-            or (
-                self.config.env_file is not None
-                and not self.config.env_file.resolve().is_file()
-            )
+            or env_file_invalid
         ):
             raise D34DockerRuntimeError(
                 "d34_docker_validation", "Docker research request is invalid"
@@ -117,6 +126,69 @@ class D34DockerRuntime:
                 "d34_docker_image_unavailable", "D-34 image identity is invalid"
             )
         return digest
+
+    @staticmethod
+    def _process_text(value: str | bytes | None) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, bytes):
+            return value.decode("utf-8", errors="replace")
+        return value
+
+    def _cleanup_container(self, name: str, *, stop_first: bool) -> dict[str, object]:
+        cleanup: dict[str, object] = {}
+        actions = (["stop", "--time", "10", name], ["rm", "--force", name])
+        for action in actions[0 if stop_first else 1 :]:
+            label = str(action[0])
+            try:
+                completed = self._run(
+                    ["docker", *action],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=30,
+                )
+                cleanup[f"{label}_returncode"] = int(completed.returncode)
+            except (OSError, subprocess.SubprocessError) as exc:
+                cleanup[f"{label}_error"] = type(exc).__name__
+        return cleanup
+
+    def _write_failure_receipt(
+        self,
+        *,
+        job_id: str,
+        image_digest: str,
+        name: str,
+        command: Sequence[str],
+        code: str,
+        stdout: str | bytes | None,
+        stderr: str | bytes | None,
+        cleanup: dict[str, object],
+    ) -> None:
+        stdout_text = self._process_text(stdout)
+        stderr_text = self._process_text(stderr)
+        document = {
+            "contract": "hqa.d34_docker_failure/v1",
+            "job_id": job_id,
+            "image_ref": self.config.image_ref,
+            "image_digest": image_digest,
+            "container_name": name,
+            "command": list(command),
+            "code": code,
+            "stdout_bytes": len(stdout_text.encode("utf-8")),
+            "stdout_digest": hashlib.sha256(stdout_text.encode("utf-8")).hexdigest(),
+            "stderr_bytes": len(stderr_text.encode("utf-8")),
+            "stderr_digest": hashlib.sha256(stderr_text.encode("utf-8")).hexdigest(),
+            "cleanup": cleanup,
+        }
+        path = self.config.workspace_root / "jobs" / job_id / "docker_failure.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_name(f".{path.name}.tmp")
+        temporary.write_text(
+            json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n",
+            encoding="utf-8",
+        )
+        temporary.replace(path)
 
     @staticmethod
     def _json_output(stdout: str) -> dict[str, Any]:
@@ -172,26 +244,48 @@ class D34DockerRuntime:
                 timeout=self.config.timeout_seconds,
             )
         except subprocess.TimeoutExpired as exc:
-            subprocess.run(
-                ["docker", "stop", "--time", "10", name],
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=30,
-            )
-            subprocess.run(
-                ["docker", "rm", "--force", name],
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=30,
+            cleanup = self._cleanup_container(name, stop_first=True)
+            self._write_failure_receipt(
+                job_id=job_id,
+                image_digest=image_digest,
+                name=name,
+                command=command,
+                code="d34_docker_timeout",
+                stdout=exc.output,
+                stderr=exc.stderr,
+                cleanup=cleanup,
             )
             raise D34DockerRuntimeError(
                 "d34_docker_timeout", "D-34 container exceeded its configured timeout"
             ) from exc
-        except (OSError, subprocess.CalledProcessError) as exc:
+        except subprocess.CalledProcessError as exc:
+            cleanup = self._cleanup_container(name, stop_first=False)
+            self._write_failure_receipt(
+                job_id=job_id,
+                image_digest=image_digest,
+                name=name,
+                command=command,
+                code="d34_docker_failed",
+                stdout=exc.stdout,
+                stderr=exc.stderr,
+                cleanup=cleanup,
+            )
             raise D34DockerRuntimeError(
-                "d34_docker_failed", "D-34 container failed; inspect job stderr"
+                "d34_docker_failed", "D-34 container failed; inspect its failure receipt"
+            ) from exc
+        except OSError as exc:
+            self._write_failure_receipt(
+                job_id=job_id,
+                image_digest=image_digest,
+                name=name,
+                command=command,
+                code="d34_docker_failed",
+                stdout=None,
+                stderr=None,
+                cleanup={"docker_error": type(exc).__name__},
+            )
+            raise D34DockerRuntimeError(
+                "d34_docker_failed", "D-34 container failed; inspect its failure receipt"
             ) from exc
         output = self._json_output(completed.stdout)
         document = {

@@ -12,6 +12,10 @@ from quant_system.execution.account_storage import PaperAccountStorage
 from quant_system.execution.d34_execution_context import (
     resolve_d34_execution_policy_context,
 )
+from quant_system.execution.paper_execution_policy import (
+    PaperExecutionBatch,
+    PaperExecutionPolicy,
+)
 from quant_system.execution.paper_strategy_execution_service import (
     PaperStrategyExecutionError,
     PaperStrategyExecutionService,
@@ -238,6 +242,59 @@ class PaperStrategyOperationsRunner:
             return "automation_d34_mandate_paper_execution_not_allowed"
         return None
 
+    def _current_automation_execution_blocker(
+        self,
+        account: PaperAccount,
+        sleeve: StrategySleeve,
+        plan: StrategyExecutionPlan,
+        orders: list[dict[str, Any]],
+    ) -> str | None:
+        if sleeve.metadata.get("automation_managed") is not True:
+            return None
+        source = str(sleeve.metadata.get("automation_source", "d33"))
+        context = self.paper_execution_context_provider(sleeve) if source == "d34" else {}
+        execution_prices = {
+            str(order["symbol"]).upper(): float(order["execution_price"])
+            for order in orders
+        }
+        account_prices = {
+            symbol: execution_prices.get(symbol, position.avg_cost)
+            for symbol, position in account.positions.items()
+        }
+        aggregate_symbol_values = {
+            symbol: position.market_value(account_prices[symbol])
+            for symbol, position in account.positions.items()
+        }
+        lots = self.sleeve_storage.load_sleeve_lots(sleeve.sleeve_id)
+        sleeve_equity = sleeve.cash + sum(
+            lot.quantity * execution_prices.get(lot.symbol.upper(), lot.avg_cost)
+            for lot in lots
+        )
+        decision = PaperExecutionPolicy().evaluate_batch(
+            PaperExecutionBatch(
+                source=source,
+                workspace_id=str(sleeve.metadata.get("workspace_id", "local-default")),
+                account_id=account.account_id,
+                sleeve_id=sleeve.sleeve_id,
+                orders=orders,
+                sleeve_equity=sleeve_equity,
+                nav=account.equity(account_prices),
+                aggregate_symbol_values=aggregate_symbol_values,
+                emergency_stop=context.get("emergency_stop") is True,
+                paper_execution_enabled=(
+                    context.get("paper_execution_enabled", True) is True
+                ),
+                mandate_active=context.get("mandate_active") is True,
+                mandate_paper_execution_allowed=(
+                    context.get("mandate_paper_execution_allowed") is True
+                ),
+            )
+        )
+        plan.metadata["paper_execution_policy_decision_at_execution"] = (
+            decision.to_dict()
+        )
+        return None if decision.allowed else f"automation_{decision.blockers[0]}"
+
     def generate_signal_once(
         self,
         sleeve_id: str,
@@ -360,6 +417,7 @@ class PaperStrategyOperationsRunner:
         execution_service = PaperStrategyExecutionService(
             storage=self.sleeve_storage,
             price_source=self.price_source,
+            execution_policy_guard=self._current_automation_execution_blocker,
         )
         processed: list[StrategyExecutionPlan] = []
         filled_count = 0

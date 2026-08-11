@@ -26,6 +26,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 RESEARCH_REQUEST_CONTRACT = "hqa.d34_research_request/v1"
 RESEARCH_RESULT_CONTRACT = "hqa.d34_research_result/v1"
 ENGINE_RECEIPT_CONTRACT = "hqa.d34_engine_receipt/v1"
+D34_TARGET_GROSS_EXPOSURE = 0.99
 
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 _SYMBOL_RE = re.compile(r"^[A-Z0-9][A-Z0-9._:-]{0,31}$")
@@ -489,6 +490,7 @@ def execute_research_request(
 
 
 __all__ = [
+    "D34_TARGET_GROSS_EXPOSURE",
     "D34ResearchError",
     "D34ResearchRequest",
     "D34ResearchResult",

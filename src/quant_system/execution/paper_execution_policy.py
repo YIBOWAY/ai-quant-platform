@@ -16,7 +16,7 @@ from dataclasses import asdict, dataclass
 from typing import Any, Literal
 
 DECISION_CONTRACT = "hqa.paper_execution_policy_decision/v1"
-POLICY_VERSION = "paper-execution-policy/v1"
+POLICY_VERSION = "paper-execution-policy/v2"
 
 
 def _digest(value: object) -> str:
@@ -173,7 +173,8 @@ class PaperExecutionPolicy:
             if abs(delta) > float(self.limits.max_order_value) + 1e-9:
                 self._append_once(blockers, "order_value_limit")
             if (
-                math.isfinite(sleeve_equity)
+                source != "d34"
+                and math.isfinite(sleeve_equity)
                 and sleeve_equity > 0
                 and abs(delta)
                 > sleeve_equity * float(self.limits.max_sleeve_symbol_fraction) + 1e-9
