@@ -83,7 +83,7 @@ def test_chat_write_blockers_envelope() -> None:
     assert "integration_disabled" in payload["blockers"]
     assert set(payload["platform_delivery_blockers"]).issubset(payload["blockers"])
     assert set(payload["upstream_blockers"]).issubset(payload["blockers"])
-    assert "hermes_durable_capability_unavailable" in payload["upstream_blockers"]
+    assert "hermes_gateway_disabled" in payload["upstream_blockers"]
     assert list(UPSTREAM_CHAT_WRITE_BLOCKERS) == []
 
 
@@ -199,7 +199,7 @@ def test_local_dark_readiness_never_promotes_public_chat_or_hides_upstream(
 
     blockers = chat_write_blockers(settings)
     assert list(UPSTREAM_CHAT_WRITE_BLOCKERS) == []
-    assert "hermes_durable_capability_unavailable" in blockers["upstream_blockers"]
+    assert "hermes_gateway_disabled" in blockers["upstream_blockers"]
     assert "connector_liveness_unavailable" in blockers["blockers"]
 
 

@@ -97,9 +97,7 @@ def test_gateway_endpoints_fail_closed_when_integration_disabled() -> None:
     assert gateway.json()["connected"] is False
     assert gateway.json()["chat_write_ready"] is False
     assert "integration_disabled" in gateway.json()["blockers"]
-    assert "hermes_durable_capability_unavailable" in gateway.json()[
-        "upstream_blockers"
-    ]
+    assert "hermes_gateway_disabled" in gateway.json()["upstream_blockers"]
     assert "local_mutation_disabled" in gateway.json()["platform_delivery_blockers"]
     assert sessions.status_code == 200
     assert sessions.json()["read_status"] == "unavailable"
@@ -126,7 +124,10 @@ def test_gateway_endpoints_expose_only_sanitized_read_models() -> None:
     assert gateway.json()["connected"] is True
     assert gateway.json()["chat_write_ready"] is False
     assert "active_release_stamp_missing" in gateway.json()["blockers"]
-    assert gateway.json()["upstream_blockers"]
+    # The capability probe is live rather than a frozen static blocker.  This
+    # fake supplies a healthy Hermes read surface, while the Platform release
+    # authority still keeps writes closed below.
+    assert gateway.json()["upstream_blockers"] == []
     assert gateway.json()["platform_delivery_blockers"]
     assert set(gateway.json()["upstream_blockers"]).issubset(gateway.json()["blockers"])
     assert set(gateway.json()["platform_delivery_blockers"]).issubset(gateway.json()["blockers"])

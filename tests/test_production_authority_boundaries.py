@@ -210,12 +210,28 @@ def test_default_workspace_rejects_process_local_mutations(
         # Production cutover mutation has one control plane: the PostgreSQL
         # ReleaseAuthority operator CLI, never this legacy browser action.
         assert receipt.reason_code == "release_operator_cli_required"
+    elif action["kind"] in {
+        "hermes.command_approval.decide",
+        "run.stop.request",
+    }:
+        # Approval and stop now mount the official Hermes run-control client
+        # plus durable PostgreSQL outcome authority.  With the database
+        # disabled they fail before any external effect.
+        assert receipt.reason_code == "workspace_authority_unavailable"
     else:
         assert receipt.reason_code == "canonical_authority_adapter_unavailable"
     assert receipt.command_id is None
     assert receipt.task_id is None
     assert receipt.attempt_id is None
-    assert receipt.run_id is None
+    if action["kind"] in {
+        "hermes.command_approval.decide",
+        "run.stop.request",
+    }:
+        # The fail-closed durable receipt still identifies the requested Run;
+        # no Command or external side effect was created.
+        assert receipt.run_id == "hermes.1"
+    else:
+        assert receipt.run_id is None
     assert receipt.result_id is None
 
 
