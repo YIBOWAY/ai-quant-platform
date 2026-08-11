@@ -194,3 +194,66 @@ def test_research_loop_iterates_selects_best_and_is_idempotent(tmp_path: Path) -
         cost_provider=lambda: 99,
     )
     assert replay == result
+
+
+def test_research_loop_records_invalid_proposal_and_uses_next_experiment(
+    tmp_path: Path,
+) -> None:
+    request = _request(tmp_path)
+    calls = 0
+
+    def propose(*_args) -> ResearchProposal:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise ValueError("model returned the wrong JSON schema")
+        return ResearchProposal(
+            title="Five day momentum",
+            thesis="Recent relative strength may persist.",
+            operator="momentum",
+            short_window=1,
+            long_window=5,
+            rationale="Use the next bounded experiment after malformed JSON.",
+        )
+
+    def run_experiment(
+        _request: D34ResearchRequest,
+        _proposal: ResearchProposal,
+        _expression: str,
+        _experiment_dir: Path,
+    ) -> QlibExperimentResult:
+        return QlibExperimentResult(
+            score=0.5,
+            daily_returns=(0.0, 0.01, 0.001),
+            return_dates=tuple(_request.calendar),
+            terminal_nav=1.011,
+            terminal_weights={"SPY": 0.99},
+            target_weights=pd.DataFrame(
+                {
+                    "tradeable_ts": pd.to_datetime(["2026-07-02T00:00:00Z"]),
+                    "symbol": ["SPY"],
+                    "target_weight": [0.99],
+                }
+            ),
+            metrics={"sharpe": 0.5},
+            qlib_config={"expression": "$close/Ref($close, 5)-1"},
+        )
+
+    result = execute_research_request(
+        request,
+        output_root=tmp_path / "outputs",
+        proposal_provider=propose,
+        experiment_runner=run_experiment,
+        cost_provider=lambda: 1.0,
+    )
+
+    failure = json.loads(
+        (
+            result.output_dir
+            / "experiments/iteration-01-experiment-01/failure.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert calls == 4
+    assert failure["error_type"] == "ValueError"
+    assert "proposal" not in failure
+    assert result.selected_experiment == "iteration-02-experiment-02"

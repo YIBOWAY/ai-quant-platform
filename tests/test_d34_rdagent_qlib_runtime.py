@@ -76,6 +76,9 @@ def test_rdagent_proposal_uses_structured_json_and_prior_receipts(tmp_path) -> N
     assert backend.json_mode is True
     assert backend.response_format_present is False
     assert "iteration-01-experiment-01" in backend.prompt
+    assert '"title"' in backend.prompt
+    assert '"long_window"' in backend.prompt
+    assert '"rationale"' in backend.prompt
     assert "Do not output Python code" in backend.prompt
 
 

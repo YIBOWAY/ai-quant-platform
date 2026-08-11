@@ -51,6 +51,16 @@ Universe: {', '.join(request.universe)}
 Available daily observations: {len(request.calendar)}
 Prior experiment receipts: {prior}
 
+Required JSON object shape (all six keys are required):
+{{
+  "title": "short hypothesis name",
+  "thesis": "falsifiable research claim",
+  "operator": "momentum",
+  "short_window": 1,
+  "long_window": 5,
+  "rationale": "why this improves on prior receipts"
+}}
+
 Choose exactly one operator from momentum, mean_reversion, low_volatility,
 volume_surprise, moving_average_spread. Choose integer windows between 1 and
 252; moving_average_spread requires short_window < long_window. Explain a

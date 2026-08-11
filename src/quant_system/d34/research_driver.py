@@ -357,11 +357,12 @@ def execute_research_request(
                 experiment_id = f"iteration-{iteration:02d}-experiment-{experiment:02d}"
                 experiment_dir = temp / "experiments" / experiment_id
                 experiment_dir.mkdir(parents=True)
-                proposal = proposal_provider(
-                    request, iteration, experiment, tuple(history)
-                )
-                expression = qlib_expression(proposal)
+                proposal: ResearchProposal | None = None
                 try:
+                    proposal = proposal_provider(
+                        request, iteration, experiment, tuple(history)
+                    )
+                    expression = qlib_expression(proposal)
                     outcome = experiment_runner(
                         request, proposal, expression, experiment_dir
                     )
@@ -372,8 +373,9 @@ def execute_research_request(
                         "status": "failed",
                         "error_type": type(exc).__name__,
                         "error": str(exc)[:2_000],
-                        "proposal": proposal.model_dump(mode="json"),
                     }
+                    if proposal is not None:
+                        failure["proposal"] = proposal.model_dump(mode="json")
                     (experiment_dir / "failure.json").write_bytes(
                         _canonical_json(failure) + b"\n"
                     )
