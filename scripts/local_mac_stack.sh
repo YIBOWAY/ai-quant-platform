@@ -198,6 +198,13 @@ ensure_hermes_job() {
         else
           bootstrap_status=$?
         fi
+        # launchctl can return EIO after it has already registered the job.
+        # Downstream HTTP readiness is the final startup check, so treat the
+        # loaded generation as success instead of issuing a conflicting second
+        # bootstrap.
+        if "$LAUNCHCTL_BIN" print "$DOMAIN/ai.hermes.gateway" >/dev/null 2>&1; then
+          return 0
+        fi
         if [[ "$bootstrap_output" != *"Input/output error"* \
           && "$bootstrap_output" != *": 5:"* ]]; then
           [[ -z "$bootstrap_output" ]] || printf '%s\n' "$bootstrap_output" >&2

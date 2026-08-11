@@ -25,6 +25,16 @@ def test_local_mac_stack_propagates_system_proxy_before_gateway_bootstrap() -> N
     )
 
 
+def test_local_mac_stack_accepts_ambiguous_bootstrap_when_gateway_is_loaded() -> None:
+    script = (ROOT / "scripts" / "local_mac_stack.sh").read_text(encoding="utf-8")
+
+    assert '"$LAUNCHCTL_BIN" print "$DOMAIN/ai.hermes.gateway"' in script
+    failure_branch = script.split("if bootstrap_output=", 1)[1].split(
+        'if [[ "$bootstrap_output" !=', 1
+    )[0]
+    assert '"$LAUNCHCTL_BIN" print "$DOMAIN/ai.hermes.gateway"' in failure_branch
+
+
 def _copy_script(tmp_path: Path, name: str) -> tuple[Path, Path]:
     release_root = tmp_path / "release"
     scripts_dir = release_root / "scripts"
