@@ -254,6 +254,7 @@ def test_execution_rechecks_aggregate_symbol_limit_after_another_canary_fills(
     config = make_config(max_weight_per_symbol=0.99)
     sleeve_storage.save_strategy_config(config)
     service = PaperStrategySleeveService(sleeve_storage)
+    audited: list[tuple[str, str, object]] = []
     for suffix in ("one", "two"):
         sleeve = service.create_sleeve(
             account,
@@ -265,6 +266,7 @@ def test_execution_rechecks_aggregate_symbol_limit_after_another_canary_fills(
                 "automation_managed": True,
                 "automation_source": "d34",
                 "artifact_id": f"artifact-{suffix}",
+                "mandate_id": "mandate-policy-audit",
                 "promotion_scope": "paper_only",
                 "workspace_id": "default",
             },
@@ -311,6 +313,9 @@ def test_execution_rechecks_aggregate_symbol_limit_after_another_canary_fills(
             "mandate_active": True,
             "mandate_paper_execution_allowed": True,
         },
+        paper_policy_decision_recorder=lambda *, mandate_id, execution_id, decision, **_: (
+            audited.append((mandate_id, execution_id, decision))
+        ),
     )
 
     result = runner.process_pending_executions_once(target_date="2026-08-12")
@@ -324,6 +329,12 @@ def test_execution_rechecks_aggregate_symbol_limit_after_another_canary_fills(
     ]["blockers"] == ["aggregate_symbol_limit"]
     assert result.account is not None
     assert result.account.positions["AAPL"].market_value(100.0) == pytest.approx(400.0)
+    assert [(mandate_id, execution_id) for mandate_id, execution_id, _ in audited] == [
+        ("mandate-policy-audit", result.executions[0].execution_id),
+        ("mandate-policy-audit", result.executions[1].execution_id),
+    ]
+    assert [decision.allowed for _, _, decision in audited] == [True, False]
+    assert all(len(decision.input_digest) == 64 for _, _, decision in audited)
 
 
 def test_operations_runner_process_pending_executes_and_commits_journal_after_account_save(

@@ -95,6 +95,18 @@ class D34ExperimentJobListResponse(BaseModel):
     items: list[D34ExperimentJobResponse]
 
 
+class D34ArtifactComparisonResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    contract: str = Field(pattern=r"^hqa\.d34_comparison/v1$")
+    accepted: bool
+    exact_inputs: bool
+    reason_codes: list[str]
+    daily_return_correlation: float
+    terminal_nav_difference_bps: float = Field(ge=0)
+    max_symbol_weight_difference_bps: float = Field(ge=0)
+
+
 class D34ArtifactResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -114,6 +126,7 @@ class D34ArtifactResponse(BaseModel):
     qlib_receipt_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     platform_receipt_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     comparison_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    comparison: D34ArtifactComparisonResponse | None = None
     policy_decision_id: str
     created_at: datetime
     updated_at: datetime

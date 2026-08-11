@@ -67,6 +67,8 @@ class PaperExecutionDecision:
     blockers: tuple[str, ...]
     projected_symbol_values: dict[str, float]
     policy_digest: str
+    input_digest: str
+    input_document: dict[str, object]
     decision_digest: str
     contract: str = DECISION_CONTRACT
 
@@ -78,6 +80,8 @@ class PaperExecutionDecision:
             "blockers": list(self.blockers),
             "projected_symbol_values": self.projected_symbol_values,
             "policy_digest": self.policy_digest,
+            "input_digest": self.input_digest,
+            "input_document": self.input_document,
             "decision_digest": self.decision_digest,
         }
 
@@ -190,15 +194,15 @@ class PaperExecutionPolicy:
                 self._append_once(blockers, "aggregate_symbol_limit")
 
         projected = dict(sorted(projected.items()))
-        decision_payload = {
+        input_document: dict[str, object] = {
             "contract": DECISION_CONTRACT,
             "source": source,
             "workspace_id": batch.workspace_id,
             "account_id": batch.account_id,
             "sleeve_id": batch.sleeve_id,
             "orders": normalized_orders,
-            "sleeve_equity": sleeve_equity,
-            "nav": nav,
+            "sleeve_equity": sleeve_equity if math.isfinite(sleeve_equity) else None,
+            "nav": nav if math.isfinite(nav) else None,
             "aggregate_symbol_values": dict(
                 sorted(
                     (str(key).upper().strip(), float(value))
@@ -214,9 +218,12 @@ class PaperExecutionPolicy:
             "mandate_paper_execution_allowed": (
                 batch.mandate_paper_execution_allowed
             ),
+            "policy_digest": self.policy_digest,
+        }
+        decision_payload = {
+            **input_document,
             "blockers": blockers,
             "projected_symbol_values": projected,
-            "policy_digest": self.policy_digest,
         }
         return PaperExecutionDecision(
             source=source,
@@ -224,6 +231,8 @@ class PaperExecutionPolicy:
             blockers=tuple(blockers),
             projected_symbol_values=projected,
             policy_digest=self.policy_digest,
+            input_digest=_digest(input_document),
+            input_document=input_document,
             decision_digest=_digest(decision_payload),
         )
 

@@ -136,6 +136,9 @@ def test_batch_policy_rejects_unknown_source_and_invalid_numeric_inputs() -> Non
 
     unknown = policy.evaluate_batch(_batch(source="other"))
     invalid = policy.evaluate_batch(_batch(nav=0.0))
+    non_finite = policy.evaluate_batch(_batch(sleeve_equity=float("nan")))
 
     assert unknown.blockers == ("unsupported_automation_source",)
     assert invalid.blockers == ("invalid_nav",)
+    assert non_finite.blockers == ("invalid_sleeve_equity",)
+    assert len(non_finite.input_digest) == 64

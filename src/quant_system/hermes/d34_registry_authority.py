@@ -31,6 +31,29 @@ class RegistryAuthorityError(RuntimeError):
 
 
 @dataclass(frozen=True)
+class D34ComparisonSummary:
+    accepted: bool
+    exact_inputs: bool
+    reason_codes: tuple[str, ...]
+    daily_return_correlation: float
+    terminal_nav_difference_bps: float
+    max_symbol_weight_difference_bps: float
+
+    def to_public_dict(self) -> dict[str, object]:
+        return {
+            "contract": "hqa.d34_comparison/v1",
+            "accepted": self.accepted,
+            "exact_inputs": self.exact_inputs,
+            "reason_codes": list(self.reason_codes),
+            "daily_return_correlation": self.daily_return_correlation,
+            "terminal_nav_difference_bps": self.terminal_nav_difference_bps,
+            "max_symbol_weight_difference_bps": (
+                self.max_symbol_weight_difference_bps
+            ),
+        }
+
+
+@dataclass(frozen=True)
 class D34Artifact:
     artifact_id: str
     mandate_id: str
@@ -51,9 +74,18 @@ class D34Artifact:
     created_at: datetime
     updated_at: datetime
     version: int
+    comparison: D34ComparisonSummary | None = None
 
     def to_public_dict(self) -> dict[str, object]:
-        return {"contract": "hqa.d34_artifact/v1", **self.__dict__}
+        return {
+            "contract": "hqa.d34_artifact/v1",
+            **self.__dict__,
+            "comparison": (
+                self.comparison.to_public_dict()
+                if self.comparison is not None
+                else None
+            ),
+        }
 
 
 @dataclass(frozen=True)
@@ -163,7 +195,11 @@ created_at, updated_at, version
 """
 
 
-def _artifact(row: tuple[object, ...]) -> D34Artifact:
+def _artifact(
+    row: tuple[object, ...],
+    *,
+    comparison: D34ComparisonSummary | None = None,
+) -> D34Artifact:
     return D34Artifact(
         artifact_id=str(row[0]),
         mandate_id=str(row[1]),
@@ -184,6 +220,30 @@ def _artifact(row: tuple[object, ...]) -> D34Artifact:
         created_at=row[16],  # type: ignore[arg-type]
         updated_at=row[17],  # type: ignore[arg-type]
         version=int(row[18]),
+        comparison=comparison,
+    )
+
+
+def _comparison_summary(value: EngineComparison) -> D34ComparisonSummary:
+    return D34ComparisonSummary(
+        accepted=value.accepted,
+        exact_inputs=value.exact_inputs,
+        reason_codes=value.reason_codes,
+        daily_return_correlation=value.daily_return_correlation,
+        terminal_nav_difference_bps=value.terminal_nav_difference_bps,
+        max_symbol_weight_difference_bps=value.max_symbol_weight_difference_bps,
+    )
+
+
+def _listed_comparison(row: tuple[object, ...]) -> D34ComparisonSummary:
+    document = dict(row[23])  # type: ignore[arg-type]
+    return D34ComparisonSummary(
+        accepted=bool(row[19]),
+        exact_inputs=bool(document["exact_inputs"]),
+        reason_codes=tuple(str(value) for value in document["reason_codes"]),
+        daily_return_correlation=float(row[20]),
+        terminal_nav_difference_bps=float(row[21]),
+        max_symbol_weight_difference_bps=float(row[22]),
     )
 
 
@@ -233,13 +293,37 @@ class PostgresRegistryAuthority:
             ) from exc
 
     def list_artifacts(self, *, workspace_id: str, limit: int) -> list[D34Artifact]:
-        rows = self._list(
-            table="d34_artifacts",
-            columns=_ARTIFACT_COLUMNS,
-            workspace_id=workspace_id,
-            limit=limit,
+        if _WORKSPACE_RE.fullmatch(workspace_id) is None or not 1 <= limit <= 100:
+            raise RegistryAuthorityError("d34_registry_validation", "registry query is invalid")
+        columns = ", ".join(
+            f"artifact.{name.strip()}"
+            for name in _ARTIFACT_COLUMNS.replace("\n", " ").split(",")
+            if name.strip()
         )
-        return [_artifact(row) for row in rows]
+        try:
+            with self._database().connect() as conn:
+                rows = conn.execute(
+                    f"""
+                    SELECT {columns}, comparison.accepted,
+                           comparison.daily_return_correlation,
+                           comparison.terminal_nav_difference_bps,
+                           comparison.max_symbol_weight_difference_bps,
+                           comparison.comparison_document
+                    FROM {SCHEMA}.d34_artifacts AS artifact
+                    JOIN {SCHEMA}.d34_comparisons AS comparison
+                      ON comparison.comparison_digest = artifact.comparison_digest
+                    WHERE artifact.owner_user_id = %s AND artifact.workspace_id = %s
+                    ORDER BY artifact.created_at DESC LIMIT %s
+                    """,
+                    (ROOT_USER_ID, workspace_id, limit),
+                ).fetchall()
+        except (DatabaseUnavailable, psycopg.Error) as exc:
+            raise RegistryAuthorityError(
+                "d34_registry_unavailable", "D-34 Artifact Registry is unavailable"
+            ) from exc
+        return [
+            _artifact(row[:19], comparison=_listed_comparison(row)) for row in rows
+        ]
 
     def list_canaries(self, *, workspace_id: str, limit: int) -> list[D34Canary]:
         rows = self._list(
@@ -534,7 +618,7 @@ class PostgresRegistryAuthority:
                     raise RegistryAuthorityError(
                         "d34_registry_conflict", "artifact identity collision"
                     )
-                artifact = _artifact(row)
+                artifact = _artifact(row, comparison=_comparison_summary(comparison))
                 conn.execute(
                     f"""
                     INSERT INTO {SCHEMA}.d34_artifact_events (

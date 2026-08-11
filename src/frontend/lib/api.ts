@@ -2098,6 +2098,8 @@ export type D34ExperimentJobListResponse =
   GeneratedApiComponents["schemas"]["D34ExperimentJobListResponse"];
 export type D34ArtifactResponse =
   GeneratedApiComponents["schemas"]["D34ArtifactResponse"];
+export type D34ArtifactComparisonResponse =
+  GeneratedApiComponents["schemas"]["D34ArtifactComparisonResponse"];
 export type D34ArtifactListResponse =
   GeneratedApiComponents["schemas"]["D34ArtifactListResponse"];
 export type D34CanaryResponse =

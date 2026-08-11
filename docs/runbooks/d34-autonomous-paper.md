@@ -46,6 +46,11 @@ docker run --rm --env-file /absolute/owner-only/d34.env \
 `workspace/jobs/<job_id>/docker_failure.json`，只记录 image/command、返回码、输出字节数与
 SHA-256、容器清理结果，不把可能含 secret 的 stdout/stderr 原文写入凭证。
 
+每次 container 前后都会读取 Platform/HQA 的 Git porcelain status 与 tracked binary diff。
+如果挂载仓库在作业期间发生变化，运行器保留现场并写入
+`workspace/jobs/<job_id>/repository_anomaly.json`；它不会 reset、删除或自动提交。作业开始前
+已经存在且全程未变化的 dirty 也会进入 Docker receipt，但不会被误报为本次作业造成的变化。
+
 ## Migration 授权窗口
 
 正常 backend/LaunchAgent 启动永远保留 `QS_DATABASE_AUTO_MIGRATE=false`。先在一次性 PostgreSQL
@@ -82,12 +87,15 @@ PYTHONPATH="$PWD/src" /Users/sunyibo/programs/ai-quant-platform/.venv/bin/pytest
 QS_DATABASE_AUTO_MIGRATE=false
 QS_D34_WORKER_ENABLED=true
 D34_IMAGE_REF=hqa-d34-rdagent-qlib:0.1.0
+QS_D34_WORKER_PYTHON=/absolute/python-3.11-venv/bin/python
 QS_D34_HQA_ROOT=/absolute/runtime/Hermes-quant-agent
 QS_D34_ENV_FILE=/absolute/owner-only/d34.env
 ```
 
 `QS_D34_ENV_FILE` 是 worker 传给每个 research container 的同一份 `0600` LLM/embedding
 配置；未配置时 container 会 fail closed，不能用 Hermes OAuth 配置或 sample response 冒充。
+`QS_D34_WORKER_PYTHON` 必须精确指向 Python 3.11；runner 会拒绝显式配置的其他 minor，自动
+发现时也只选择 3.11，避免 purpose worktree 验收使用 3.11、LaunchAgent 却落到旧 3.12 venv。
 
 然后从 Platform runtime 运行：
 
@@ -107,15 +115,19 @@ Mandate 未创建/暂停/过期、预算耗尽或 emergency stop 时，它保留
 
 - `/api/safety/effective/v2`：Mandate、research/paper blockers、预算、配额、风险、emergency stop。
 - `/api/hermes/research/jobs`：lease、attempt、heartbeat、terminal/outcome unknown。
-- `/api/hermes/d34/artifacts`：双引擎与 policy 血缘。
-- `/api/hermes/canaries`：allocated cash、P&L、drawdown、status/version。
-- `/zh/hermes`：owner 工作台；这里没有 live upgrade 操作。
+- `/api/hermes/d34/artifacts`：双引擎与 policy 血缘，并返回 correlation、NAV/weight 差异。
+- `/api/hermes/canaries`：allocated cash、P&L、drawdown、status/version；持仓与现金仍以
+  `/api/paper/strategy-sleeves/{sleeve_id}` 为权威来源。
+- `/zh/hermes`：owner 工作台；汇总比较指标、限额、canary P&L、现金和持仓，这里没有 live
+  upgrade 操作。
 
 执行前会再次读取 durable emergency stop/Mandate。即使 pending plan 早于 stop 创建，也必须
 转为 blocked，不能成交；并且会按实际 next-open 价格、实际订单金额和当前账户/其他 D-34
 sleeve 暴露重新执行统一 Policy，防止多个旧计划累计越过单标的 5% 上限。日亏 2% 或回撤
 10% 时先 pause 本地 sleeve，再以版本 CAS 写入 Registry；paused/demoted/rolled-back 的
 held positions 仍继续估值。新 canary 在 Registry 写成功前保持 `paused/awaiting_registry`。
+D-34 实际执行前的 accepted/rejected order-batch 决策会追加写入 `d34_policy_decisions`；审计
+写入失败时订单保持 blocked，不能出现“成交成功但没有确定性 policy 记录”的状态。
 
 ## 停止与回滚
 

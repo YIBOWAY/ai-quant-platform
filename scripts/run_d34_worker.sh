@@ -47,19 +47,31 @@ discover_main_root() {
 }
 
 resolve_python() {
-  local candidate
+  local candidate configured
+  configured="${QS_D34_WORKER_PYTHON:-}"
+  if [[ -n "$configured" ]]; then
+    [[ -x "$configured" ]] || fail "python_not_found"
+    "$configured" -I -B -c \
+      'import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 11) else 1)' \
+      >/dev/null 2>&1 || fail "python_must_be_3_11"
+    printf '%s\n' "$configured"
+    return
+  fi
   for candidate in \
-    "${QS_D34_WORKER_PYTHON:-}" \
     "${QS_QUANT_BACKEND_PYTHON:-}" \
+    "$ROOT/.venv/bin/python" \
+    "$MAIN_ROOT/.venv/bin/python" \
     "$ROOT/ai-quant/bin/python" \
-    "$MAIN_ROOT/ai-quant/bin/python" \
-    "$MAIN_ROOT/.venv/bin/python"; do
-    if [[ -n "$candidate" && -x "$candidate" ]]; then
+    "$MAIN_ROOT/ai-quant/bin/python"; do
+    if [[ -n "$candidate" && -x "$candidate" ]] &&
+      "$candidate" -I -B -c \
+        'import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 11) else 1)' \
+        >/dev/null 2>&1; then
       printf '%s\n' "$candidate"
       return
     fi
   done
-  fail "python_not_found"
+  fail "python_3_11_not_found"
 }
 
 load_backend_env

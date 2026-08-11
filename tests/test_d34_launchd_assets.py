@@ -122,3 +122,39 @@ def test_d34_runner_is_idle_until_deployment_explicitly_enables_it(
 
     assert completed.returncode == 0, completed.stderr
     assert completed.stdout.strip() == "state=disabled code=d34_worker_disabled"
+
+
+def test_d34_runner_rejects_an_explicit_non_pinned_python(tmp_path: Path) -> None:
+    env_file = tmp_path / "backend.env"
+    env_file.write_text("QS_DATABASE_AUTO_MIGRATE=false\n", encoding="utf-8")
+    env_file.chmod(0o600)
+    hqa_root = tmp_path / "hqa-root"
+    (hqa_root / "hqa").mkdir(parents=True)
+    wrong_python = tmp_path / "python-3.12"
+    wrong_python.write_text(
+        "#!/bin/sh\n"
+        "if [ \"$1\" = \"-I\" ]; then exit 12; fi\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    wrong_python.chmod(0o700)
+
+    completed = subprocess.run(
+        [str(ROOT / "scripts" / "run_d34_worker.sh"), "--check"],
+        cwd=ROOT,
+        env={
+            **os.environ,
+            "QS_AGENT_V02_BACKEND_ENV_FILE": str(env_file),
+            "QS_D34_HQA_ROOT": str(hqa_root),
+            "QS_D34_WORKER_PYTHON": str(wrong_python),
+            "QS_MAIN_REPO_ROOT": str(ROOT),
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=10,
+    )
+
+    assert completed.returncode == 78
+    assert completed.stdout == ""
+    assert completed.stderr.strip() == "d34_worker_config_error=python_must_be_3_11"

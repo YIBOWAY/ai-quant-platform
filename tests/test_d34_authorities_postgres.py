@@ -17,6 +17,10 @@ from quant_system.d34.engine_comparison import (
     EngineReceipt,
     compare_engine_receipts,
 )
+from quant_system.execution.paper_execution_policy import (
+    PaperExecutionBatch,
+    PaperExecutionPolicy,
+)
 from quant_system.hermes.command_ledger import ROOT_USER_ID
 from quant_system.hermes.d34_job_authority import (
     EnqueueJobCommand,
@@ -26,6 +30,9 @@ from quant_system.hermes.d34_job_authority import (
 from quant_system.hermes.d34_mandate_authority import (
     CreateMandateCommand,
     PostgresMandateAuthority,
+)
+from quant_system.hermes.d34_policy_decision_authority import (
+    PostgresD34PolicyDecisionAuthority,
 )
 from quant_system.hermes.d34_registry_authority import (
     PostgresRegistryAuthority,
@@ -85,6 +92,7 @@ def _authorities():
                 PostgresMandateAuthority(settings),
                 PostgresJobAuthority(settings),
                 PostgresRegistryAuthority(settings),
+                PostgresD34PolicyDecisionAuthority(settings),
                 D34SafetyAuthority(settings),
             )
         finally:
@@ -113,7 +121,7 @@ def _receipt(*, engine: str, digest: str) -> EngineReceipt:
 
 
 def test_030_032_runtime_authorities_complete_idempotent_artifact_canary_flow() -> None:
-    with _authorities() as (admin, mandates, jobs, registry, safety):
+    with _authorities() as (admin, mandates, jobs, registry, policy_audit, safety):
         mandate = mandates.create(
             CreateMandateCommand(
                 owner_user_id=ROOT_USER_ID,
@@ -131,6 +139,55 @@ def test_030_032_runtime_authorities_complete_idempotent_artifact_canary_flow() 
         )
         original_expiry = mandate.expires_at
         original_policy_digest = mandate.policy_digest
+        order_decision = PaperExecutionPolicy().evaluate_batch(
+            PaperExecutionBatch(
+                source="d34",
+                workspace_id="default",
+                account_id="paper-main",
+                sleeve_id="sleeve-d34-policy-audit",
+                orders=({"symbol": "SPY", "notional_delta": 1000.0},),
+                sleeve_equity=1000.0,
+                nav=100_000.0,
+                aggregate_symbol_values={},
+                emergency_stop=False,
+                paper_execution_enabled=True,
+                mandate_active=True,
+                mandate_paper_execution_allowed=True,
+            )
+        )
+        recorded_order = policy_audit.record_order_batch(
+            mandate_id=mandate.mandate_id,
+            workspace_id="default",
+            execution_id="execution-d34-policy-audit-1",
+            decision=order_decision,
+        )
+        assert policy_audit.record_order_batch(
+            mandate_id=mandate.mandate_id,
+            workspace_id="default",
+            execution_id="execution-d34-policy-audit-1",
+            decision=order_decision,
+        ) == recorded_order
+        repeated_batch = policy_audit.record_order_batch(
+            mandate_id=mandate.mandate_id,
+            workspace_id="default",
+            execution_id="execution-d34-policy-audit-2",
+            decision=order_decision,
+        )
+        assert repeated_batch.decision_id != recorded_order.decision_id
+        with admin.connect() as conn:
+            policy_row = conn.execute(
+                "SELECT subject_kind, subject_id, outcome, input_digest, "
+                "decision_document->>'decision_digest' "
+                "FROM quant_system.d34_policy_decisions WHERE decision_id = %s",
+                (recorded_order.decision_id,),
+            ).fetchone()
+        assert policy_row == (
+            "order_batch",
+            "execution-d34-policy-audit-1",
+            "accepted",
+            order_decision.input_digest,
+            order_decision.decision_digest,
+        )
         mandate = mandates.renew(
             mandate_id=mandate.mandate_id,
             duration_days=30,
@@ -279,7 +336,13 @@ def test_030_032_runtime_authorities_complete_idempotent_artifact_canary_flow() 
             reason="risk threshold",
         )
         assert paused.status == "paused"
-        assert registry.list_artifacts(workspace_id="default", limit=10)[0].status == "paused"
+        listed_artifact = registry.list_artifacts(workspace_id="default", limit=10)[0]
+        assert listed_artifact.status == "paused"
+        assert listed_artifact.comparison is not None
+        assert listed_artifact.comparison.accepted is True
+        assert listed_artifact.comparison.exact_inputs is True
+        assert listed_artifact.comparison.daily_return_correlation == pytest.approx(1.0)
+        assert listed_artifact.comparison.reason_codes == ()
         assert registry.get_canary(canary.canary_id).status == "paused"
 
         rejected_lease = jobs.lease_next(

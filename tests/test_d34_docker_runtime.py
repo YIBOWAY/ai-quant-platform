@@ -119,6 +119,70 @@ def test_timeout_cleans_exact_container_and_writes_durable_failure_receipt(
     assert "partial provider output" not in json.dumps(receipt)
 
 
+def test_runtime_records_repository_changes_without_resetting_them(tmp_path: Path) -> None:
+    roots = [tmp_path / name for name in ("workspace", "platform", "hqa", "cache")]
+    for root in roots:
+        root.mkdir()
+    for root in roots[1:3]:
+        subprocess.run(["git", "init", "-q", str(root)], check=True)
+        subprocess.run(
+            ["git", "-C", str(root), "config", "user.email", "d34-test@example.invalid"],
+            check=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(root), "config", "user.name", "D34 Test"], check=True
+        )
+        (root / "tracked.txt").write_text("clean\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(root), "add", "tracked.txt"], check=True)
+        subprocess.run(["git", "-C", str(root), "commit", "-qm", "fixture"], check=True)
+
+    def run(command, **kwargs):
+        if command[1:3] == ["image", "inspect"]:
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout="sha256:" + "a" * 64 + "\n",
+                stderr="",
+            )
+        if command[1] == "run":
+            (roots[1] / "tracked.txt").write_text("changed by container\n", encoding="utf-8")
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout='{"contract":"hqa.d34_container_versions/v1"}\n',
+            stderr="",
+        )
+
+    runtime = D34DockerRuntime(
+        D34DockerConfig(
+            image_ref="hqa-d34-rdagent-qlib:0.1.0",
+            workspace_root=roots[0],
+            platform_root=roots[1],
+            hqa_root=roots[2],
+            cache_root=roots[3],
+            timeout_seconds=60,
+        ),
+        process_runner=run,
+    )
+
+    receipt = runtime.run(job_id="job-dirty-audit", command=("versions",))
+
+    assert (roots[1] / "tracked.txt").read_text(encoding="utf-8") == "changed by container\n"
+    assert receipt.repository_changes[0]["repository"] == "platform"
+    assert receipt.repository_changes[0]["changed_during_job"] is True
+    assert receipt.repository_changes[1]["repository"] == "hqa"
+    assert receipt.repository_changes[1]["changed_during_job"] is False
+    anomaly = json.loads(
+        (roots[0] / "jobs/job-dirty-audit/repository_anomaly.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert anomaly["contract"] == "hqa.d34_repository_anomaly/v1"
+    recorded_diff = anomaly["repositories"][0]["after"]["diff"]
+    assert recorded_diff.startswith("diff --git a/tracked.txt b/tracked.txt\n")
+    assert "-clean\n+changed by container\n" in recorded_diff
+
+
 @pytest.mark.parametrize("unsafe_kind", ["world_readable", "symlink"])
 def test_runtime_rejects_non_owner_only_provider_env(
     tmp_path: Path, unsafe_kind: str

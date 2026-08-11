@@ -37,6 +37,15 @@ class _Registry:
                 "qlib_receipt_digest": "4" * 64,
                 "platform_receipt_digest": "5" * 64,
                 "comparison_digest": "6" * 64,
+                "comparison": {
+                    "contract": "hqa.d34_comparison/v1",
+                    "accepted": True,
+                    "exact_inputs": True,
+                    "reason_codes": [],
+                    "daily_return_correlation": 0.9999,
+                    "terminal_nav_difference_bps": 1.25,
+                    "max_symbol_weight_difference_bps": 12.5,
+                },
                 "policy_decision_id": "decision-test-1",
                 "created_at": datetime(2026, 8, 11, tzinfo=UTC),
                 "updated_at": datetime(2026, 8, 11, tzinfo=UTC),
@@ -149,6 +158,15 @@ def test_owner_reads_d34_artifacts_and_real_canaries(tmp_path: Path) -> None:
     assert artifacts.status_code == 200, artifacts.text
     assert artifacts.json()["items"][0]["qualification_scope"] == "paper_only"
     assert artifacts.json()["items"][0]["comparison_digest"] == "6" * 64
+    assert artifacts.json()["items"][0]["comparison"] == {
+        "contract": "hqa.d34_comparison/v1",
+        "accepted": True,
+        "exact_inputs": True,
+        "reason_codes": [],
+        "daily_return_correlation": 0.9999,
+        "terminal_nav_difference_bps": 1.25,
+        "max_symbol_weight_difference_bps": 12.5,
+    }
     assert canaries.status_code == 200, canaries.text
     assert canaries.json()["items"][0]["sleeve_id"] == "sleeve-d34-test-1"
     assert canaries.json()["items"][0]["status"] == "running"

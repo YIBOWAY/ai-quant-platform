@@ -150,11 +150,55 @@ async function installD34OwnerFixture(page: Page) {
           qlib_receipt_digest: "4".repeat(64),
           platform_receipt_digest: "5".repeat(64),
           comparison_digest: "6".repeat(64),
+          comparison: {
+            contract: "hqa.d34_comparison/v1",
+            accepted: true,
+            exact_inputs: true,
+            reason_codes: [],
+            daily_return_correlation: 0.9999,
+            terminal_nav_difference_bps: 1.25,
+            max_symbol_weight_difference_bps: 12.5,
+          },
           created_at: "2026-08-11T00:15:00Z",
           updated_at: "2026-08-11T00:15:00Z",
           version: 1,
         },
       ],
+    }),
+  );
+  await page.route("**/api/paper/strategy-sleeves/d34-browser-fixture-sleeve", (route) =>
+    fulfill(route, {
+      sleeve: {
+        sleeve_id: "d34-browser-fixture-sleeve",
+        account_id: "paper-main",
+        strategy_config_id: "config-d34-browser-fixture",
+        strategy_config_version: 1,
+        mode: "allocated",
+        status: "running",
+        initial_allocated_cash: 10_000,
+        cash: 9_060,
+        created_at: "2026-08-11T00:16:00Z",
+        updated_at: "2026-08-11T00:16:00Z",
+        paused_at: null,
+        stopped_at: null,
+        stop_reason: null,
+        metadata: { automation_source: "d34" },
+      },
+      lots: [
+        {
+          lot_id: "lot-d34-spy",
+          account_id: "paper-main",
+          sleeve_id: "d34-browser-fixture-sleeve",
+          symbol: "SPY",
+          quantity: 2,
+          avg_cost: 470,
+          opened_at: "2026-08-11T00:16:00Z",
+          updated_at: "2026-08-11T00:16:00Z",
+          source: "strategy:d34-browser-fixture-sleeve",
+        },
+      ],
+      signals: [],
+      executions: [],
     }),
   );
   await page.route("**/api/hermes/canaries?**", (route) =>
@@ -195,6 +239,13 @@ test("D-34 workbench shows the durable paper-only cycle and renews its Mandate",
   await expect(page.getByText("live = false", { exact: true })).toBeVisible();
   await expect(page.getByText("artifact-b…xture-0001", { exact: true })).toBeVisible();
   await expect(page.getByText("canary-bro…xture-0001", { exact: false })).toBeVisible();
+  await expect(page.getByText("corr 0.9999", { exact: false })).toBeVisible();
+  await expect(page.getByText("NAV Δ 1.25 bps", { exact: false })).toBeVisible();
+  await expect(page.getByText("P&L +$25.00", { exact: false })).toBeVisible();
+  await expect(page.getByText("回撤 0.20%", { exact: false })).toBeVisible();
+  await expect(page.getByText("SPY · 2 @ $470.00", { exact: false })).toBeVisible();
+  await expect(page.getByText("单 sleeve 1.00%", { exact: false })).toBeVisible();
+  await expect(page.getByText("单标的合计 5.00%", { exact: false })).toBeVisible();
   await expect(page.getByRole("button", { name: "立即停止" })).toBeVisible();
   await expect(page.getByRole("button", { name: /live/i })).toHaveCount(0);
 

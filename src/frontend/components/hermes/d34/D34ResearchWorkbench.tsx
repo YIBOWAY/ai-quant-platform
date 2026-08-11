@@ -18,6 +18,7 @@ type ArtifactList = components["schemas"]["D34ArtifactListResponse"];
 type Canary = components["schemas"]["D34CanaryResponse"];
 type CanaryList = components["schemas"]["D34CanaryListResponse"];
 type Safety = components["schemas"]["EffectiveD34SafetyResponse"];
+type SleeveDetail = components["schemas"]["StrategySleeveDetailResponse"];
 
 type Snapshot = {
   safety: Safety;
@@ -25,6 +26,7 @@ type Snapshot = {
   jobs: JobList["items"];
   artifacts: ArtifactList["items"];
   canaries: Canary[];
+  sleeveDetails: Record<string, SleeveDetail | null>;
 };
 
 function short(value: string, size = 10) {
@@ -38,6 +40,21 @@ function formatTime(value: string, locale: Locale) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(parsed);
+}
+
+function formatMoney(value: string | number, signed = false) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return String(value);
+  const absolute = new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Math.abs(amount));
+  if (!signed) return `$${absolute}`;
+  return `${amount >= 0 ? "+" : "-"}$${absolute}`;
+}
+
+function formatQuantity(value: number) {
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 6 }).format(value);
 }
 
 function StatusPill({ value }: { value: string }) {
@@ -81,12 +98,28 @@ export function D34ResearchWorkbench({ locale }: { locale: Locale }) {
         ownerGetJson<ArtifactList>("/api/hermes/d34/artifacts?workspace_id=default", signal),
         ownerGetJson<CanaryList>("/api/hermes/canaries?workspace_id=default", signal),
       ]);
+      const sleeveResults = await Promise.allSettled(
+        canaries.items.map((canary) =>
+          ownerGetJson<SleeveDetail>(
+            `/api/paper/strategy-sleeves/${encodeURIComponent(canary.sleeve_id)}`,
+            signal,
+          ),
+        ),
+      );
+      const sleeveDetails = Object.fromEntries(
+        canaries.items.map((canary, index) => {
+          const result = sleeveResults[index];
+          return [canary.sleeve_id, result?.status === "fulfilled" ? result.value : null];
+        }),
+      );
+      if (signal?.aborted) return;
       setSnapshot({
         safety,
         mandates: mandates.items,
         jobs: jobs.items,
         artifacts: artifacts.items,
         canaries: canaries.items,
+        sleeveDetails,
       });
     } catch (cause) {
       if (signal?.aborted) return;
@@ -241,6 +274,30 @@ export function D34ResearchWorkbench({ locale }: { locale: Locale }) {
               </p>
               <p className="mt-1 text-xs text-text-secondary">
                 ${snapshot.safety.canaries.allocated_cash} allocated
+              </p>
+            </div>
+          </div>
+
+          <div className={card}>
+            <h3 className="font-headline-sm text-text-primary">
+              {isZh ? "Paper 风险限额" : "Paper risk limits"}
+            </h3>
+            <div className="mt-3 grid gap-2 text-sm text-text-secondary sm:grid-cols-2 xl:grid-cols-4">
+              <p>
+                {isZh ? "单 sleeve" : "Per sleeve"}{" "}
+                {(snapshot.safety.risk.max_sleeve_nav_fraction * 100).toFixed(2)}% · {formatMoney(snapshot.safety.risk.max_sleeve_cash)}
+              </p>
+              <p>
+                {isZh ? "自动合计" : "Automatic total"}{" "}
+                {(snapshot.safety.risk.max_total_nav_fraction * 100).toFixed(2)}%
+              </p>
+              <p>
+                {isZh ? "单标的合计" : "Per symbol total"}{" "}
+                {(snapshot.safety.risk.max_symbol_nav_fraction * 100).toFixed(2)}%
+              </p>
+              <p>
+                {isZh ? "日亏 / 回撤" : "Daily loss / drawdown"}{" "}
+                {(snapshot.safety.risk.max_daily_loss * 100).toFixed(2)}% / {(snapshot.safety.risk.max_drawdown * 100).toFixed(2)}%
               </p>
             </div>
           </div>
@@ -454,6 +511,18 @@ export function D34ResearchWorkbench({ locale }: { locale: Locale }) {
                     <p className="mt-2 font-data-mono text-[11px] text-text-secondary" title={artifact.comparison_digest}>
                       comparison {short(artifact.comparison_digest)} · {artifact.qualification_scope}
                     </p>
+                    {artifact.comparison ? (
+                      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 font-data-mono text-[11px] text-text-secondary">
+                        <span>corr {artifact.comparison.daily_return_correlation.toFixed(4)}</span>
+                        <span>NAV Δ {artifact.comparison.terminal_nav_difference_bps.toFixed(2)} bps</span>
+                        <span>
+                          weight Δ {artifact.comparison.max_symbol_weight_difference_bps.toFixed(2)} bps
+                        </span>
+                        {artifact.comparison.reason_codes.map((reason) => (
+                          <span className="text-danger" key={reason}>{reason}</span>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                 ))}
                 {!snapshot.artifacts.length ? <p className="text-sm text-text-secondary">No artifacts yet.</p> : null}
@@ -486,6 +555,31 @@ export function D34ResearchWorkbench({ locale }: { locale: Locale }) {
                       </p>
                       <StatusPill value={canary.status} />
                     </div>
+                    <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-text-secondary">
+                      <span>P&amp;L {formatMoney(canary.daily_pnl, true)}</span>
+                      <span>{isZh ? "回撤" : "drawdown"} {(Number(canary.drawdown_fraction) * 100).toFixed(2)}%</span>
+                      <span>NAV {(Number(canary.nav_fraction) * 100).toFixed(2)}%</span>
+                      {snapshot.sleeveDetails[canary.sleeve_id] ? (
+                        <span>{isZh ? "现金" : "cash"} {formatMoney(snapshot.sleeveDetails[canary.sleeve_id]!.sleeve.cash)}</span>
+                      ) : null}
+                    </div>
+                    {snapshot.sleeveDetails[canary.sleeve_id]?.lots.length ? (
+                      <ul className="mt-2 space-y-1 font-data-mono text-[11px] text-text-secondary">
+                        {snapshot.sleeveDetails[canary.sleeve_id]!.lots.map((lot) => (
+                          <li key={lot.lot_id}>
+                            {lot.symbol} · {formatQuantity(lot.quantity)} @ {formatMoney(lot.avg_cost)}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : snapshot.sleeveDetails[canary.sleeve_id] === null ? (
+                      <p className="mt-2 text-xs text-warning">
+                        {isZh ? "sleeve 详情暂不可用" : "Sleeve detail unavailable"}
+                      </p>
+                    ) : (
+                      <p className="mt-2 text-xs text-text-secondary">
+                        {isZh ? "当前仅现金，无持仓" : "Cash only; no open positions"}
+                      </p>
+                    )}
                     {canary.status === "running" || canary.status === "paused" ? (
                       <div className="mt-2 flex flex-wrap gap-2">
                         {canary.status === "running" ? (

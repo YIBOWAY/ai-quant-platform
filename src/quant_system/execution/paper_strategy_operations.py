@@ -14,6 +14,7 @@ from quant_system.execution.d34_execution_context import (
 )
 from quant_system.execution.paper_execution_policy import (
     PaperExecutionBatch,
+    PaperExecutionDecision,
     PaperExecutionPolicy,
 )
 from quant_system.execution.paper_strategy_execution_service import (
@@ -210,6 +211,7 @@ class PaperStrategyOperationsRunner:
         today: Callable[[], date] = date.today,
         paper_execution_context_provider: Callable[[StrategySleeve], Mapping[str, Any]]
         | None = None,
+        paper_policy_decision_recorder: Callable[..., None] | None = None,
     ) -> None:
         self.account_storage = account_storage
         self.sleeve_storage = sleeve_storage
@@ -218,6 +220,28 @@ class PaperStrategyOperationsRunner:
         self.today = today
         self.paper_execution_context_provider = (
             paper_execution_context_provider or self._paper_execution_context
+        )
+        self.paper_policy_decision_recorder = (
+            paper_policy_decision_recorder or self._record_d34_order_policy_decision
+        )
+
+    def _record_d34_order_policy_decision(
+        self,
+        *,
+        mandate_id: str,
+        workspace_id: str,
+        execution_id: str,
+        decision: PaperExecutionDecision,
+    ) -> None:
+        from quant_system.hermes.d34_policy_decision_authority import (  # noqa: PLC0415
+            PostgresD34PolicyDecisionAuthority,
+        )
+
+        PostgresD34PolicyDecisionAuthority(self.settings).record_order_batch(
+            mandate_id=mandate_id,
+            workspace_id=workspace_id,
+            execution_id=execution_id,
+            decision=decision,
         )
 
     def _paper_execution_context(self, sleeve: StrategySleeve) -> Mapping[str, Any]:
@@ -293,6 +317,20 @@ class PaperStrategyOperationsRunner:
         plan.metadata["paper_execution_policy_decision_at_execution"] = (
             decision.to_dict()
         )
+        if source == "d34":
+            mandate_id = str(sleeve.metadata.get("mandate_id", ""))
+            workspace_id = str(sleeve.metadata.get("workspace_id", "default"))
+            try:
+                self.paper_policy_decision_recorder(
+                    mandate_id=mandate_id,
+                    workspace_id=workspace_id,
+                    execution_id=plan.execution_id,
+                    decision=decision,
+                )
+            except Exception as exc:  # noqa: BLE001 - durable audit seam
+                code = str(getattr(exc, "code", "d34_policy_audit_unavailable"))
+                plan.metadata["paper_execution_policy_audit_error"] = code
+                return f"automation_{code}"
         return None if decision.allowed else f"automation_{decision.blockers[0]}"
 
     def generate_signal_once(

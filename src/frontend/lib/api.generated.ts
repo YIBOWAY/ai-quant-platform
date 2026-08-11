@@ -4344,6 +4344,23 @@ export interface components {
             v2_durable_live?: false | null;
             workspace: components["schemas"]["WorkspaceRefResponse"];
         };
+        /** D34ArtifactComparisonResponse */
+        D34ArtifactComparisonResponse: {
+            /** Accepted */
+            accepted: boolean;
+            /** Contract */
+            contract: string;
+            /** Daily Return Correlation */
+            daily_return_correlation: number;
+            /** Exact Inputs */
+            exact_inputs: boolean;
+            /** Max Symbol Weight Difference Bps */
+            max_symbol_weight_difference_bps: number;
+            /** Reason Codes */
+            reason_codes: string[];
+            /** Terminal Nav Difference Bps */
+            terminal_nav_difference_bps: number;
+        };
         /** D34ArtifactListResponse */
         D34ArtifactListResponse: {
             /** Contract */
@@ -4357,6 +4374,7 @@ export interface components {
             artifact_id: string;
             /** Candidate Code Digest */
             candidate_code_digest: string;
+            comparison?: components["schemas"]["D34ArtifactComparisonResponse"] | null;
             /** Comparison Digest */
             comparison_digest: string;
             /** Contract */
@@ -14188,6 +14206,7 @@ export type BriefSnapshotResponse = components["schemas"]["BriefSnapshotResponse
 export type BuySideAssistantResponse = components["schemas"]["BuySideAssistantResponse"];
 export type CanaryGrantResponse = components["schemas"]["CanaryGrantResponse"];
 export type CompositeTurnReceiptResponse = components["schemas"]["CompositeTurnReceiptResponse"];
+export type D34ArtifactComparisonResponse = components["schemas"]["D34ArtifactComparisonResponse"];
 export type D34ArtifactListResponse = components["schemas"]["D34ArtifactListResponse"];
 export type D34ArtifactResponse = components["schemas"]["D34ArtifactResponse"];
 export type D34CanaryListResponse = components["schemas"]["D34CanaryListResponse"];
