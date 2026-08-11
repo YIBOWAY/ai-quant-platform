@@ -38,6 +38,7 @@
   --color-text-mono: #D8D1C4;
 
   --color-accent-success: #089981;   /* trading gain / genuine success */
+  --color-accent-danger: #F23645;    /* loss / error: pairs with accent-success */
   --color-warning: #F0B90B;
   --color-danger: #F23645;
   --color-info: #5EA2FF;

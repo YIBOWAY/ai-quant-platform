@@ -49,10 +49,11 @@ const copy = {
     windowReturn: "Window return",
     sessions: "sessions",
     indexNote:
-      "Display-only: each lane keeps its own currency and trading calendar. The local index is never blended into the USD ETF proxy metrics.",
+      "Display-only: each lane keeps its own currency, trading calendar, and vertical scale. The local index is never blended into the USD ETF proxy metrics.",
     indexPendingTitle: "Local index not connected",
     indexErrorTitle: "Local index temporarily unavailable",
     indexErrorHint: "No substitute curve was used; the ETF proxy tab is unaffected.",
+    indexErrorReasonPrefix: "Provider error",
     indexReasonPermission:
       "The Futu account has no A-share index quote permission; CSI 300 (SH.000300) unlocks once it is enabled in Futu.",
     indexReasonFormat:
@@ -101,10 +102,11 @@ const copy = {
     windowReturn: "区间收益",
     sessions: "个交易日",
     indexNote:
-      "仅作展示对照：两条序列各自使用本地币种与本地交易日历，指数不与美元 ETF 代理混合计算任何指标。",
+      "仅作展示对照：两条序列各自使用本地币种、本地交易日历，并各自独立缩放；指数不与美元 ETF 代理混合计算任何指标。",
     indexPendingTitle: "本地指数待接入",
     indexErrorTitle: "本地指数暂不可用",
     indexErrorHint: "未用任何替代曲线冒充指数；ETF 代理页签不受影响。",
+    indexErrorReasonPrefix: "数据源错误",
     indexReasonPermission:
       "Futu 账户未开通 A 股指数行情权限；开通后可接入沪深300（SH.000300）。",
     indexReasonFormat:
@@ -198,7 +200,7 @@ export function AsiaRadarDashboard({
       </header>
 
       <div className="space-y-6 px-4 py-6 lg:px-8">
-        <section className="rounded-2xl border border-border-subtle bg-bg-card p-4 lg:p-5">
+        <section className="rounded-2xl border border-border-subtle bg-bg-surface p-4 lg:p-5">
           <ChartHeader
             asOf={overview.as_of}
             icon={<Globe2 size={17} />}
@@ -239,7 +241,7 @@ export function AsiaRadarDashboard({
         </section>
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-          <section className="rounded-2xl border border-border-subtle bg-bg-card p-4 lg:p-5">
+          <section className="rounded-2xl border border-border-subtle bg-bg-surface p-4 lg:p-5">
             <ChartHeader
               asOf={overview.as_of}
               icon={<BarChart3 size={17} />}
@@ -287,7 +289,7 @@ export function AsiaRadarDashboard({
             </div>
           </section>
 
-          <section className="rounded-2xl border border-border-subtle bg-bg-card p-4 lg:p-5">
+          <section className="rounded-2xl border border-border-subtle bg-bg-surface p-4 lg:p-5">
             <ChartHeader
               asOf={overview.as_of}
               icon={<TrendingUp size={17} />}
@@ -331,7 +333,7 @@ export function AsiaRadarUnavailable({
   const text = copy[locale];
   return (
     <div className="flex h-full items-center justify-center overflow-y-auto p-6 text-text-primary">
-      <section className="w-full max-w-2xl rounded-2xl border border-accent-danger/40 bg-bg-card p-7">
+      <section className="w-full max-w-2xl rounded-2xl border border-accent-danger/40 bg-bg-surface p-7">
         <AlertTriangle className="text-accent-danger" size={26} />
         <h1 className="mt-4 font-headline-lg">{text.unavailable}</h1>
         <p className="mt-3 font-mono text-sm text-accent-danger">{message}</p>
@@ -507,7 +509,7 @@ function MarketDetail({
   ];
   const latestClose = market.history.at(-1)?.close;
   return (
-    <section className="rounded-2xl border border-border-subtle bg-bg-card p-4 lg:p-5">
+    <section className="rounded-2xl border border-border-subtle bg-bg-surface p-4 lg:p-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <div className="font-label-caps text-text-secondary">{text.detail}</div>
@@ -596,8 +598,17 @@ export function LocalIndexPanel({
           <div className="mt-2 font-mono text-xs text-text-secondary">
             {name} · {index.index_symbol}
           </div>
-          <p className="mt-2 font-mono text-xs text-accent-danger">{index.reason}</p>
+          <p className="mt-2 font-mono text-xs text-accent-danger">
+            {text.indexErrorReasonPrefix}
+            {index.provider_code ? ` · ${index.provider_code}` : ""}
+          </p>
           <p className="mt-2 text-xs text-text-secondary">{text.indexErrorHint}</p>
+          {index.reason ? (
+            <details className="mt-2 text-[10px] text-text-secondary">
+              <summary className="cursor-pointer font-mono">{text.methodology}</summary>
+              <p className="mt-1 break-all font-mono">{index.reason}</p>
+            </details>
+          ) : null}
         </div>
       );
     }

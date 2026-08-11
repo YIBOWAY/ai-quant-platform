@@ -56,3 +56,21 @@ describe("Hermes shell accessibility and layout tokens", () => {
     expect(css).toContain("@media (prefers-reduced-motion: reduce)");
   });
 });
+
+describe("status color tokens used by market dashboards", () => {
+  it("defines every accent/status token referenced by components so Tailwind never drops them", () => {
+    // A missing --color-* token makes Tailwind v4 silently drop the utility,
+    // which once rendered the K-shape laggard series invisible.
+    for (const token of [
+      "--color-accent-success:",
+      "--color-accent-danger:",
+      "--color-warning:",
+      "--color-danger:",
+      "--color-info:",
+      "--color-bg-base:",
+      "--color-bg-surface:",
+    ]) {
+      expect(globalsCss).toContain(token);
+    }
+  });
+});

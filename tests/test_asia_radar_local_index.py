@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from copy import deepcopy
 from datetime import UTC, datetime, time
 from types import SimpleNamespace
 
@@ -12,8 +14,10 @@ from quant_system.data.price_history import (
     HistoricalPriceSnapshot,
     read_historical_prices,
 )
+from quant_system.data.provider_factory import DataProviderUnavailableError
 from quant_system.data.providers.futu import FutuProviderError
 from quant_system.factors.asia_radar import (
+    _MIN_LOCAL_INDEX_BARS,
     ASIA_ETF_SYMBOLS,
     LOCAL_INDEX_PENDING,
     LOCAL_INDEX_SPECS,
@@ -22,6 +26,7 @@ from quant_system.factors.asia_radar import (
     attach_local_index_overlays,
     build_asia_radar_overview,
     read_asia_radar_overview,
+    read_asia_radar_summary,
     read_local_index_overlays,
 )
 
@@ -417,20 +422,7 @@ def test_local_market_read_requires_provider_lane_support() -> None:
 def test_attach_sets_schema_12_and_never_touches_etf_metrics() -> None:
     overview = build_asia_radar_overview(_etf_snapshot())
     assert overview["schema_version"] == "1.1"
-    metrics_before = [
-        {
-            "symbol": market["symbol"],
-            "returns": market["returns"],
-            "volatility_pct": market["volatility_pct"],
-            "max_drawdown_pct": market["max_drawdown_pct"],
-            "history": market["history"],
-            "rank": market["rank"],
-            "k_leg": market["k_leg"],
-            "meta": market["meta"],
-        }
-        for market in overview["markets"]
-    ]
-    k_shape_before = overview["k_shape"]
+    serialized_before = json.dumps(overview, sort_keys=True)
 
     attached = attach_local_index_overlays(
         overview,
@@ -452,22 +444,13 @@ def test_attach_sets_schema_12_and_never_touches_etf_metrics() -> None:
     # Markets without a loaded overlay get an explicit unavailable state.
     assert attached["markets"][0]["local_index"]["status"] == "unavailable"
     assert attached["markets"][0]["local_index"]["reason_code"] == "overlay_missing"
-    # ETF metrics, history and K-shape are bit-for-bit untouched by the lane.
-    metrics_after = [
-        {
-            "symbol": market["symbol"],
-            "returns": market["returns"],
-            "volatility_pct": market["volatility_pct"],
-            "max_drawdown_pct": market["max_drawdown_pct"],
-            "history": market["history"],
-            "rank": market["rank"],
-            "k_leg": market["k_leg"],
-            "meta": market["meta"],
-        }
-        for market in attached["markets"]
-    ]
-    assert metrics_after == metrics_before
-    assert attached["k_shape"] == k_shape_before
+    # Serialization-level invariance: minus local_index/schema_version the
+    # overview is byte-for-byte the pre-attach payload (field-enumeration-proof).
+    stripped = deepcopy(attached)
+    stripped["schema_version"] = "1.1"
+    for market in stripped["markets"]:
+        del market["local_index"]
+    assert json.dumps(stripped, sort_keys=True) == serialized_before
 
 
 def test_read_overview_never_lets_index_lane_break_the_etf_main_path(monkeypatch) -> None:
@@ -539,3 +522,330 @@ def test_read_overview_attaches_reader_overlays(monkeypatch) -> None:
     assert by_market["japan"]["local_index"]["currency"] == "JPY"
     assert by_market["south-korea"]["local_index"]["reason_code"] == "overlay_missing"
     assert captured["now"] == datetime(2026, 3, 30, 21, 0, tzinfo=UTC)
+
+
+def test_overlay_builder_failure_is_contained_per_market() -> None:
+    def unavailable_builder(settings, *, requested):
+        raise DataProviderUnavailableError("futu", "opend_unavailable")
+
+    overlays = read_local_index_overlays(
+        settings=SimpleNamespace(),
+        now=_NOW,
+        cache=None,
+        provider_builder=unavailable_builder,
+    )
+
+    for market_id in ("hong-kong", "japan"):
+        overlay = overlays[market_id]
+        assert overlay["status"] == "unavailable"
+        assert overlay["reason_code"] == "provider_error"
+        assert overlay["provider_code"] == "opend_unavailable"
+        assert overlay["series"] == []
+    # Pending markets still report their curated reasons, untouched.
+    assert overlays["china-a"]["reason_code"] == "permission_not_granted"
+
+
+def test_overlay_short_history_is_honestly_unavailable() -> None:
+    short = {
+        "HK.800000": _index_frame("HK.800000", periods=_MIN_LOCAL_INDEX_BARS - 1),
+        "JP..N225": _index_frame("JP..N225"),
+    }
+    provider = _LocalIndexProvider(short)
+
+    overlays = _read_overlays(provider)
+
+    hong_kong = overlays["hong-kong"]
+    assert hong_kong["status"] == "unavailable"
+    assert hong_kong["reason_code"] == "provider_error"
+    assert hong_kong["provider_code"] == "insufficient_history"
+    assert hong_kong["series"] == []
+    assert overlays["japan"]["status"] == "available"
+
+
+def test_read_summary_never_touches_the_index_lane(monkeypatch) -> None:
+    snapshot = _etf_snapshot()
+    monkeypatch.setattr(
+        "quant_system.factors.asia_radar.read_historical_prices",
+        lambda **kwargs: snapshot,
+    )
+
+    def forbidden_reader(*, settings, now, cache):
+        raise AssertionError("summary path must not fetch local index overlays")
+
+    summary = read_asia_radar_summary(
+        settings=SimpleNamespace(),
+        now=datetime(2026, 3, 30, 21, 0, tzinfo=UTC),
+        cache=False,
+    )
+    assert summary["status"] == "available"
+    assert summary["market_count"] == 12
+    # read_asia_radar_summary always skips overlays; prove the parameter path too.
+    overview = read_asia_radar_overview(
+        settings=SimpleNamespace(),
+        now=datetime(2026, 3, 30, 21, 0, tzinfo=UTC),
+        cache=False,
+        local_index_reader=forbidden_reader,
+    )
+    assert all(
+        market["local_index"]["reason_code"] == "overlay_missing"
+        for market in overview["markets"]
+    )
+
+
+def test_summary_route_path_never_touches_the_index_lane(monkeypatch) -> None:
+    snapshot = _etf_snapshot()
+    monkeypatch.setattr(
+        "quant_system.factors.asia_radar.read_historical_prices",
+        lambda **kwargs: snapshot,
+    )
+    monkeypatch.setattr(
+        "quant_system.factors.asia_radar.read_local_index_overlays",
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("summary path must not fetch local index overlays")
+        ),
+    )
+
+    summary = read_asia_radar_summary(
+        settings=SimpleNamespace(),
+        now=datetime(2026, 3, 30, 21, 0, tzinfo=UTC),
+        cache=False,
+    )
+    assert summary["status"] == "available"
+    assert summary["market_count"] == 12
+
+
+def test_etf_and_index_bars_share_cache_file_without_cross_reads(tmp_path) -> None:
+    cache = EquityBarCache(tmp_path / "futu_equity_bars.duckdb")
+    index_frames = {
+        "HK.800000": _index_frame("HK.800000"),
+        "JP..N225": _index_frame("JP..N225"),
+    }
+    # Populate the local-index lane first.
+    read_local_index_overlays(
+        settings=SimpleNamespace(),
+        now=_NOW,
+        cache=cache,
+        provider_builder=_builder(_LocalIndexProvider(index_frames)),
+    )
+
+    # Write ETF bars into the same file over an overlapping window.
+    etf_rows = []
+    for day in pd.bdate_range(end="2026-08-11", periods=80):
+        etf_rows.append(
+            {
+                "symbol": "EWH",
+                "timestamp": day.tz_localize("UTC"),
+                "open": 21.0,
+                "high": 21.5,
+                "low": 20.5,
+                "close": 21.25,
+                "volume": 1_000_000.0,
+                "provider": "futu",
+                "interval": "1d",
+                "price_adjustment": "qfq",
+                "event_ts": day.tz_localize("UTC"),
+                "knowledge_ts": pd.Timestamp("2026-08-11T21:00:00Z"),
+            }
+        )
+    cache.write(
+        pd.DataFrame(etf_rows),
+        provider="futu",
+        symbols=["EWH"],
+        interval="1d",
+        adjustment="qfq",
+        start="2025-06-18",
+        end="2026-08-11",
+    )
+
+    etf_cached = cache.read(
+        provider="futu",
+        symbols=["EWH"],
+        interval="1d",
+        adjustment="qfq",
+        start="2025-06-18",
+        end="2026-08-11",
+    )
+    assert etf_cached is not None
+    assert set(etf_cached["symbol"]) == {"EWH"}
+    assert len(etf_cached) == 80
+
+    index_cached = cache.read(
+        provider="futu",
+        symbols=["HK.800000"],
+        interval="1d",
+        adjustment="qfq",
+        start="2025-06-18",
+        end="2026-08-11",
+    )
+    assert index_cached is not None
+    assert set(index_cached["symbol"]) == {"HK.800000"}
+    assert len(index_cached) == 100
+    # The lanes see disjoint closes: ETF 21.25 vs index ~1000+.
+    assert float(etf_cached["close"].max()) < 100.0
+    assert float(index_cached["close"].min()) > 100.0
+
+    # An ETF read through the full read path stays ETF-only with the shared cache.
+    class _EtfProvider:
+        provider_name = "futu"
+
+        def fetch_ohlcv(self, symbols, *, start, end, interval="1d"):
+            raise AssertionError("cache hit must short-circuit the provider")
+
+    snapshot = read_historical_prices(
+        settings=SimpleNamespace(),
+        symbols=["EWH"],
+        start="2025-06-18",
+        end="2026-08-11",
+        provider="futu",
+        provider_builder=lambda settings, *, requested: (_EtfProvider(), "futu"),
+        cache=cache,
+    )
+    assert snapshot.source == "futu_cache"
+    assert snapshot.series[0]["symbol"] == "EWH"
+    assert all(row["close"] == 21.25 for row in snapshot.series[0]["rows"])
+
+
+def test_etf_overview_deterministic_across_index_lane_cache_states(
+    monkeypatch, tmp_path
+) -> None:
+    # Determinism guard: the ETF payload must be identical whether the index
+    # lane's overlay fetch was a cache miss (first run) or a cache hit
+    # (second run). Pollution isolation itself is pinned by the shared-file
+    # test above and the composed on/off A/B test below.
+    cache = EquityBarCache(tmp_path / "futu_equity_bars.duckdb")
+    monkeypatch.setattr(
+        "quant_system.factors.asia_radar._resolve_cache",
+        lambda **kwargs: cache,
+    )
+    etf_calls = {"count": 0}
+    real_read = read_historical_prices
+
+    def etf_read(**kwargs):
+        symbols = kwargs.get("symbols") or []
+        if "EWH" in symbols:
+            etf_calls["count"] += 1
+            return _etf_snapshot()
+        return real_read(**kwargs)
+
+    monkeypatch.setattr(
+        "quant_system.factors.asia_radar.read_historical_prices",
+        etf_read,
+    )
+    index_frames = {
+        "HK.800000": _index_frame("HK.800000"),
+        "JP..N225": _index_frame("JP..N225"),
+    }
+    monkeypatch.setattr(
+        "quant_system.factors.asia_radar.read_local_index_overlays",
+        lambda **kwargs: read_local_index_overlays(
+            settings=kwargs["settings"],
+            now=kwargs["now"],
+            cache=kwargs["cache"],
+            provider_builder=_builder(_LocalIndexProvider(index_frames)),
+        ),
+    )
+
+    read_kwargs = {
+        "settings": SimpleNamespace(),
+        "now": datetime(2026, 3, 30, 21, 0, tzinfo=UTC),
+    }
+    first = read_asia_radar_overview(**read_kwargs)
+    second = read_asia_radar_overview(**read_kwargs)
+
+    def etf_part(payload):
+        clean = deepcopy(payload)
+        clean.pop("schema_version")
+        for market in clean["markets"]:
+            market.pop("local_index")
+        return clean
+
+    assert json.dumps(etf_part(first), sort_keys=True) == json.dumps(
+        etf_part(second), sort_keys=True
+    )
+
+
+def test_etf_payload_identical_with_overlays_on_or_off(monkeypatch) -> None:
+    # Composed-level A/B: read_asia_radar_overview with a real overlay reader
+    # vs overlays disabled must differ ONLY in local_index / schema_version.
+    snapshot = _etf_snapshot()
+    monkeypatch.setattr(
+        "quant_system.factors.asia_radar.read_historical_prices",
+        lambda **kwargs: snapshot,
+    )
+    available_reader = lambda **kwargs: {  # noqa: E731
+        spec.market_id: {
+            "status": "available",
+            "index_symbol": spec.symbol,
+            "index_name_en": spec.name_en,
+            "index_name_zh": spec.name_zh,
+            "currency": spec.currency,
+            "timezone": spec.timezone,
+            "as_of": "2026-03-30",
+            "provider": "futu",
+            "provenance": "futu",
+            "fetched_at": "2026-03-30T20:00:00+00:00",
+            "adjustment": "qfq",
+            "series": [
+                {"date": "2026-03-30", "close": 1.0, "indexed_return_pct": 0.0}
+            ],
+            "reason_code": None,
+            "reason": None,
+            "provider_code": None,
+        }
+        for spec in LOCAL_INDEX_SPECS
+    }
+
+    read_kwargs = {
+        "settings": SimpleNamespace(),
+        "now": datetime(2026, 3, 30, 21, 0, tzinfo=UTC),
+        "cache": False,
+    }
+    with_overlays = read_asia_radar_overview(
+        local_index_reader=available_reader, **read_kwargs
+    )
+    without_overlays = read_asia_radar_overview(
+        local_index_reader=lambda **_: {}, **read_kwargs
+    )
+
+    def etf_part(payload):
+        clean = deepcopy(payload)
+        clean.pop("schema_version")
+        for market in clean["markets"]:
+            market.pop("local_index")
+        return clean
+
+    assert json.dumps(etf_part(with_overlays), sort_keys=True) == json.dumps(
+        etf_part(without_overlays), sort_keys=True
+    )
+    assert with_overlays["markets"][6]["local_index"]["status"] == "available"
+    assert without_overlays["markets"][6]["local_index"]["status"] == "unavailable"
+
+
+def test_historical_price_read_error_from_index_lane_never_escapes(monkeypatch) -> None:
+    # The route maps HistoricalPriceReadError to 503; the index lane must not
+    # leak it even if a future refactor narrows the broad containment except.
+    snapshot = _etf_snapshot()
+    monkeypatch.setattr(
+        "quant_system.factors.asia_radar.read_historical_prices",
+        lambda **kwargs: snapshot,
+    )
+
+    def typed_explosion(*, settings, now, cache):
+        raise HistoricalPriceReadError(
+            code="historical_prices_provider_unavailable",
+            message="OpenD down",
+            provider_code="opend_unavailable",
+        )
+
+    overview = read_asia_radar_overview(
+        settings=SimpleNamespace(),
+        now=datetime(2026, 3, 30, 21, 0, tzinfo=UTC),
+        cache=False,
+        local_index_reader=typed_explosion,
+    )
+
+    assert overview["schema_version"] == "1.2"
+    assert [market["symbol"] for market in overview["markets"]] == list(ASIA_ETF_SYMBOLS)
+    for market in overview["markets"]:
+        assert market["local_index"]["status"] == "unavailable"
+        assert market["local_index"]["reason_code"] == "overlay_missing"

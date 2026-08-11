@@ -333,6 +333,11 @@ describe("LocalIndexPanel", () => {
     expect(html).toContain('data-local-index-state="provider_error"');
     expect(html).toContain("本地指数暂不可用");
     expect(html).toContain("HK.800000");
+    // Raw backend internals (host/port) stay behind the details disclosure;
+    // the headline shows only the curated copy plus the provider code.
+    expect(html).toContain("数据源错误");
+    expect(html).toContain("opend_unavailable");
+    expect(html).toContain("<details");
     expect(html).toContain("unable to connect to OpenD");
     expect(html).toContain("未用任何替代曲线冒充指数");
     expect(html).not.toContain("<polyline");

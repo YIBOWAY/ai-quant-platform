@@ -415,7 +415,7 @@ class FutuMarketDataProvider:
             raise FutuProviderError("invalid_symbol", "symbol must not be empty")
         if normalized.startswith("US."):
             plain_symbol = normalized.split(".", 1)[1]
-            if not plain_symbol:
+            if not plain_symbol or "." in plain_symbol:
                 raise FutuProviderError("invalid_symbol", f"invalid Futu US symbol: {symbol}")
             return plain_symbol, normalized
         if allow_local_markets:

@@ -123,6 +123,17 @@ def test_futu_provider_normalize_rejects_non_whitelisted_local_codes() -> None:
             FutuMarketDataProvider.normalize_symbol(code, allow_local_markets=True)
 
 
+def test_futu_provider_us_prefix_rejects_dotted_remainder() -> None:
+    # A US.-prefixed local-market code must never collapse onto the local
+    # lane's cache key ('US.HK.800000' -> 'HK.800000' would read Slice 2A
+    # index rows through the default US-only path).
+    for code in ("US.HK.800000", "US.JP..N225", "US.", "US.BRK.B"):
+        with pytest.raises(FutuProviderError, match="invalid Futu US symbol"):
+            FutuMarketDataProvider.normalize_symbol(code)
+        with pytest.raises(FutuProviderError, match="invalid Futu US symbol"):
+            FutuMarketDataProvider.normalize_symbol(code, allow_local_markets=True)
+
+
 def test_futu_provider_converts_history_kline_to_canonical_schema() -> None:
     data = pd.DataFrame(
         [

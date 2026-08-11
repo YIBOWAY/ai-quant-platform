@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
+import pandas as pd
 from fastapi.testclient import TestClient
 
 from quant_system.api.routes.asia_radar import get_asia_radar_reader
@@ -200,3 +203,77 @@ def test_overview_response_carries_local_index_overlays(tmp_path) -> None:
     assert japan["reason_code"] == "provider_error"
     assert japan["provider_code"] == "opend_unavailable"
     assert japan["series"] == []
+
+
+def test_index_lane_outage_still_returns_200_with_honest_overlays(
+    tmp_path, monkeypatch
+) -> None:
+    # Route-level proof: with the REAL composed reader, an OpenD outage on the
+    # local-index lane degrades to overlay_missing states instead of a 503.
+    from quant_system.data.price_history import HistoricalPriceSnapshot
+    from quant_system.factors import asia_radar
+
+    dates = pd.bdate_range("2025-12-31", periods=64)
+    series = []
+    for offset, symbol in enumerate(asia_radar.ASIA_ETF_SYMBOLS):
+        rows = [
+            {
+                "date": day.date().isoformat(),
+                "close": round(100.0 + offset + index * 0.1, 6),
+            }
+            for index, day in enumerate(dates)
+        ]
+        series.append(
+            {
+                "symbol": symbol,
+                "row_count": len(rows),
+                "first_date": rows[0]["date"],
+                "last_date": rows[-1]["date"],
+                "rows": rows,
+            }
+        )
+    snapshot = HistoricalPriceSnapshot(
+        provider="futu",
+        source="futu",
+        interval="1d",
+        adjustment="qfq",
+        start=dates[0].date().isoformat(),
+        end=dates[-1].date().isoformat(),
+        fetched_at="2026-03-30T20:00:00+00:00",
+        symbols=list(asia_radar.ASIA_ETF_SYMBOLS),
+        series=series,
+    )
+    monkeypatch.setattr(
+        asia_radar, "read_historical_prices", lambda **kwargs: snapshot
+    )
+    monkeypatch.setattr(asia_radar, "_resolve_cache", lambda **kwargs: None)
+
+    def lane_outage(**kwargs):
+        raise HistoricalPriceReadError(
+            code="historical_prices_provider_unavailable",
+            message="unable to connect to OpenD at 127.0.0.1:11111",
+            provider_code="opend_unavailable",
+        )
+
+    monkeypatch.setattr(asia_radar, "read_local_index_overlays", lane_outage)
+
+    class _FrozenDateTime:
+        @staticmethod
+        def now(tz=None):
+            return datetime(2026, 3, 30, 21, 0, tzinfo=UTC)
+
+    monkeypatch.setattr(asia_radar, "datetime", _FrozenDateTime)
+
+    app = create_app(output_dir=tmp_path)
+    client = TestClient(app)
+
+    response = client.get("/api/asia-radar/overview?provider=futu")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["schema_version"] == "1.2"
+    assert len(payload["markets"]) == 12
+    for market in payload["markets"]:
+        assert market["local_index"]["status"] == "unavailable"
+        assert market["local_index"]["reason_code"] == "overlay_missing"
+        assert market["local_index"]["series"] == []

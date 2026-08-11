@@ -61,6 +61,7 @@ METHODOLOGY = {
 TIMEZONE = "America/New_York"
 _SESSION_CLOSE = time(16, 0)
 _MIN_HISTORY_BARS = 64
+_MIN_LOCAL_INDEX_BARS = 20
 _SPARKLINE_BARS = 90
 _LOOKBACK_CALENDAR_DAYS = 419
 
@@ -192,6 +193,9 @@ def read_asia_radar_summary(
         now=now,
         cache=cache,
         cache_path=cache_path,
+        # The summary payload only carries ETF fields, so skip the local-index
+        # overlay lane entirely and keep this surface single-context.
+        local_index_reader=lambda **_: {},
     )
     return build_asia_radar_summary(overview)
 
@@ -351,9 +355,9 @@ def _read_local_index_overlay(
     cache: EquityBarCache | None,
     provider_builder: ProviderBuilder,
 ) -> dict[str, Any]:
-    end_day = _last_completed_local_session(clock, spec.timezone, spec.session_close)
-    start_day = end_day - timedelta(days=_LOOKBACK_CALENDAR_DAYS)
     try:
+        end_day = _last_completed_local_session(clock, spec.timezone, spec.session_close)
+        start_day = end_day - timedelta(days=_LOOKBACK_CALENDAR_DAYS)
         snapshot = read_historical_prices(
             settings=settings,
             symbols=[spec.symbol],
@@ -379,6 +383,15 @@ def _read_local_index_overlay(
             provider_code=type(exc).__name__,
         )
     rows = snapshot.series[0]["rows"]
+    if len(rows) < _MIN_LOCAL_INDEX_BARS:
+        return _error_local_index_overlay(
+            spec,
+            reason=(
+                f"local index history too short: {len(rows)} bars "
+                f"(need >= {_MIN_LOCAL_INDEX_BARS})"
+            ),
+            provider_code="insufficient_history",
+        )
     display = rows[-_SPARKLINE_BARS:]
     first_close = float(display[0]["close"])
     series = [

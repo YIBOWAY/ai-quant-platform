@@ -206,7 +206,7 @@ export function MarketCrossSectionDashboard({
       </header>
 
       <div className="space-y-6 px-4 py-6 lg:px-8">
-        <section className="rounded-2xl border border-border-subtle bg-bg-card p-4 lg:p-5">
+        <section className="rounded-2xl border border-border-subtle bg-bg-surface p-4 lg:p-5">
           <ChartHeader
             asOf={data.as_of}
             icon={<Grid3X3 size={17} />}
@@ -239,7 +239,7 @@ export function MarketCrossSectionDashboard({
           </div>
         </section>
 
-        <section className="rounded-2xl border border-border-subtle bg-bg-card p-4 lg:p-5">
+        <section className="rounded-2xl border border-border-subtle bg-bg-surface p-4 lg:p-5">
           <ChartHeader
             asOf={data.as_of}
             icon={<BarChart3 size={17} />}
@@ -280,7 +280,7 @@ export function MarketCrossSectionDashboard({
         </section>
 
         <footer className="border-t border-border-subtle py-5 text-xs text-text-secondary">
-          <details className="mb-4 rounded-xl border border-border-subtle bg-bg-card p-4">
+          <details className="mb-4 rounded-xl border border-border-subtle bg-bg-surface p-4">
             <summary className="cursor-pointer font-semibold text-text-primary">
               {text.methodology}
             </summary>
@@ -311,7 +311,7 @@ export function MarketCrossSectionUnavailable({
   const text = copy[locale];
   return (
     <div className="flex h-full items-center justify-center overflow-y-auto p-6 text-text-primary">
-      <section className="w-full max-w-2xl rounded-2xl border border-accent-danger/40 bg-bg-card p-7">
+      <section className="w-full max-w-2xl rounded-2xl border border-accent-danger/40 bg-bg-surface p-7">
         <AlertTriangle className="text-accent-danger" size={26} />
         <h1 className="mt-4 font-headline-lg">{text.unavailable}</h1>
         <p className="mt-3 font-mono text-sm text-accent-danger">{message}</p>
