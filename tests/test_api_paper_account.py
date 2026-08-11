@@ -954,33 +954,35 @@ def test_account_rebalance_rejects_strategy_without_account_support(tmp_path, st
 def test_concurrent_orders_do_not_lose_updates(tmp_path, stub_prices) -> None:
     import threading
 
-    client = TestClient(create_app(output_dir=tmp_path))
-    responses = []
-    errors = []
+    with TestClient(create_app(output_dir=tmp_path)) as client:
+        responses = []
+        errors = []
 
-    def buy() -> None:
-        try:
-            responses.append(
-                client.post(
-                    "/api/paper/account/orders",
-                    json={"symbol": "MSFT", "side": "buy", "quantity": 1},
+        def buy() -> None:
+            try:
+                responses.append(
+                    client.post(
+                        "/api/paper/account/orders",
+                        json={"symbol": "MSFT", "side": "buy", "quantity": 1},
+                    )
                 )
-            )
-        except Exception as exc:
-            errors.append(exc)
+            except Exception as exc:
+                errors.append(exc)
 
-    threads = [threading.Thread(target=buy) for _ in range(12)]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
+        threads = [threading.Thread(target=buy) for _ in range(12)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
 
-    assert errors == []
-    assert len(responses) == 12
-    assert all(response.status_code == 200 for response in responses)
-    account = client.get("/api/paper/account").json()
-    msft = [p for p in account["positions"] if p["symbol"] == "MSFT"]
-    assert msft and msft[0]["quantity"] == pytest.approx(12)
+        assert errors == []
+        assert len(responses) == 12
+        assert all(response.status_code == 200 for response in responses), [
+            (response.status_code, response.text) for response in responses
+        ]
+        account = client.get("/api/paper/account").json()
+        msft = [p for p in account["positions"] if p["symbol"] == "MSFT"]
+        assert msft and msft[0]["quantity"] == pytest.approx(12)
 
 
 def test_rapid_resets_archive_each_account(tmp_path, stub_prices) -> None:
