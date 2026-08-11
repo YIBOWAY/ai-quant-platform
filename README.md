@@ -32,8 +32,8 @@ acceptance. See the HQA
 D-34 adds a separate 30-day Mandate path: strict Futu Parquet snapshots feed a
 pinned RD-Agent/Qlib research engine, while Platform independently replays the
 same target weights, fees, holdings, and NAV. Deterministic policy may register
-only `paper_only` Artifacts and low-allocation canaries. The source worktree is
-implemented, but migrations 030–032 are not applied to the formal database and
+only `paper_only` Artifacts and low-allocation canaries. The source has passed
+paired-worktree acceptance and is present on local `main`, but migrations 030–032 are not applied to the formal database and
 `QS_D34_WORKER_ENABLED` defaults to false; this is not yet a deployed runtime.
 See the [architecture](docs/architecture/d34-autonomous-paper.md),
 [owner guide](docs/guides/d34-workbench.md), and

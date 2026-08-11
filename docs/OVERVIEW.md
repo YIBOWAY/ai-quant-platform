@@ -7,7 +7,7 @@ Phase、Wave 与 Workbench 文档是历史交付证据，不是当前开发或�
 会话仍只读，继续上下文必须显式 fork。`chat_write_ready` 是本地状态，public standing
 继续 OFF。
 
-当前 D-34 source worktree 含 migration source 016–032；030–032 只通过隔离 PostgreSQL
+当前本地 `main` 含 D-34 与 migration source 016–032；030–032 只通过隔离 PostgreSQL
 验证，尚未获授权 apply 到正式 `quantplatform`，worker 也默认关闭。旧现场 migration
 快照是历史证据，不应覆盖当前 source/runtime 的分别状态。当前进度先看
 [INDEX.md](INDEX.md)，运维只看

@@ -65,8 +65,9 @@ data/                     Local cache, fixtures, generated research outputs.
   separate, source-default-OFF dual-Flag path and may create only `paper_only`
   qualifications; the inspected owner runtime enabled all four flags on
   2026-08-10 after full acceptance, and still cannot grant live eligibility.
-- D-34 is currently source-only on the paired `codex/d34-mandate-paper`
-  worktrees. It adds a durable 30-day Mandate, pinned open Docker RD-Agent/Qlib
+- D-34 passed paired-worktree acceptance and is now present on both local
+  `main` checkouts, while remaining runtime-disabled. It adds a durable 30-day
+  Mandate, pinned open Docker RD-Agent/Qlib
   runtime, Futu snapshot, Platform execution replay, Artifact Registry and real
   paper canary loop. Do not apply migration 030–032 to the formal DB or set
   `QS_D34_WORKER_ENABLED=true` before a separate operator window; an installed

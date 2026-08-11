@@ -14,7 +14,7 @@ transcript/follow、approval/stop/result 与 candidate/release authority。历�
 `public_chat_write_ready`、`public_write_authorized` 与
 `release_authorized` 继续 OFF。
 
-当前 D-34 source worktree 包含有序 migration source 016–032；030–032 已通过隔离
+当前本地 `main` 包含 D-34 与有序 migration source 016–032；030–032 已通过隔离
 PostgreSQL 验收，但未获授权 apply 到正式 `quantplatform`。默认
 `QS_D34_WORKER_ENABLED=false`，因此 source 测试通过不等于 runtime 已部署或常驻。
 migration、readiness、restart、E2E 与 restore 的唯一权威是
