@@ -238,22 +238,24 @@ export function QuickTradeDrawer({
             <span className={labelClass}>{text.side}</span>
             <div className="mt-1.5 grid grid-cols-2 gap-2">
               <button
-                className={`rounded-lg border px-3 py-2 font-body-sm font-semibold transition-colors ${
+                className={`rounded-lg border px-3 py-2 font-body-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
                   side === "buy"
                     ? "border-info bg-info/15 text-info"
                     : "border-border-subtle bg-bg-surface-muted text-text-secondary hover:text-text-primary"
                 }`}
+                disabled={formDisabled}
                 onClick={() => setSide("buy")}
                 type="button"
               >
                 {text.buy}
               </button>
               <button
-                className={`rounded-lg border px-3 py-2 font-body-sm font-semibold transition-colors ${
+                className={`rounded-lg border px-3 py-2 font-body-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
                   side === "sell"
                     ? "border-danger bg-danger/15 text-danger"
                     : "border-border-subtle bg-bg-surface-muted text-text-secondary hover:text-text-primary"
                 }`}
+                disabled={formDisabled}
                 onClick={() => setSide("sell")}
                 type="button"
               >

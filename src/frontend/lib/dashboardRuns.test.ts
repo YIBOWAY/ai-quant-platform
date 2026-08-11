@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { RecentRun } from "./api";
 import { dashboardRunHref, dashboardRunIconKind, dashboardRunKindLabel, dashboardRunSummary } from "./dashboardRuns";
+import { isSampleSource } from "./runSource";
 
 const replicationRun: RecentRun = {
   kind: "replication",
@@ -31,5 +32,13 @@ describe("dashboard recent run helpers", () => {
     expect(dashboardRunSummary(replicationRun)).toBe(
       "Sharpe 1.42 | Return 12.50% | Months 18",
     );
+  });
+
+  it("detects sample provenance for brief log labelling", () => {
+    expect(isSampleSource(replicationRun.source)).toBe(true);
+    expect(isSampleSource("futu")).toBe(false);
+    expect(isSampleSource(undefined)).toBe(false);
+    expect(isSampleSource(null)).toBe(false);
+    expect(isSampleSource("SAMPLE_BACKTEST")).toBe(true);
   });
 });

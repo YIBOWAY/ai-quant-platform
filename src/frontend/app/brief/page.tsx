@@ -34,6 +34,7 @@ import {
   dashboardRunSummary,
   formatCount,
 } from "@/lib/dashboardRuns";
+import { isSampleSource } from "@/lib/runSource";
 import { localizePath } from "@/lib/locale";
 import type { BriefArchivePayload, BriefSourceWatermark } from "@/lib/briefArchive";
 import { buildBriefAiNewsDigest } from "@/lib/briefAiNewsDigest";
@@ -545,29 +546,32 @@ function buildRunAction(run: RecentRun, locale: "en" | "zh"): BriefLogEntry {
   const kindLabel = dashboardRunKindLabel(run, locale);
   const summary = dashboardRunSummary(run);
   const inlineSummary = summary.replaceAll(" | ", " · ");
+  // SAMPLE/demo provenance must not be presented as a platform-recorded run.
+  const sample = isSampleSource(run.source);
   let text = `${kindLabel} · ${run.run_id}`;
   if (locale === "zh") {
+    const prefix = sample ? "SAMPLE · 演示数据 · 非真实回测" : "平台记录回测";
     if (run.kind === "backtest") {
-      text = `平台记录回测 · ${inlineSummary}`;
+      text = `${prefix} · ${inlineSummary}`;
     } else if (run.kind === "factor") {
-      text = `平台记录因子分析 · ${inlineSummary}`;
+      text = sample ? `SAMPLE · 演示因子分析 · ${inlineSummary}` : `平台记录因子分析 · ${inlineSummary}`;
     } else if (run.kind === "replication") {
-      text = `平台记录策略复现 · ${inlineSummary}`;
+      text = sample ? `SAMPLE · 演示策略复现 · ${inlineSummary}` : `平台记录策略复现 · ${inlineSummary}`;
     } else {
-      text = `平台记录模拟盘运行 · ${inlineSummary}`;
+      text = sample ? `SAMPLE · 演示模拟盘运行 · ${inlineSummary}` : `平台记录模拟盘运行 · ${inlineSummary}`;
     }
   } else if (run.kind === "backtest") {
-    text = `Platform recorded backtest · ${inlineSummary}`;
+    text = sample ? `SAMPLE · demo backtest (not real) · ${inlineSummary}` : `Platform recorded backtest · ${inlineSummary}`;
   } else if (run.kind === "factor") {
-    text = `Platform recorded factor analysis · ${inlineSummary}`;
+    text = sample ? `SAMPLE · demo factor analysis · ${inlineSummary}` : `Platform recorded factor analysis · ${inlineSummary}`;
   } else if (run.kind === "replication") {
-    text = `Platform recorded strategy replication · ${inlineSummary}`;
+    text = sample ? `SAMPLE · demo strategy replication · ${inlineSummary}` : `Platform recorded strategy replication · ${inlineSummary}`;
   } else {
-    text = `Platform recorded paper run · ${inlineSummary}`;
+    text = sample ? `SAMPLE · demo paper run · ${inlineSummary}` : `Platform recorded paper run · ${inlineSummary}`;
   }
   return {
     timestamp: run.created_at,
-    status: "ok",
+    status: sample ? "warn" : "ok",
     text,
     href: dashboardRunHref(run),
     summary: run.run_id,
