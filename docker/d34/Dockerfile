@@ -107,7 +107,7 @@ RUN python -m pip install \
 
 COPY pyproject.toml README.md /opt/platform/
 COPY src /opt/platform/src
-RUN python -m pip install --no-deps /opt/platform
+RUN python -m pip install --no-build-isolation --no-deps /opt/platform
 
 # The pinned RD-Agent commit publishes metadata and a console script but its
 # setuptools package list omits nested source packages. Keep the exact checked

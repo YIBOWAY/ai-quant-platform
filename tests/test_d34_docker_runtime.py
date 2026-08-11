@@ -308,6 +308,10 @@ def test_dockerfile_installs_headless_worker_dependencies_not_notebook_stacks() 
     assert (
         "python -m pip install --no-build-isolation --no-deps /opt/qlib /opt/rdagent" in dockerfile
     )
+    assert (
+        "python -m pip install --no-build-isolation --no-deps /opt/platform"
+        in dockerfile
+    )
     assert '"litellm==1.96.0"' in dockerfile
     assert '"setuptools-scm==9.2.2"' in dockerfile
     assert '"mlflow-skinny==3.1.4"' in dockerfile
@@ -321,7 +325,6 @@ def test_dockerfile_installs_headless_worker_dependencies_not_notebook_stacks() 
     assert '"pyarrow==24.0.0"' in dockerfile
     assert '"docker==7.2.0"' in dockerfile
     assert "PYTHONPATH=/opt/rdagent" in dockerfile
-    assert "python -m pip install --no-deps /opt/platform" in dockerfile
     assert "python -m pip install /opt/qlib" not in dockerfile
     assert '"jupyter"' not in dockerfile
     assert '"streamlit"' not in dockerfile
