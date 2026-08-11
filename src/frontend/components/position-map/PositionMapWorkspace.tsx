@@ -267,6 +267,7 @@ export function PositionMapWorkspace({
     safety.paperTrading !== null && safety.liveTrading !== null;
   const paperOnly =
     safety.paperTrading === true && safety.liveTrading === false;
+  const accountFrozen = !accountDown && account.kill_switch === true;
 
   function switchTab(next: AccountTab) {
     setTab(next);
@@ -323,6 +324,7 @@ export function PositionMapWorkspace({
                 positions={positions}
                 priceSourceLabel={priceSourceLabel}
                 text={text}
+                tradingDisabled={accountFrozen}
               />
               <ExposureBlock grossInvested={grossInvested} positions={positions} text={text} />
               {backtestExposure.length ? (
@@ -444,13 +446,21 @@ export function PositionMapWorkspace({
                 <h3 className="font-label-caps text-text-primary">⚡ {text.quickTradeTitle}</h3>
                 <p className="mb-4 mt-1.5 font-body-sm leading-relaxed text-text-secondary">{text.quickTradeDesc}</p>
                 <button
-                  className="group flex w-full items-center justify-between rounded-lg border border-accent-success/35 bg-accent-success/10 px-3.5 py-2.5 font-body-sm font-semibold text-[#0FB78F] transition-colors hover:border-accent-success/55 hover:bg-accent-success/15"
+                  className="group flex w-full items-center justify-between rounded-lg border border-accent-success/35 bg-accent-success/10 px-3.5 py-2.5 font-body-sm font-semibold text-[#0FB78F] transition-colors hover:border-accent-success/55 hover:bg-accent-success/15 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={accountFrozen}
                   onClick={() => setTradeRequest({})}
                   type="button"
                 >
                   <span>{text.newOrder}</span>
                   <span className="transition-transform group-hover:translate-x-1">→</span>
                 </button>
+                {accountFrozen ? (
+                  <p className="mt-2 font-body-sm text-danger" data-position-map-trade-frozen="true">
+                    {locale === "zh"
+                      ? "账户已冻结，快捷下单已禁用。"
+                      : "Account is frozen; quick trade is disabled."}
+                  </p>
+                ) : null}
               </div>
               <div className="rounded-xl border border-border-subtle bg-bg-surface p-5">
                 <h3 className="mb-2 font-label-caps text-text-primary">{text.safetyTitle}</h3>
@@ -489,6 +499,7 @@ export function PositionMapWorkspace({
       </div>
 
       <QuickTradeDrawer
+        accountFrozen={accountFrozen}
         locale={locale}
         onClose={() => setTradeRequest(null)}
         positions={positions}
@@ -519,6 +530,7 @@ function PositionsBlock({
   positions,
   priceSourceLabel,
   text,
+  tradingDisabled,
 }: {
   accountDown: boolean;
   grossInvested: number;
@@ -526,6 +538,7 @@ function PositionsBlock({
   positions: AccountPositionView[];
   priceSourceLabel: string;
   text: Text;
+  tradingDisabled: boolean;
 }) {
   return (
     <section>
@@ -555,6 +568,7 @@ function PositionsBlock({
                   onTrade={onTrade}
                   position={position}
                   text={text}
+                  tradingDisabled={tradingDisabled}
                   weight={grossInvested > 0 ? Math.abs(position.market_value) / grossInvested : 0}
                 />
               ))}
@@ -570,11 +584,13 @@ function PositionRow({
   onTrade,
   position,
   text,
+  tradingDisabled,
   weight,
 }: {
   onTrade: (symbol: string, side: "buy" | "sell") => void;
   position: AccountPositionView;
   text: Text;
+  tradingDisabled: boolean;
   weight: number;
 }) {
   const isLong = position.quantity >= 0;
@@ -618,14 +634,16 @@ function PositionRow({
       <Td className="text-right">
         <span className="opacity-0 transition-opacity group-hover:opacity-100">
           <button
-            className="mr-1.5 rounded-md border border-info/45 bg-info/10 px-2.5 py-1 font-body-sm text-[11px] text-info transition-colors hover:bg-info/20"
+            className="mr-1.5 rounded-md border border-info/45 bg-info/10 px-2.5 py-1 font-body-sm text-[11px] text-info transition-colors hover:bg-info/20 disabled:cursor-not-allowed disabled:opacity-40"
+            disabled={tradingDisabled}
             onClick={() => onTrade(position.symbol, "buy")}
             type="button"
           >
             {text.buy}
           </button>
           <button
-            className="rounded-md border border-danger/45 bg-danger/10 px-2.5 py-1 font-body-sm text-[11px] text-danger transition-colors hover:bg-danger/20"
+            className="rounded-md border border-danger/45 bg-danger/10 px-2.5 py-1 font-body-sm text-[11px] text-danger transition-colors hover:bg-danger/20 disabled:cursor-not-allowed disabled:opacity-40"
+            disabled={tradingDisabled}
             onClick={() => onTrade(position.symbol, "sell")}
             type="button"
           >

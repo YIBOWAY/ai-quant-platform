@@ -68,8 +68,8 @@ describe("/brief route contract", () => {
     const source = readBriefPage();
     expect(source).toContain("getCachedAsiaRadarSummary");
     expect(source).toContain("buildAsiaRadarNote");
+    expect(source).toContain("@/lib/briefAsiaRadarNote");
     expect(source).toContain("asia_radar_note");
-    expect(source).toContain("亚洲雷达数据暂不可用");
   });
 
   it("reuses dashboard formatting, run-link, and locale helpers", () => {

@@ -343,6 +343,10 @@ describe("UI-1 Direction A overview derivations", () => {
     expect(
       buildGatewaySummary(gatewayFixture({ connected: false })).online,
     ).toBe(false);
+    expect(buildGatewaySummary(gatewayFixture()).chatWriteReady).toBe(false);
+    expect(
+      buildGatewaySummary(gatewayFixture({ chat_write_ready: true })).chatWriteReady,
+    ).toBe(true);
     const unknown = buildGatewaySummary(
       gatewayFixture({ read_status: "bogus" } as never),
     );
