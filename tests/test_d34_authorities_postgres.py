@@ -41,9 +41,7 @@ pytestmark = pytest.mark.pg
 
 
 def _base_url() -> str:
-    value = os.environ.get("QS_TEST_DATABASE_ADMIN_URL") or os.environ.get(
-        "QS_TEST_DATABASE_URL"
-    )
+    value = os.environ.get("QS_TEST_DATABASE_ADMIN_URL") or os.environ.get("QS_TEST_DATABASE_URL")
     if not value:
         pytest.skip("set QS_TEST_DATABASE_URL to run PostgreSQL integration tests")
     database_name = conninfo_to_dict(value).get("dbname", "")
@@ -57,9 +55,7 @@ def _authorities():
     with isolated_test_database_url(_base_url(), purpose="d34authority") as isolated_url:
         admin = db.Database(isolated_url, connect_timeout=2)
         migrations = tuple(
-            name
-            for name in list_migration_files()
-            if name[:3].isdigit() and int(name[:3]) <= 32
+            name for name in list_migration_files() if name[:3].isdigit() and int(name[:3]) <= 32
         )
         db.run_migrations(admin, only=migrations)
         suffix = uuid4().hex[:12]
@@ -178,8 +174,9 @@ def test_030_032_runtime_authorities_complete_idempotent_artifact_canary_flow() 
             provider_receipt_digest="8" * 64,
         )
 
-        qlib, platform = _receipt(engine="qlib", digest="e"), _receipt(
-            engine="platform", digest="f"
+        qlib, platform = (
+            _receipt(engine="qlib", digest="e"),
+            _receipt(engine="platform", digest="f"),
         )
         comparison = compare_engine_receipts(
             qlib=qlib,
@@ -216,19 +213,51 @@ def test_030_032_runtime_authorities_complete_idempotent_artifact_canary_flow() 
             )
         )
         assert canary.status == "running"
-        assert registry.provision_canary(
-            ProvisionCanaryCommand(
-                artifact_id=first.artifact.artifact_id,
-                sleeve_id="sleeve-d34-cycle-1",
-                nav=Decimal("100000"),
-                allocated_cash=Decimal("1000"),
-                workspace_id="default",
+        assert (
+            registry.provision_canary(
+                ProvisionCanaryCommand(
+                    artifact_id=first.artifact.artifact_id,
+                    sleeve_id="sleeve-d34-cycle-1",
+                    nav=Decimal("100000"),
+                    allocated_cash=Decimal("1000"),
+                    workspace_id="default",
+                )
             )
-        ) == canary
+            == canary
+        )
+        observation = {
+            "contract": "hqa.d34_canary_observation/v1",
+            "observed_at": "2026-08-11T12:00:00+08:00",
+            "equity": "970.00",
+            "peak_equity": "1000.00",
+            "daily_pnl": "-30.00",
+            "drawdown_fraction": "0.030000000",
+            "price_sources": {"SPY": "futu"},
+        }
+        observed = registry.record_canary_observation(
+            canary_id=canary.canary_id,
+            expected_version=1,
+            daily_pnl=Decimal("-30.00"),
+            drawdown_fraction=Decimal("0.030000000"),
+            observation=observation,
+        )
+        assert observed.version == 2
+        assert observed.daily_pnl == Decimal("-30.00")
+        assert observed.drawdown_fraction == Decimal("0.030000000")
+        assert (
+            registry.record_canary_observation(
+                canary_id=canary.canary_id,
+                expected_version=2,
+                daily_pnl=Decimal("-30.00"),
+                drawdown_fraction=Decimal("0.030000000"),
+                observation=observation,
+            )
+            == observed
+        )
         paused = registry.transition_canary(
             canary_id=canary.canary_id,
             action="pause",
-            expected_version=1,
+            expected_version=2,
             reason="risk threshold",
         )
         assert paused.status == "paused"
@@ -264,9 +293,7 @@ def test_030_032_runtime_authorities_complete_idempotent_artifact_canary_flow() 
             provider_receipt_digest="7" * 64,
         )
         rejected_qlib = _receipt(engine="qlib", digest="6")
-        rejected_platform = replace(
-            _receipt(engine="platform", digest="7"), terminal_nav=1.200
-        )
+        rejected_platform = replace(_receipt(engine="platform", digest="7"), terminal_nav=1.200)
         rejected_comparison = compare_engine_receipts(
             qlib=rejected_qlib,
             platform=rejected_platform,
@@ -296,6 +323,8 @@ def test_030_032_runtime_authorities_complete_idempotent_artifact_canary_flow() 
         )
         assert stopped["emergency_stop"]["active"] is True  # type: ignore[index]
         assert stopped["paper_execution_enabled"] is False
+        assert stopped["research_execution_enabled"] is False
+        assert "emergency_stop_active" in stopped["research_blockers"]
         with pytest.raises(JobAuthorityError) as blocked_job:
             jobs.enqueue(
                 EnqueueJobCommand(
@@ -314,6 +343,5 @@ def test_030_032_runtime_authorities_complete_idempotent_artifact_canary_flow() 
             pytest.raises(psycopg.errors.RaiseException, match="append-only"),
         ):
             conn.execute(
-                "UPDATE quant_system.d34_policy_decisions "
-                "SET decision_document = '{}'::jsonb"
+                "UPDATE quant_system.d34_policy_decisions SET decision_document = '{}'::jsonb"
             )

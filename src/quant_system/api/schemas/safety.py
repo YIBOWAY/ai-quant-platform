@@ -77,6 +77,8 @@ class EffectiveD34SafetyResponse(BaseModel):
     contract: str = Field(pattern=r"^hqa\.effective_paper_safety/v2$")
     workspace_id: str
     active_mandate: D34MandateSafety | None
+    research_execution_enabled: bool
+    research_blockers: list[str]
     paper_execution_enabled: bool
     blockers: list[str]
     emergency_stop: D34EmergencySafety

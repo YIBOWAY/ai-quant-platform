@@ -85,7 +85,6 @@ class _NoSessionResourcesClient(_FakeHermesReadClient):
 def test_gateway_endpoints_fail_closed_when_integration_disabled() -> None:
     settings = Settings(
         local_mutation=LocalMutationSettings(enabled=False, composer_open=False),
-
         hermes_gateway=HermesGatewaySettings(enabled=False),
     )
     with TestClient(create_app(settings=settings)) as client:
@@ -107,7 +106,6 @@ def test_gateway_endpoints_fail_closed_when_integration_disabled() -> None:
 def test_gateway_endpoints_expose_only_sanitized_read_models() -> None:
     settings = Settings(
         local_mutation=LocalMutationSettings(enabled=False, composer_open=False),
-
         hermes_gateway=HermesGatewaySettings(enabled=True),
     )
     app = create_app(settings=settings, bind_address="127.0.0.1")
@@ -124,10 +122,10 @@ def test_gateway_endpoints_expose_only_sanitized_read_models() -> None:
     assert gateway.json()["connected"] is True
     assert gateway.json()["chat_write_ready"] is False
     assert "active_release_stamp_missing" in gateway.json()["blockers"]
-    # The capability probe is live rather than a frozen static blocker.  This
-    # fake supplies a healthy Hermes read surface, while the Platform release
-    # authority still keeps writes closed below.
-    assert gateway.json()["upstream_blockers"] == []
+    # The read-client override proves this endpoint's session surface only. The
+    # durable release gate owns an independent capability probe and must remain
+    # unavailable in this hermetic test.
+    assert "hermes_durable_capability_unavailable" in gateway.json()["upstream_blockers"]
     assert gateway.json()["platform_delivery_blockers"]
     assert set(gateway.json()["upstream_blockers"]).issubset(gateway.json()["blockers"])
     assert set(gateway.json()["platform_delivery_blockers"]).issubset(gateway.json()["blockers"])
@@ -178,11 +176,10 @@ def test_gateway_read_integration_rejects_non_loopback_platform_bind(
 def test_disabled_gateway_ignores_invalid_endpoint_configuration() -> None:
     settings = Settings(
         local_mutation=LocalMutationSettings(enabled=False, composer_open=False),
-
         hermes_gateway=HermesGatewaySettings(
             enabled=False,
             base_url="http://localhost:8642",
-        )
+        ),
     )
 
     with TestClient(create_app(settings=settings)) as client:
@@ -195,11 +192,10 @@ def test_disabled_gateway_ignores_invalid_endpoint_configuration() -> None:
 def test_enabled_gateway_rejects_invalid_endpoint_at_startup() -> None:
     settings = Settings(
         local_mutation=LocalMutationSettings(enabled=False, composer_open=False),
-
         hermes_gateway=HermesGatewaySettings(
             enabled=True,
             base_url="http://localhost:8642",
-        )
+        ),
     )
 
     with pytest.raises(ValueError, match="invalid_endpoint"):

@@ -6,19 +6,13 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_d34_launchagent_runs_one_bounded_cycle_from_release_checkout() -> None:
     runner = (ROOT / "scripts" / "run_d34_worker.sh").read_text(encoding="utf-8")
     template = plistlib.loads(
-        (
-            ROOT
-            / "scripts"
-            / "launchd"
-            / "com.aiquant.d34-worker.plist.template"
-        )
+        (ROOT / "scripts" / "launchd" / "com.aiquant.d34-worker.plist.template")
         .read_bytes()
         .replace(b"__ROOT__", str(ROOT).encode("utf-8"))
     )
@@ -30,6 +24,8 @@ def test_d34_launchagent_runs_one_bounded_cycle_from_release_checkout() -> None:
     assert "--hqa-root" in runner
     assert 'case "${1:-}" in' in runner
     assert "--check" in runner
+    assert "QS_D34_WORKER_ENABLED" in runner
+    assert "d34_worker_disabled" in runner
     assert template["RunAtLoad"] is True
     assert template["StartInterval"] == 300
     assert template["ProcessType"] == "Background"
@@ -51,12 +47,10 @@ def test_local_stack_owns_d34_worker_lifecycle_and_stable_logs() -> None:
 
 
 def test_d34_install_assets_are_user_launchagent_only() -> None:
-    installer = (ROOT / "scripts" / "install_d34_worker_launchagent.sh").read_text(
+    installer = (ROOT / "scripts" / "install_d34_worker_launchagent.sh").read_text(encoding="utf-8")
+    uninstaller = (ROOT / "scripts" / "uninstall_d34_worker_launchagent.sh").read_text(
         encoding="utf-8"
     )
-    uninstaller = (
-        ROOT / "scripts" / "uninstall_d34_worker_launchagent.sh"
-    ).read_text(encoding="utf-8")
 
     assert "Library/LaunchAgents" in installer
     assert "Library/LaunchAgents" in uninstaller
@@ -95,3 +89,36 @@ def test_d34_runner_check_imports_release_without_using_an_agent_terminal(
     assert completed.returncode == 0, completed.stderr
     assert "d34_worker_ready=true" in completed.stdout
     assert str(ROOT) in completed.stdout
+    assert "enabled=false" in completed.stdout
+
+
+def test_d34_runner_is_idle_until_deployment_explicitly_enables_it(
+    tmp_path: Path,
+) -> None:
+    env_file = tmp_path / "backend.env"
+    env_file.write_text(
+        "QS_DATABASE_AUTO_MIGRATE=false\nQS_D34_WORKER_ENABLED=false\n",
+        encoding="utf-8",
+    )
+    env_file.chmod(0o600)
+    hqa_root = tmp_path / "hqa-root"
+    (hqa_root / "hqa").mkdir(parents=True)
+
+    completed = subprocess.run(
+        [str(ROOT / "scripts" / "run_d34_worker.sh")],
+        cwd=ROOT,
+        env={
+            **os.environ,
+            "QS_AGENT_V02_BACKEND_ENV_FILE": str(env_file),
+            "QS_D34_HQA_ROOT": str(hqa_root),
+            "QS_D34_WORKER_PYTHON": sys.executable,
+            "QS_MAIN_REPO_ROOT": str(ROOT),
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=10,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == "state=disabled code=d34_worker_disabled"

@@ -65,12 +65,19 @@ data/                     Local cache, fixtures, generated research outputs.
   separate, source-default-OFF dual-Flag path and may create only `paper_only`
   qualifications; the inspected owner runtime enabled all four flags on
   2026-08-10 after full acceptance, and still cannot grant live eligibility.
+- D-34 is currently source-only on the paired `codex/d34-mandate-paper`
+  worktrees. It adds a durable 30-day Mandate, pinned open Docker RD-Agent/Qlib
+  runtime, Futu snapshot, Platform execution replay, Artifact Registry and real
+  paper canary loop. Do not apply migration 030–032 to the formal DB or set
+  `QS_D34_WORKER_ENABLED=true` before a separate operator window; an installed
+  disabled LaunchAgent performs no database, Docker, or order work.
 - The only Platform operations authority for the Agent v0.2 local stack is
   [`docs/runbooks/agent-v0-2-local-stack.md`](docs/runbooks/agent-v0-2-local-stack.md).
   Other docs may explain a component, but must link there instead of copying a
   migration, restart, readiness, or restore ladder.
-- **Checkout role boundary:** edit, test, commit, and push only from
-  `/Users/sunyibo/programs/ai-quant-platform`. The checkout under
+- **Checkout role boundary:** edit, test, commit, and push only from the primary
+  checkout or a purpose-named source worktree under
+  `/Users/sunyibo/programs/.worktrees/`. The checkout under
   `Hermes-quant-agent/data/_runtime/agent-v02-work/ai-quant-platform` is a
   deployment mirror: fetch plus fast-forward only, with no direct development,
   commit, rebase, or push. Follow the source/deployment contract in the local

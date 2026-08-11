@@ -39,9 +39,7 @@ class D34SafetyAuthority:
 
     def observe(self, *, workspace_id: str) -> dict[str, object]:
         if _WORKSPACE_RE.fullmatch(workspace_id) is None:
-            raise D34SafetyAuthorityError(
-                "d34_safety_validation", "workspace_id is invalid"
-            )
+            raise D34SafetyAuthorityError("d34_safety_validation", "workspace_id is invalid")
         blockers: list[str] = []
         canonical = PaperSafetyAuthority(self._settings).observe(workspace_id)
         blockers.extend(canonical.blockers)
@@ -171,6 +169,14 @@ class D34SafetyAuthority:
         if self._settings.safety.paper_trading is not True:
             blockers.append("paper_trading_disabled")
         ordered = tuple(dict.fromkeys(blockers))
+        research_blockers = list(ordered)
+        if (
+            budget["limit_usd"] is not None
+            and budget["spent_usd"] is not None
+            and Decimal(str(budget["spent_usd"])) >= Decimal(str(budget["limit_usd"]))
+        ):
+            research_blockers.append("d34_llm_budget_exhausted")
+        research_ordered = tuple(dict.fromkeys(research_blockers))
         limits = PaperExecutionLimits()
         return {
             "contract": "hqa.effective_paper_safety/v2",
@@ -178,6 +184,8 @@ class D34SafetyAuthority:
             "active_mandate": mandate_payload,
             "paper_execution_enabled": not ordered,
             "blockers": list(ordered),
+            "research_execution_enabled": not research_ordered,
+            "research_blockers": list(research_ordered),
             "emergency_stop": emergency,
             "d33": {
                 "mode_enabled": self._settings.factor_automation.mode is True,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -66,6 +67,16 @@ def test_platform_replays_target_weights_without_factor_formula(tmp_path: Path) 
     assert len(result.engine_receipt.daily_returns) == 3
     assert result.engine_receipt.terminal_nav > 0
     assert set(result.engine_receipt.terminal_weights) == {"SPY", "QQQ"}
+    expected_universe = hashlib.sha256(
+        json.dumps(
+            ["SPY", "QQQ"],
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        ).encode("utf-8")
+    ).hexdigest()
+    assert result.engine_receipt.universe_digest == expected_universe
     assert len(result.receipt_digest) == 64
 
     receipt_path = result.output_dir / "receipt.json"

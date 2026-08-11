@@ -118,13 +118,8 @@ class PaperStrategyExecutionService:
             before_account = PaperAccount.model_validate(payload["before_account"])
             after_account = PaperAccount.model_validate(payload["after_account"])
             after_sleeve = StrategySleeve.model_validate(payload["after_sleeve"])
-            after_lots = [
-                SleeveLot.model_validate(row)
-                for row in payload.get("after_lots", [])
-            ]
-            after_execution = StrategyExecutionPlan.model_validate(
-                payload["after_execution"]
-            )
+            after_lots = [SleeveLot.model_validate(row) for row in payload.get("after_lots", [])]
+            after_execution = StrategyExecutionPlan.model_validate(payload["after_execution"])
             can_finalize_state = True
             if self._account_has_execution(account, execution_id):
                 pass
@@ -152,6 +147,12 @@ class PaperStrategyExecutionService:
             sleeve_id=plan.sleeve_id,
             execution_id=plan.execution_id,
         )
+
+    def block_plan(self, plan: StrategyExecutionPlan, *, reason: str) -> None:
+        """Persist a deterministic pre-execution authority rejection."""
+        if plan.status != StrategyExecutionStatus.PENDING or not reason:
+            raise PaperStrategyExecutionError("execution_block_invalid")
+        self._block_plan(plan, reason)
 
     def pending_plans(
         self,
@@ -331,9 +332,7 @@ class PaperStrategyExecutionService:
             price = float(quote.price)
             if not isfinite(price) or price <= 0:
                 raise PaperStrategyExecutionError("price_unavailable")
-            quotes[symbol] = quote.model_copy(
-                update={"symbol": symbol.upper(), "price": price}
-            )
+            quotes[symbol] = quote.model_copy(update={"symbol": symbol.upper(), "price": price})
         return quotes
 
     def _build_steps(
@@ -396,9 +395,7 @@ class PaperStrategyExecutionService:
                 if self._account_source_quantity(account, step.symbol, source) < (
                     step.quantity - EPSILON
                 ):
-                    raise PaperStrategyExecutionError(
-                        "insufficient_account_source_quantity"
-                    )
+                    raise PaperStrategyExecutionError("insufficient_account_source_quantity")
                 try:
                     lot_book.sell(
                         sleeve_id=sleeve.sleeve_id,
@@ -406,9 +403,7 @@ class PaperStrategyExecutionService:
                         quantity=step.quantity,
                     )
                 except ValueError as exc:
-                    raise PaperStrategyExecutionError(
-                        "insufficient_sleeve_lot_quantity"
-                    ) from exc
+                    raise PaperStrategyExecutionError("insufficient_sleeve_lot_quantity") from exc
                 sleeve_cash += step.gross_value
             elif step.gross_value > sleeve_cash + EPSILON:
                 raise PaperStrategyExecutionError("insufficient_sleeve_cash")

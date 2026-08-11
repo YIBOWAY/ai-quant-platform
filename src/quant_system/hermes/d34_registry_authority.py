@@ -115,9 +115,7 @@ class ProvisionCanaryCommand:
 
 
 class RegistryAuthorityPort(Protocol):
-    def get_canary(
-        self, canary_id: str
-    ) -> D34Canary | dict[str, object]: ...
+    def get_canary(self, canary_id: str) -> D34Canary | dict[str, object]: ...
 
     def list_artifacts(
         self, *, workspace_id: str, limit: int
@@ -129,6 +127,16 @@ class RegistryAuthorityPort(Protocol):
 
     def provision_canary(
         self, command: ProvisionCanaryCommand
+    ) -> D34Canary | dict[str, object]: ...
+
+    def record_canary_observation(
+        self,
+        *,
+        canary_id: str,
+        expected_version: int,
+        daily_pnl: Decimal,
+        drawdown_fraction: Decimal,
+        observation: dict[str, object],
     ) -> D34Canary | dict[str, object]: ...
 
     def transition_canary(
@@ -244,9 +252,7 @@ class PostgresRegistryAuthority:
 
     def get_canary(self, canary_id: str) -> D34Canary:
         if not canary_id.startswith("canary-") or len(canary_id) > 256:
-            raise RegistryAuthorityError(
-                "d34_registry_validation", "canary id is invalid"
-            )
+            raise RegistryAuthorityError("d34_registry_validation", "canary id is invalid")
         try:
             with self._database().connect() as conn:
                 row = conn.execute(
@@ -310,9 +316,7 @@ class PostgresRegistryAuthority:
     def _receipt_id(receipt: EngineReceipt) -> str:
         return f"receipt-{receipt.engine}-{receipt.receipt_digest[:32]}"
 
-    def record_artifact_evaluation(
-        self, command: RegisterArtifactCommand
-    ) -> ArtifactEvaluation:
+    def record_artifact_evaluation(self, command: RegisterArtifactCommand) -> ArtifactEvaluation:
         """Atomically persist both engines, comparison, policy and artifact."""
         self._validate_registration(command)
         qlib, platform, comparison = (
@@ -542,9 +546,7 @@ class PostgresRegistryAuthority:
                         f"artifact-event-registered-{artifact_id}",
                         artifact_id,
                         artifact.version,
-                        Jsonb(
-                            {"comparison_digest": comparison.comparison_digest}
-                        ),
+                        Jsonb({"comparison_digest": comparison.comparison_digest}),
                     ),
                 )
         except RegistryAuthorityError:
@@ -567,9 +569,7 @@ class PostgresRegistryAuthority:
             or command.nav <= 0
             or command.allocated_cash <= 0
         ):
-            raise RegistryAuthorityError(
-                "d34_registry_validation", "canary request is invalid"
-            )
+            raise RegistryAuthorityError("d34_registry_validation", "canary request is invalid")
         maximum = min(Decimal("10000"), command.nav * Decimal("0.01"))
         if command.allocated_cash > maximum:
             raise RegistryAuthorityError(
@@ -616,8 +616,7 @@ class PostgresRegistryAuthority:
                 ).fetchone()
                 if daily_count and int(daily_count[0]) >= 1:
                     existing = conn.execute(
-                        f"SELECT {_CANARY_COLUMNS} FROM {SCHEMA}.d34_canaries "
-                        "WHERE canary_id = %s",
+                        f"SELECT {_CANARY_COLUMNS} FROM {SCHEMA}.d34_canaries WHERE canary_id = %s",
                         (canary_id,),
                     ).fetchone()
                     if existing is not None and str(existing[4]) == command.sleeve_id:
@@ -668,8 +667,7 @@ class PostgresRegistryAuthority:
                 ).fetchone()
                 if row is None:
                     row = conn.execute(
-                        f"SELECT {_CANARY_COLUMNS} FROM {SCHEMA}.d34_canaries "
-                        "WHERE canary_id = %s",
+                        f"SELECT {_CANARY_COLUMNS} FROM {SCHEMA}.d34_canaries WHERE canary_id = %s",
                         (canary_id,),
                     ).fetchone()
                 if row is None or str(row[4]) != command.sleeve_id:
@@ -708,6 +706,101 @@ class PostgresRegistryAuthority:
             ) from exc
         return canary
 
+    def record_canary_observation(
+        self,
+        *,
+        canary_id: str,
+        expected_version: int,
+        daily_pnl: Decimal,
+        drawdown_fraction: Decimal,
+        observation: dict[str, object],
+    ) -> D34Canary:
+        try:
+            peak_equity = Decimal(str(observation.get("peak_equity")))
+        except Exception as exc:  # noqa: BLE001 - Decimal validation boundary
+            raise RegistryAuthorityError(
+                "d34_registry_validation", "canary observation is invalid"
+            ) from exc
+        if (
+            not canary_id.startswith("canary-")
+            or expected_version < 1
+            or not daily_pnl.is_finite()
+            or not drawdown_fraction.is_finite()
+            or drawdown_fraction < 0
+            or not peak_equity.is_finite()
+            or peak_equity <= 0
+            or observation.get("contract") != "hqa.d34_canary_observation/v1"
+        ):
+            raise RegistryAuthorityError("d34_registry_validation", "canary observation is invalid")
+        try:
+            with self._database().connect() as conn, conn.transaction():
+                current = conn.execute(
+                    f"SELECT version, daily_pnl, drawdown_fraction, peak_equity "
+                    f"FROM {SCHEMA}.d34_canaries "
+                    "WHERE canary_id = %s AND owner_user_id = %s FOR UPDATE",
+                    (canary_id, ROOT_USER_ID),
+                ).fetchone()
+                if current is None or int(current[0]) != expected_version:
+                    raise RegistryAuthorityError(
+                        "d34_registry_conflict", "canary status or version changed"
+                    )
+                unchanged = (
+                    Decimal(str(current[1])) == daily_pnl
+                    and Decimal(str(current[2])) == drawdown_fraction
+                    and current[3] is not None
+                    and Decimal(str(current[3])) == peak_equity
+                )
+                if unchanged:
+                    row = conn.execute(
+                        f"SELECT {_CANARY_COLUMNS} FROM {SCHEMA}.d34_canaries WHERE canary_id = %s",
+                        (canary_id,),
+                    ).fetchone()
+                    if row is None:  # pragma: no cover - locked row cannot disappear
+                        raise RegistryAuthorityError("d34_registry_conflict", "canary disappeared")
+                    return _canary(row)
+                row = conn.execute(
+                    f"""
+                    UPDATE {SCHEMA}.d34_canaries
+                    SET daily_pnl = %s, drawdown_fraction = %s, peak_equity = %s,
+                        updated_at = clock_timestamp(), version = version + 1
+                    WHERE canary_id = %s AND owner_user_id = %s AND version = %s
+                    RETURNING {_CANARY_COLUMNS}
+                    """,
+                    (
+                        daily_pnl,
+                        drawdown_fraction,
+                        peak_equity,
+                        canary_id,
+                        ROOT_USER_ID,
+                        expected_version,
+                    ),
+                ).fetchone()
+                if row is None:
+                    raise RegistryAuthorityError(
+                        "d34_registry_conflict", "canary status or version changed"
+                    )
+                canary = _canary(row)
+                conn.execute(
+                    f"""
+                    INSERT INTO {SCHEMA}.d34_canary_events
+                    (event_id, canary_id, event_type, canary_version, event_data)
+                    VALUES (%s, %s, 'observed', %s, %s)
+                    """,
+                    (
+                        f"canary-event-{uuid4()}",
+                        canary_id,
+                        canary.version,
+                        Jsonb(observation),
+                    ),
+                )
+        except RegistryAuthorityError:
+            raise
+        except (DatabaseUnavailable, psycopg.Error) as exc:
+            raise RegistryAuthorityError(
+                "d34_registry_unavailable", "D-34 Artifact Registry is unavailable"
+            ) from exc
+        return canary
+
     def transition_canary(
         self,
         *,
@@ -723,9 +816,7 @@ class PostgresRegistryAuthority:
             or expected_version < 1
             or not 1 <= len(reason.strip()) <= 1000
         ):
-            raise RegistryAuthorityError(
-                "d34_registry_validation", "canary transition is invalid"
-            )
+            raise RegistryAuthorityError("d34_registry_validation", "canary transition is invalid")
         target = targets[action]
         try:
             with self._database().connect() as conn, conn.transaction():

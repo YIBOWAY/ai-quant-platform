@@ -192,7 +192,10 @@ def run_platform_replay(
     bars["timestamp"] = pd.to_datetime(bars["timestamp"], utc=True)
     weights = _validate_weights(pd.read_parquet(weights_path), bars)
     target_digest = _file_digest(weights_path)
-    universe = sorted(set(bars["symbol"]))
+    # The Mandate universe is ordered and that order is preserved by the
+    # canonical snapshot. Sorting here would make otherwise identical Qlib and
+    # Platform inputs fail their exact universe-digest contract.
+    universe = list(dict.fromkeys(bars["symbol"].tolist()))
     dates = sorted(pd.Timestamp(value).isoformat() for value in set(bars["timestamp"]))
     universe_digest = _digest(universe)
     calendar_digest = _digest(dates)
@@ -225,8 +228,7 @@ def run_platform_replay(
         if (
             receipt.snapshot_digest != snapshot_digest
             or receipt.target_weights_digest != target_digest
-            or str(existing.get("snapshot_parquet_digest"))
-            != _file_digest(snapshot_path)
+            or str(existing.get("snapshot_parquet_digest")) != _file_digest(snapshot_path)
         ):
             raise PlatformReplayError(
                 "platform_replay_collision", "existing replay receipt mismatches its inputs"

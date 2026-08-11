@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shutil
 import subprocess
 import tempfile
@@ -14,6 +15,7 @@ from pathlib import Path
 import pandas as pd
 
 QLIB_PROVIDER_CONTRACT = "hqa.qlib_provider/v1"
+_SYMBOL_RE = re.compile(r"^[A-Z0-9][A-Z0-9._:-]{0,31}$")
 
 
 class QlibAdapterError(RuntimeError):
@@ -33,6 +35,7 @@ class QlibProviderReceipt:
     source_parquet: Path
     source_digest: str
     provider_digest: str
+    future_calendar_boundary: str
     receipt_digest: str
     manifest_path: Path
 
@@ -87,6 +90,7 @@ def _receipt_from_manifest(root: Path, raw: dict[str, object]) -> QlibProviderRe
         source_parquet=root / "source" / "all.parquet",
         source_digest=str(raw["source_digest"]),
         provider_digest=str(raw["provider_digest"]),
+        future_calendar_boundary=str(raw["future_calendar_boundary"]),
         receipt_digest=str(raw["receipt_digest"]),
         manifest_path=root / "receipt.json",
     )
@@ -143,8 +147,11 @@ def build_qlib_provider(
 
     temp = Path(tempfile.mkdtemp(prefix=".qlib-", dir=root))
     try:
-        source_dir, provider_uri = temp / "source", temp / "provider"
+        source_dir = temp / "source"
+        dump_source_dir = temp / ".dump-source"
+        provider_uri = temp / "provider"
         source_dir.mkdir()
+        dump_source_dir.mkdir()
         provider_uri.mkdir()
         frame = pd.read_parquet(source_path)
         required = {"symbol", "timestamp", "open", "close", "high", "low", "volume"}
@@ -164,14 +171,19 @@ def build_qlib_provider(
                 "factor": 1.0,
             }
         )
+        symbols = sorted(set(derived["symbol"]))
+        if any(_SYMBOL_RE.fullmatch(symbol) is None for symbol in symbols):
+            raise QlibAdapterError("qlib_adapter_validation", "snapshot contains an invalid symbol")
         source_parquet_path = source_dir / "all.parquet"
         derived.to_parquet(source_parquet_path, index=False)
+        for symbol, symbol_frame in derived.groupby("symbol", sort=True):
+            symbol_frame.to_parquet(dump_source_dir / f"{symbol}.parquet", index=False)
         command = [
             python_executable,
             str(dump_script),
             "dump_all",
             "--data_path",
-            str(source_dir),
+            str(dump_source_dir),
             "--qlib_dir",
             str(provider_uri),
             "--include_fields",
@@ -184,6 +196,7 @@ def build_qlib_provider(
             ".parquet",
         ]
         run(command)
+        shutil.rmtree(dump_source_dir)
         if (
             not (provider_uri / "calendars" / "day.txt").is_file()
             or not (provider_uri / "instruments" / "all.txt").is_file()
@@ -191,6 +204,27 @@ def build_qlib_provider(
             raise QlibAdapterError(
                 "qlib_provider_invalid", "Qlib provider is missing calendar or instruments"
             )
+        # Qlib asks its future calendar for the exclusive boundary immediately
+        # after ``end_time``. The canonical snapshot intentionally contains no
+        # future market bar, so add a derived, clearly identified boundary only;
+        # it has no features and can never become a replay observation.
+        calendar_path = provider_uri / "calendars" / "day.txt"
+        calendar = [
+            value.strip()
+            for value in calendar_path.read_text(encoding="utf-8").splitlines()
+            if value.strip()
+        ]
+        try:
+            terminal = pd.Timestamp(calendar[-1])
+        except (IndexError, TypeError, ValueError) as exc:
+            raise QlibAdapterError(
+                "qlib_provider_invalid", "Qlib provider calendar is unreadable"
+            ) from exc
+        future_calendar_boundary = (terminal + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+        (provider_uri / "calendars" / "day_future.txt").write_text(
+            "\n".join([*calendar, future_calendar_boundary]) + "\n",
+            encoding="utf-8",
+        )
         source_digest = _file_digest(source_parquet_path)
         provider_digest = _tree_digest(provider_uri)
         receipt_body = {
@@ -201,6 +235,7 @@ def build_qlib_provider(
             "dump_script_digest": _file_digest(dump_script),
             "source_digest": source_digest,
             "provider_digest": provider_digest,
+            "future_calendar_boundary": future_calendar_boundary,
             "source_file": "source/all.parquet",
             "provider_uri": "provider",
         }

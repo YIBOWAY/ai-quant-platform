@@ -8,6 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pandas as pd
+import pytest
 
 from quant_system.d34.docker_runtime import D34DockerReceipt
 from quant_system.d34.engine_comparison import EngineReceipt
@@ -18,9 +19,7 @@ from quant_system.hermes.d34_registry_authority import D34Artifact
 
 
 def _canonical(value: object) -> bytes:
-    return json.dumps(
-        value, sort_keys=True, separators=(",", ":"), ensure_ascii=True
-    ).encode()
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
 
 
 def _digest(value: object) -> str:
@@ -154,9 +153,7 @@ class Docker:
             long_window=5,
             rationale="Observable baseline.",
         )
-        source, code_digest = render_factor_source(
-            proposal=proposal, factor_id="d34_cycle_factor"
-        )
+        source, code_digest = render_factor_source(proposal=proposal, factor_id="d34_cycle_factor")
         factor = root / "candidate_factor.py"
         factor.write_text(source, encoding="utf-8")
         weights = root / "target_weights.parquet"
@@ -233,6 +230,82 @@ class Registry:
             version=1,
         )
         return SimpleNamespace(accepted=True, artifact=artifact)
+
+
+def test_cycle_honors_emergency_stop_before_research_or_futu(tmp_path: Path) -> None:
+    roots = [tmp_path / name for name in ("workspace", "platform", "hqa", "cache")]
+    for path in roots:
+        path.mkdir()
+    jobs = Jobs()
+    docker = Docker(roots[0])
+
+    worker = D34CycleWorker(
+        config=D34WorkerConfig(
+            workspace_root=roots[0],
+            platform_root=roots[1],
+            hqa_root=roots[2],
+            cache_root=roots[3],
+        ),
+        mandates=SimpleNamespace(
+            get_active=lambda **_kwargs: pytest.fail("emergency stop queried Mandate")
+        ),
+        jobs=jobs,
+        registry=Registry(),
+        docker_runtime=docker,
+        futu_provider=Futu(),
+        platform_replay=lambda **_kwargs: pytest.fail("emergency stop replayed"),
+        canary_activator=lambda **_kwargs: pytest.fail("emergency stop activated canary"),
+        safety_observer=lambda: {
+            "research_execution_enabled": False,
+            "research_blockers": ["emergency_stop_active"],
+        },
+    )
+
+    result = worker.run_once()
+
+    assert result.status == "idle"
+    assert result.code == "emergency_stop_active"
+    assert jobs.items == []
+    assert docker.commands == []
+
+
+def test_cycle_runs_paper_canary_operations_even_without_a_new_research_job(
+    tmp_path: Path,
+) -> None:
+    roots = [tmp_path / name for name in ("workspace", "platform", "hqa", "cache")]
+    for path in roots:
+        path.mkdir()
+    observed: list[dict[str, object]] = []
+    safety = {
+        "research_execution_enabled": True,
+        "research_blockers": [],
+        "paper_execution_enabled": True,
+    }
+
+    worker = D34CycleWorker(
+        config=D34WorkerConfig(
+            workspace_root=roots[0],
+            platform_root=roots[1],
+            hqa_root=roots[2],
+            cache_root=roots[3],
+        ),
+        mandates=SimpleNamespace(get_active=lambda **_kwargs: None),
+        jobs=Jobs(),
+        registry=Registry(),
+        docker_runtime=Docker(roots[0]),
+        futu_provider=Futu(),
+        platform_replay=lambda **_kwargs: pytest.fail("idle cycle replayed"),
+        canary_activator=lambda **_kwargs: pytest.fail("idle cycle activated canary"),
+        safety_observer=lambda: safety,
+        canary_operator=lambda current: observed.append(dict(current)) or {"signals_generated": 1},
+    )
+
+    result = worker.run_once()
+
+    assert result.status == "idle"
+    assert result.code == "no_active_mandate"
+    assert result.paper_cycle == {"signals_generated": 1}
+    assert observed == [safety]
 
 
 def test_cycle_runs_futu_to_dual_engine_artifact_and_real_canary(tmp_path: Path) -> None:
@@ -397,8 +470,6 @@ def test_cycle_recovers_registry_to_canary_after_terminal_crash_without_rerunnin
     assert len(jobs.finished) == 1
     assert len(registry.commands) == 2
     receipt = json.loads(
-        (workspace / "jobs" / failed.job_id / "cycle_receipt.json").read_text(
-            encoding="utf-8"
-        )
+        (workspace / "jobs" / failed.job_id / "cycle_receipt.json").read_text(encoding="utf-8")
     )
     assert receipt["phase"] == "canary_active"

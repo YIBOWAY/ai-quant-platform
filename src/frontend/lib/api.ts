@@ -2088,6 +2088,26 @@ export type WorkspaceActionReceiptResponse =
   GeneratedApiComponents["schemas"]["WorkspaceActionReceiptResponse"];
 export type CompositeTurnReceiptResponse =
   GeneratedApiComponents["schemas"]["CompositeTurnReceiptResponse"];
+export type D34MandateResponse =
+  GeneratedApiComponents["schemas"]["D34MandateResponse"];
+export type D34MandateListResponse =
+  GeneratedApiComponents["schemas"]["D34MandateListResponse"];
+export type D34ExperimentJobResponse =
+  GeneratedApiComponents["schemas"]["D34ExperimentJobResponse"];
+export type D34ExperimentJobListResponse =
+  GeneratedApiComponents["schemas"]["D34ExperimentJobListResponse"];
+export type D34ArtifactResponse =
+  GeneratedApiComponents["schemas"]["D34ArtifactResponse"];
+export type D34ArtifactListResponse =
+  GeneratedApiComponents["schemas"]["D34ArtifactListResponse"];
+export type D34CanaryResponse =
+  GeneratedApiComponents["schemas"]["D34CanaryResponse"];
+export type D34CanaryListResponse =
+  GeneratedApiComponents["schemas"]["D34CanaryListResponse"];
+export type D34RollbackResponse =
+  GeneratedApiComponents["schemas"]["D34RollbackResponse"];
+export type EffectiveD34SafetyResponse =
+  GeneratedApiComponents["schemas"]["EffectiveD34SafetyResponse"];
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_QUANT_API_BASE_URL ?? "http://127.0.0.1:8765";
 

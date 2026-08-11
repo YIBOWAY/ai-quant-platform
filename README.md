@@ -29,6 +29,16 @@ the inspected owner runtime enabled all four flags on 2026-08-10 after full
 acceptance. See the HQA
 `/Users/sunyibo/programs/Hermes-quant-agent/docs/runbooks/full-automation-paper.md`.
 
+D-34 adds a separate 30-day Mandate path: strict Futu Parquet snapshots feed a
+pinned RD-Agent/Qlib research engine, while Platform independently replays the
+same target weights, fees, holdings, and NAV. Deterministic policy may register
+only `paper_only` Artifacts and low-allocation canaries. The source worktree is
+implemented, but migrations 030–032 are not applied to the formal database and
+`QS_D34_WORKER_ENABLED` defaults to false; this is not yet a deployed runtime.
+See the [architecture](docs/architecture/d34-autonomous-paper.md),
+[owner guide](docs/guides/d34-workbench.md), and
+[operator runbook](docs/runbooks/d34-autonomous-paper.md).
+
 The normal local runtime is a persistent macOS stack: PostgreSQL in Docker plus
 Hermes, backend, frontend, connector, factor-automation, and Asia Radar refresh
 LaunchAgents. It is not
@@ -207,7 +217,7 @@ committed/installed runtime and then repeat `probe`.
 
 | Page | Purpose |
 |---|---|
-| `/hermes` | Reversible COO workbench with Today, managed-session conversation, Tasks, Approvals, and Unified Results preview. Its composer opens only inside explicit solo-owner local trust or an exact candidate/release window after every applicable local gate passes; public standing remains OFF. Provider-free health/capability/session reads submit no prompt. |
+| `/hermes` | Reversible COO workbench with Today, managed-session conversation, Tasks, Approvals, Unified Results preview, and the D-34 source workbench for Mandate/job/Artifact/paper-canary operations. Its composer opens only inside explicit solo-owner local trust or an exact candidate/release window after every applicable local gate passes; public standing remains OFF. Provider-free health/capability/session reads submit no prompt. |
 | `/hermes/sessions` | GET-only list/detail view over real saved local-Hermes sessions. The bearer key remains server-side; historical/external transcripts stay read-only and continuing context requires an explicit fork into a new managed Session. |
 | `/hermes/results` | Read-only unified catalog/detail projection over authoritative platform runs, experiments, candidate records, HQA artifacts, and exact run links. Preview is visible while `unifiedResultsCutoverAccepted=false`; no Hermes run is inferred from symbol/name similarity. |
 | `/brief` | Live UI-assembled factual daily-brief preview and PostgreSQL archive control; saving is disabled if the authoritative paper-account source is unavailable. Its AI HOT GET may contact that upstream and best-effort mirror news/cache-audit rows to PostgreSQL; merely viewing the live preview does not create a brief snapshot. The server validates the complete factual-v1 schema and watermarks, but does not independently refetch every upstream source. |

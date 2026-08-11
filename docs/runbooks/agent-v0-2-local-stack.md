@@ -38,10 +38,13 @@ The two local checkouts have different, non-interchangeable roles:
 
 | Role | Path | Allowed Git activity |
 |---|---|---|
-| Development source | `/Users/sunyibo/programs/ai-quant-platform` | edit, test, commit, and push `main` to GitHub |
+| Development source | `/Users/sunyibo/programs/ai-quant-platform` or a purpose-named worktree under `/Users/sunyibo/programs/.worktrees/` | edit, test, and commit here; integrate/push from the primary checkout |
 | Deployment runtime | `/Users/sunyibo/programs/Hermes-quant-agent/data/_runtime/agent-v02-work/ai-quant-platform` | fetch and fast-forward only; never develop, commit, rebase, or push |
 
-All agents and interactive development tools must edit the development source.
+All agents and interactive development tools must edit a development source.
+Long-running cross-repo work such as D-34 should use paired purpose-named
+worktrees so unrelated `main` work such as AsiaRadar can proceed in parallel.
+Merge the reviewed worktree branch back to `main` before deployment.
 The runtime checkout contains ignored owner-only environment, logs, caches, and
 generated runtime state; never run `git clean`, reset those files, or delete the
 checkout as part of source synchronization.

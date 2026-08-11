@@ -60,6 +60,8 @@ async function installD34OwnerFixture(page: Page) {
       contract: "hqa.d34_effective_safety/v2",
       workspace_id: "default",
       paper_execution_enabled: true,
+      research_execution_enabled: true,
+      research_blockers: [],
       live_execution_enabled: false,
       blockers: [],
       active_mandate: {

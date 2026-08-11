@@ -66,6 +66,7 @@ load_backend_env
 MAIN_ROOT="$(discover_main_root)"
 PYTHON="$(resolve_python)"
 HQA_ROOT="${QS_D34_HQA_ROOT:-${QS_INTENT_PAYLOAD_HQA_ROOT:-/Users/sunyibo/programs/Hermes-quant-agent}}"
+D34_WORKER_ENABLED="${QS_D34_WORKER_ENABLED:-false}"
 
 [[ -d "$ROOT/src/quant_system" ]] || fail "release_source_missing"
 [[ -d "$HQA_ROOT/hqa" ]] || fail "hqa_source_missing"
@@ -91,14 +92,26 @@ case "${1:-}" in
     [[ "$#" -eq 1 ]] || fail "unexpected_arguments"
     "$PYTHON" -c "from quant_system.d34.cli import build_local_worker" >/dev/null ||
       fail "release_runtime_import_failed"
-    printf 'd34_worker_ready=true release_root=%s python=%s hqa_root=%s\n' \
-      "$ROOT" "$PYTHON" "$HQA_ROOT"
+    printf 'd34_worker_ready=true enabled=%s release_root=%s python=%s hqa_root=%s\n' \
+      "$D34_WORKER_ENABLED" "$ROOT" "$PYTHON" "$HQA_ROOT"
     exit 0
     ;;
   "")
     ;;
   *)
     fail "unexpected_arguments"
+    ;;
+esac
+
+case "$D34_WORKER_ENABLED" in
+  true)
+    ;;
+  false)
+    printf 'state=disabled code=d34_worker_disabled\n'
+    exit 0
+    ;;
+  *)
+    fail "d34_worker_enabled_must_be_true_or_false"
     ;;
 esac
 

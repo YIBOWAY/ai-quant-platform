@@ -130,9 +130,7 @@ def test_operations_runner_create_execution_defaults_target_date_from_injected_c
     monkeypatch,
 ) -> None:
     settings = _settings_for_tmp_data(tmp_path, monkeypatch)
-    account_storage, sleeve_storage, _account, _config, sleeve = _allocated_sleeve_fixture(
-        tmp_path
-    )
+    account_storage, sleeve_storage, _account, _config, sleeve = _allocated_sleeve_fixture(tmp_path)
     signal = _strategy_signal(sleeve)
     sleeve_storage.append_signal(signal)
 
@@ -217,9 +215,7 @@ def test_operations_runner_d34_uses_authoritative_context_not_forged_metadata(
         },
     )
     with pytest.raises(StrategyExecutionPlanError) as blocked:
-        blocked_runner.create_execution_once(
-            sleeve.sleeve_id, signal.signal_id, metadata=forged
-        )
+        blocked_runner.create_execution_once(sleeve.sleeve_id, signal.signal_id, metadata=forged)
     assert blocked.value.code == "automation_emergency_stop_active"
 
     allowed = PaperStrategyOperationsRunner(
@@ -237,15 +233,21 @@ def test_operations_runner_d34_uses_authoritative_context_not_forged_metadata(
     assert allowed.metadata["paper_execution_policy_decision"]["allowed"] is True
     assert allowed.metadata["paper_execution_policy_context"]["mandate_active"] is True
 
+    stopped = blocked_runner.process_pending_executions_once(
+        sleeve_id=sleeve.sleeve_id,
+        target_date=allowed.target_date,
+    )
+    assert stopped.filled_count == 0
+    assert stopped.blocked_count == 1
+    assert stopped.executions[0].blocked_reason == "automation_emergency_stop_active"
+
 
 def test_operations_runner_process_pending_executes_and_commits_journal_after_account_save(
     tmp_path,
     monkeypatch,
 ) -> None:
     settings = _settings_for_tmp_data(tmp_path, monkeypatch)
-    account_storage, sleeve_storage, account, _config, sleeve = _allocated_sleeve_fixture(
-        tmp_path
-    )
+    account_storage, sleeve_storage, account, _config, sleeve = _allocated_sleeve_fixture(tmp_path)
     signal = _strategy_signal(sleeve)
     plan = PaperStrategySleeveService(sleeve_storage).create_execution_plan(
         account,
@@ -283,9 +285,7 @@ def test_operations_runner_reports_recovered_execution_journals(
     monkeypatch,
 ) -> None:
     settings = _settings_for_tmp_data(tmp_path, monkeypatch)
-    account_storage, sleeve_storage, account, _config, sleeve = _allocated_sleeve_fixture(
-        tmp_path
-    )
+    account_storage, sleeve_storage, account, _config, sleeve = _allocated_sleeve_fixture(tmp_path)
     signal = _strategy_signal(sleeve)
     plan = PaperStrategySleeveService(sleeve_storage).create_execution_plan(
         account,
@@ -321,9 +321,7 @@ def test_operations_runner_keeps_pending_journal_when_account_save_fails(
     monkeypatch,
 ) -> None:
     settings = _settings_for_tmp_data(tmp_path, monkeypatch)
-    account_storage, sleeve_storage, account, _config, sleeve = _allocated_sleeve_fixture(
-        tmp_path
-    )
+    account_storage, sleeve_storage, account, _config, sleeve = _allocated_sleeve_fixture(tmp_path)
     signal = _strategy_signal(sleeve)
     plan = PaperStrategySleeveService(sleeve_storage).create_execution_plan(
         account,
@@ -360,9 +358,7 @@ def test_operations_runner_ops_status_reports_due_work_and_recovery_journals(
     monkeypatch,
 ) -> None:
     settings = _settings_for_tmp_data(tmp_path, monkeypatch)
-    account_storage, sleeve_storage, account, _config, sleeve = _allocated_sleeve_fixture(
-        tmp_path
-    )
+    account_storage, sleeve_storage, account, _config, sleeve = _allocated_sleeve_fixture(tmp_path)
     signal = _strategy_signal(sleeve)
     plan = PaperStrategySleeveService(sleeve_storage).create_execution_plan(
         account,

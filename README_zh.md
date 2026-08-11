@@ -14,13 +14,18 @@ transcript/follow、approval/stop/result 与 candidate/release authority。历�
 `public_chat_write_ready`、`public_write_authorized` 与
 `release_authorized` 继续 OFF。
 
-仓库 change set 包含有序 migration source 016–028。2026-07-31 对 live
-`quantplatform` 的只读核对发现 016–027 标记存在、028 标记不存在，运行中的后端也
-尚未提供新的 `GET /api/safety/effective`。这是有日期的 source/live 边界，不是
-apply 或 release 授权；本 README 也不证明 028 是否 committed、installed、
-isolated-replayed、live-applied 或 authorized。migration、readiness、restart、E2E
-与 restore 的唯一权威是
+当前 D-34 source worktree 包含有序 migration source 016–032；030–032 已通过隔离
+PostgreSQL 验收，但未获授权 apply 到正式 `quantplatform`。默认
+`QS_D34_WORKER_ENABLED=false`，因此 source 测试通过不等于 runtime 已部署或常驻。
+migration、readiness、restart、E2E 与 restore 的唯一权威是
 [Agent v0.2 local-stack runbook](docs/runbooks/agent-v0-2-local-stack.md)。
+
+D-34 用 30 天 Mandate 驱动 Futu Parquet → RD-Agent/Qlib → Platform 独立执行重放 →
+确定性 Policy → `paper_only` Artifact → 低额度 paper canary。它没有 live 升级接口，
+不自动 push GitHub，也不自动 apply migration。参见
+[架构](docs/architecture/d34-autonomous-paper.md)、
+[owner 使用指南](docs/guides/d34-workbench.md)和
+[本机运维手册](docs/runbooks/d34-autonomous-paper.md)。
 
 - 美股及 ETF 历史数据流水线。
 - 因子研究、因子实验室诊断（2026-06-11 起真实数据优先：默认 `futu`，数据源/股票池/择时标的/基准可在界面调整，可保存因子研究运行，并可预填发送至回测器）、策略/股票池注册、回测、实验和模拟交易。
@@ -123,7 +128,7 @@ HQA Keychain `probe` 不创建 key；普通 encrypt/put/bind 与 connector check
 
 | 页面 | 用途 |
 |---|---|
-| `/hermes` | 可回滚 COO 工作台，展示 Today、managed-session 对话、任务、审批与 Unified Results 预览。Composer 只在 exact local candidate/release window 且全部本地门禁通过时打开；public standing 继续 OFF。 |
+| `/hermes` | 可回滚 COO 工作台，展示 Today、managed-session 对话、任务、审批、Unified Results 预览，以及 D-34 source 的 Mandate/job/Artifact/paper canary 操作面。Composer 只在 exact local candidate/release window 且全部本地门禁通过时打开；public standing 继续 OFF。 |
 | `/hermes/sessions` | 服务端 official API adapter GET-only 读取本机 Hermes 已保存会话；key 不下发浏览器，也不消耗 provider 额度。历史/外部 transcript 保持只读，继续上下文需显式 fork 到新 managed Session。 |
 | `/hermes/results` | 汇总平台运行、实验、候选、HQA 产物及 exact run-link 的只读目录/详情；预览可见但 `unifiedResultsCutoverAccepted=false`。 |
 | `/data-explorer` | 美股历史数据查看器。 |

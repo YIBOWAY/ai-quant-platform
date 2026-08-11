@@ -1,0 +1,10 @@
+*
+
+# The image only installs the Platform package and the D-34 entrypoint.
+!README.md
+!pyproject.toml
+!src
+!src/**
+!docker
+!docker/d34
+!docker/d34/container_entrypoint.py

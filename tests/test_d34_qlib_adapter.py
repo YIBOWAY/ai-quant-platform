@@ -37,9 +37,12 @@ def test_adapter_derives_content_bound_qlib_provider_from_snapshot(tmp_path: Pat
     (qlib_repo / "scripts").mkdir(parents=True)
     (qlib_repo / "scripts" / "dump_bin.py").write_text("# pinned tool\n")
     calls: list[list[str]] = []
+    dumped_sources: list[str] = []
 
     def run(command: list[str]) -> None:
         calls.append(command)
+        dump_source = Path(command[command.index("--data_path") + 1])
+        dumped_sources.extend(sorted(path.name for path in dump_source.glob("*.parquet")))
         provider_uri = Path(command[command.index("--qlib_dir") + 1])
         (provider_uri / "calendars").mkdir(parents=True)
         (provider_uri / "calendars" / "day.txt").write_text("2026-01-02\n")
@@ -66,11 +69,13 @@ def test_adapter_derives_content_bound_qlib_provider_from_snapshot(tmp_path: Pat
     assert receipt.qlib_commit == "da920b7f954f48ab1bb64117c976710de198373e"
     assert receipt.provider_uri.is_dir()
     assert len(receipt.provider_digest) == 64
+    assert receipt.future_calendar_boundary == "2026-01-03"
     assert len(receipt.receipt_digest) == 64
     assert len(calls) == 1
     command = calls[0]
     assert command[:2] == ["python3.11", str(qlib_repo / "scripts" / "dump_bin.py")]
     assert command[2] == "dump_all"
+    assert dumped_sources == ["QQQ.parquet", "SPY.parquet"]
     assert command[command.index("--symbol_field_name") + 1] == "symbol"
     assert command[command.index("--date_field_name") + 1] == "date"
     assert command[command.index("--file_suffix") + 1] == ".parquet"
@@ -86,3 +91,7 @@ def test_adapter_derives_content_bound_qlib_provider_from_snapshot(tmp_path: Pat
         "factor",
     ]
     assert source["factor"].tolist() == [1.0, 1.0]
+    assert not (receipt.manifest_path.parent / ".dump-source").exists()
+    assert (receipt.provider_uri / "calendars" / "day_future.txt").read_text(
+        encoding="utf-8"
+    ) == "2026-01-02\n2026-01-03\n"

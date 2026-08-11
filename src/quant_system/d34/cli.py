@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 
@@ -11,6 +12,7 @@ import typer
 
 from quant_system.config.settings import load_settings
 from quant_system.d34.docker_runtime import D34DockerConfig, D34DockerRuntime
+from quant_system.d34.paper_cycle import run_d34_paper_cycle
 from quant_system.d34.platform_replay import run_platform_replay
 from quant_system.d34.worker import D34CycleWorker, D34WorkerConfig
 from quant_system.data.provider_factory import build_ohlcv_provider
@@ -21,6 +23,8 @@ from quant_system.execution.d34_canary_activation import (
     D34CanaryActivationRequest,
     activate_d34_paper_canary,
 )
+from quant_system.execution.d34_canary_monitor import maintain_d34_canaries
+from quant_system.execution.paper_strategy_operations import PaperStrategyOperationsRunner
 from quant_system.execution.paper_strategy_sleeve_storage import (
     PaperStrategySleeveStorage,
 )
@@ -28,6 +32,7 @@ from quant_system.execution.price_source import PaperPriceSource
 from quant_system.hermes.d34_job_authority import PostgresJobAuthority
 from quant_system.hermes.d34_mandate_authority import PostgresMandateAuthority
 from quant_system.hermes.d34_registry_authority import PostgresRegistryAuthority
+from quant_system.hermes.d34_safety_authority import D34SafetyAuthority
 
 d34_app = typer.Typer(help="Run D-34 autonomous paper-research operations.")
 _DEFAULT_PLATFORM_ROOT = Path(__file__).resolve().parents[3]
@@ -78,12 +83,16 @@ def build_local_worker(
     if source != "futu" or getattr(futu, "provider_name", None) != "futu":
         raise RuntimeError("d34_futu_provider_unavailable")
     api_runs_dir = settings.data.data_dir / "api_runs"
-    account_storage = build_paper_account_repository(
-        api_runs_dir, settings=settings
-    )
+    account_storage = build_paper_account_repository(api_runs_dir, settings=settings)
     sleeve_storage = PaperStrategySleeveStorage(api_runs_dir)
     registry = PostgresRegistryAuthority(settings)
     price_source = PaperPriceSource(settings)
+    paper_operations = PaperStrategyOperationsRunner(
+        account_storage=account_storage,
+        sleeve_storage=sleeve_storage,
+        settings=settings,
+        price_source=price_source,
+    )
 
     def replay(*, qlib_receipt, **kwargs):
         _ = qlib_receipt
@@ -95,9 +104,7 @@ def build_local_worker(
             raise RuntimeError("paper_account_missing")
         symbols = sorted(set(universe) | set(account.positions))
         quotes = price_source.get_prices(symbols)
-        if set(quotes) != set(symbols) or any(
-            quote.source != "futu" for quote in quotes.values()
-        ):
+        if set(quotes) != set(symbols) or any(quote.source != "futu" for quote in quotes.values()):
             raise RuntimeError("d34_canary_requires_futu_prices")
         prices = {symbol: quote.price for symbol, quote in quotes.items()}
         _sleeve, canary = activate_d34_paper_canary(
@@ -125,6 +132,32 @@ def build_local_worker(
         )
         return canary
 
+    def operate_canaries(safety):
+        observed_at = datetime.now().astimezone()
+        observed = maintain_d34_canaries(
+            now=observed_at,
+            workspace_id=workspace_id,
+            registry=registry,
+            sleeve_storage=sleeve_storage,
+            price_source=price_source,
+        )
+        if safety.get("paper_execution_enabled") is True:
+            trading = run_d34_paper_cycle(
+                now=observed_at,
+                sleeve_storage=sleeve_storage,
+                runner=paper_operations,
+            )
+        else:
+            trading = {
+                "sleeves_checked": 0,
+                "signals_generated": 0,
+                "executions_created": 0,
+                "executions_processed": 0,
+                "executions_filled": 0,
+                "executions_blocked": 0,
+            }
+        return {"monitor": observed, "trading": trading}
+
     return D34CycleWorker(
         config=config,
         mandates=PostgresMandateAuthority(settings),
@@ -134,6 +167,8 @@ def build_local_worker(
         futu_provider=futu,
         platform_replay=replay,
         canary_activator=activate_canary,
+        safety_observer=lambda: D34SafetyAuthority(settings).observe(workspace_id=workspace_id),
+        canary_operator=operate_canaries,
     )
 
 
@@ -201,6 +236,7 @@ def worker_once(
                 "job_id": result.job_id,
                 "artifact_id": result.artifact_id,
                 "canary": canary,
+                "paper_cycle": result.paper_cycle,
             },
             default=str,
             sort_keys=True,

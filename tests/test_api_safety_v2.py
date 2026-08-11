@@ -33,6 +33,8 @@ class _Safety:
             },
             "paper_execution_enabled": not self.emergency,
             "blockers": ["emergency_stop_active"] if self.emergency else [],
+            "research_execution_enabled": not self.emergency,
+            "research_blockers": ["emergency_stop_active"] if self.emergency else [],
             "emergency_stop": {
                 "active": self.emergency,
                 "reason": "owner stop" if self.emergency else None,
@@ -104,7 +106,9 @@ def test_owner_reads_v2_safety_and_persists_emergency_stop(tmp_path: Path) -> No
 
     assert before.status_code == 200, before.text
     assert before.json()["paper_execution_enabled"] is True
+    assert before.json()["research_execution_enabled"] is True
     assert before.json()["live_execution_enabled"] is False
     assert stopped.status_code == 200, stopped.text
     assert stopped.json()["emergency_stop"]["active"] is True
     assert stopped.json()["blockers"] == ["emergency_stop_active"]
+    assert stopped.json()["research_blockers"] == ["emergency_stop_active"]

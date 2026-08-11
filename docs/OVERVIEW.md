@@ -7,10 +7,9 @@ Phase、Wave 与 Workbench 文档是历史交付证据，不是当前开发或�
 会话仍只读，继续上下文必须显式 fork。`chat_write_ready` 是本地状态，public standing
 继续 OFF。
 
-仓库 change set 含 migration source 016–029。2026-07-31 的只读现场核对显示 live
-`quantplatform` 有 016–027 标记、没有 028 标记，运行进程也尚未提供
-`GET /api/safety/effective`。这不是 028 live 或 release 授权，本页也不证明 028
-是否 committed/installed/isolated-replayed/live-applied/authorized。当前进度先看
+当前 D-34 source worktree 含 migration source 016–032；030–032 只通过隔离 PostgreSQL
+验证，尚未获授权 apply 到正式 `quantplatform`，worker 也默认关闭。旧现场 migration
+快照是历史证据，不应覆盖当前 source/runtime 的分别状态。当前进度先看
 [INDEX.md](INDEX.md)，运维只看
 [Agent v0.2 local-stack runbook](runbooks/agent-v0-2-local-stack.md)，不要从旧
 phase 标题或 checkbox 推断。
@@ -78,13 +77,19 @@ Hermes 与 AI 研究工作流：
   backtest 证据通过机器政策后，只写 `reviewer=auto`、`promotion_scope=paper_only`，本地
   ff-only land，不 auto-push。029 是 append-only promote/demote/日配额权威；live registry
   对这种因子硬拒绝。
+- D-34 是独立的 Mandate 路径：Futu Parquet snapshot 进入 RD-Agent/Qlib，Platform 只消费
+  同一 target weights 做成交/费用/NAV 重放；确定性 comparison/policy 通过后注册
+  `paper_only` Artifact 并创建低额度 canary。030–032 提供 Mandate/job/receipt/Artifact/
+  canary 权威，`GET /api/safety/effective/v2` 暴露 research/paper blocker。source 已实现，
+  正式 migration、runtime worker 与 10 周期/5 交易日切换门尚未执行。
 - 新 managed Session 的 composer 只有在 local flags、owner/CSRF、migration 028
   readiness、effective paper safety、Keychain、candidate/release 与 connector
   liveness 全通过时打开。External/history session 不原地写入。
 - `public_chat_write_ready`、`public_write_authorized`、
   `release_authorized` 继续 OFF；旧研究页 redirect/retirement 仍需独立批准。
-- 手工 Scene-B 和任何 live 资格仍必须人工评审；D-33 是唯一机器评审例外，且仅能把
-  已验证代码化因子送入 paper registry。常驻路径从不加载 candidate 文件。
+- 手工 Scene-B 和任何 live 资格仍必须人工评审。D-33 的机器 Gate 与 D-34 的 Mandate
+  policy 都只能进入 paper；两者都没有 live 升级接口。常驻路径从不加载未绑定 candidate
+  文件。
 
 AI 行业资讯：
 
@@ -158,6 +163,9 @@ http://127.0.0.1:3001
 - [持仓地图 Position Map](guides/position-map.md)
 - [AI 新闻研究流 AI News](guides/ai-news.md)
 - [Hermes 会话读取、密钥边界与故障排查](guides/hermes-sessions.md)
+- [D-34 Mandate 与 Paper Canary](guides/d34-workbench.md)
+- [D-34 架构](architecture/d34-autonomous-paper.md)
+- [D-34 本机运维](runbooks/d34-autonomous-paper.md)
 
 模拟交易与持仓地图的设计与实现记录（单一 100 万模拟账户、策略一键再平衡 + 手动美股下单、统一持仓地图，**阶段 1-5 已实现**）：
 

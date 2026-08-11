@@ -3,7 +3,7 @@
 这是整个仓库的主地图。先用下面的“当前工作”确定执行入口，再按需查架构、操作
 指南和历史交付。不要从旧 phase、audit 或未勾选 checkbox 推断当前进度。
 
-## 当前工作（2026-08-10）
+## 当前工作（2026-08-11）
 
 | 层级 | 权威入口 | 状态 |
 |---|---|---|
@@ -15,6 +15,7 @@
 | 唯一运维权威 | [Agent v0.2 local-stack](runbooks/agent-v0-2-local-stack.md) | 唯一维护 migration、backup、isolated replay、readiness、restart、candidate E2E 与 pre-028 restore 的文档；其他 runbook 只解释组件。 |
 | Platform 单一 main | [2026-08-10 Git 分支合并审计](audits/2026-08-10-platform-git-branch-consolidation.md) | 两个 Platform checkout 与 GitHub 已统一到受保护 `main`；旧分支先按 exact tip 建 archive tag 后删除，bundle/dirty snapshot 可恢复。此拓扑收口不授权 live、因子晋级或 migration 029。 |
 | D-33 自动 paper | `/Users/sunyibo/programs/Hermes-quant-agent/docs/plans/2026-08-10-full-automation-paper-path.md` 与 `docs/runbooks/full-automation-paper.md` | 双-Flag、真实 intake/final evidence、机器 Gate、`paper_only`、本地 ff-only land、029 配额、限额 sleeve 与五分钟常驻 paper 周期；不 auto-push，live 永远人工。 |
+| D-34 Mandate 双引擎 paper | [架构](architecture/d34-autonomous-paper.md) · [使用指南](guides/d34-workbench.md) · [运维](runbooks/d34-autonomous-paper.md) | `codex/d34-mandate-paper` source 已形成 Futu → RD-Agent/Qlib → Platform replay → Artifact/Policy → paper canary 闭环；030–032 未正式 apply、worker 默认关闭、runtime 未部署，不能写成已常驻。 |
 | 029 operator window | 2026-08-10 现场执行 | backup + isolated restore rehearsal 后一次 apply；append-only promote/demote/daily quota authority。禁止重放；启动永不自动迁移。 |
 | 应用前历史快照 | source/change set 016–028；live 现场只读核对 2026-07-31 | inspected 016–027 markers 存在；当时 028 marker 不存在，运行后端尚无 `/api/safety/effective`。这是保留的 pre-apply 快照，不描述当前 live 状态。 |
 | 028 operator window | 2026-08-01 现场观察；详见 [Agent v0.2 local-stack](runbooks/agent-v0-2-local-stack.md) | 028 marker=1/version=1，exact two binding triggers 均为 `ENABLE ALWAYS`，schema fingerprint `e3f713ac05a1a990cfa9be45157e880e06709c425a4883736544d8f2b626f33a`；一次性 apply 后的正常重启、readiness 与 `/api/safety/effective` 通过。该快照不证明论文研究语义，也不授权重放 028。 |
@@ -184,6 +185,7 @@ rows；操作只看 [local-stack runbook](runbooks/agent-v0-2-local-stack.md)。
 | [guides/market-cross-section.md](guides/market-cross-section.md) | 市场横截面 `/market-cross-section`（预设篮子热力图 + 排序表；严格 Futu，失败不回退 sample） |
 | [guides/ai-news.md](guides/ai-news.md) | AI 新闻研究流 `/ai-news`（双源 Facade：AI HOT 主源 + Horizon 热备；auto failover） |
 | [guides/hermes-sessions.md](guides/hermes-sessions.md) | Hermes official API 会话读取、密钥边界、故障排查与下一阶段连接架构 |
+| [guides/d34-workbench.md](guides/d34-workbench.md) | D-34 Mandate、研究 job、双引擎 Artifact、paper canary 与异常操作 |
 | [design/paper_trading_position_map_redesign.md](design/paper_trading_position_map_redesign.md) | 模拟交易 + 持仓地图**重设计**（设计文档 + 分阶段实现计划） |
 | [design/paper_strategy_sleeves_plan.md](design/paper_strategy_sleeves_plan.md) | Paper Strategy Sleeves **MVP-1**（策略资金段/信号观察/allocated 分账设计，非历史 Phase 1） |
 | [design/paper_strategy_sleeves_mvp2_plan.md](design/paper_strategy_sleeves_mvp2_plan.md) | Paper Strategy Sleeves **MVP-2**（pending execution / next-open 纸面执行计划） |
@@ -199,6 +201,8 @@ rows；操作只看 [local-stack runbook](runbooks/agent-v0-2-local-stack.md)。
 |---|---|
 | [../README.md](../README.md) | 快速项目入口与运行命令。 |
 | [runbooks/agent-v0-2-local-stack.md](runbooks/agent-v0-2-local-stack.md) | **唯一 Agent v0.2 stack 运维权威**：016–029、backup/replay/apply/readiness/restart/E2E/restore；D-33 语义看 HQA 自动 paper runbook。 |
+| [runbooks/d34-autonomous-paper.md](runbooks/d34-autonomous-paper.md) | D-34 固定镜像、真实 smoke、030–032 独立授权、worker flag、日志和 hold 型回滚。 |
+| [architecture/d34-autonomous-paper.md](architecture/d34-autonomous-paper.md) | D-34 数据流、双引擎边界、030–032 数据模型、job 状态机、API 与回退。 |
 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-10-phase-1a-4-v2.md` | **已交付记录**：Slice 9A-9G + mini 9H。 |
 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-12-full-9h-automation-notifications.md` | **已交付记录**：完整 9H 自动化与通知。 |
 | [superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md](superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md) | Slice 0-8 实现记录与未来前端 backlog。 |
@@ -327,7 +331,7 @@ rows；操作只看 [local-stack runbook](runbooks/agent-v0-2-local-stack.md)。
 | `/data-explorer` | 股票数据查看器。 |
 | `/brief` | 当日动态晨报预览；归档入口读取 PostgreSQL 中不可变 brief snapshot。 |
 | `/brief/[publicId]` | 已归档晨报的只读快照页。 |
-| `/hermes` | 默认研究工作台：Today + managed-session conversation + shared follow spine + Tasks/Approvals/Results。Composer 只在 exact local candidate/release window 且全部本地门禁通过时开放；external/history session 只读，public standing OFF，不提交真实交易。 |
+| `/hermes` | 默认研究工作台：Today + managed-session conversation + shared follow spine + Tasks/Approvals/Results，并在 D-34 source 中提供 Mandate/job/Artifact/paper canary 控制面。Composer 只在 exact local candidate/release window 且全部本地门禁通过时开放；external/history session 只读，public standing OFF，不提交真实交易。 |
 | `/factor-lab` | 现有只读因子健康度与单标的择时仪表盘；HQA 工作台落地后应从一级入口降级为 run/detail 分析面。 |
 | `/factor-lab/[runId]` | 因子运行详情。 |
 | `/backtest` | 策略、universe 与因子权重回测运行。 |

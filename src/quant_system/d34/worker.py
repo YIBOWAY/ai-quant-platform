@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable
-from dataclasses import asdict, dataclass
+from collections.abc import Callable, Mapping
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -84,6 +84,7 @@ class D34WorkerResult:
     job_id: str | None = None
     artifact_id: str | None = None
     canary: object | None = None
+    paper_cycle: object | None = None
 
 
 class D34CycleWorker:
@@ -98,6 +99,8 @@ class D34CycleWorker:
         futu_provider: Any,
         platform_replay: Callable[..., Any],
         canary_activator: Callable[..., object],
+        safety_observer: Callable[[], Mapping[str, object]] | None = None,
+        canary_operator: Callable[[Mapping[str, object]], object] | None = None,
         today: Callable[[], date] = date.today,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
@@ -109,6 +112,13 @@ class D34CycleWorker:
         self.futu_provider = futu_provider
         self.platform_replay = platform_replay
         self.canary_activator = canary_activator
+        self.safety_observer = safety_observer or (
+            lambda: {
+                "research_execution_enabled": True,
+                "research_blockers": [],
+            }
+        )
+        self.canary_operator = canary_operator or (lambda _safety: None)
         self.today = today
         self.now = now
 
@@ -132,9 +142,7 @@ class D34CycleWorker:
         return path
 
     def _schedule(self, mandate: Any, cycle_date: date) -> None:
-        existing = self.jobs.list(
-            workspace_id=self.config.workspace_id, limit=100, state=None
-        )
+        existing = self.jobs.list(workspace_id=self.config.workspace_id, limit=100, state=None)
         existing_keys = {str(job.job_key) for job in existing}
         for hypothesis in range(1, int(mandate.hypotheses_per_cycle) + 1):
             job_key = f"cycle:{cycle_date.isoformat()}:hypothesis:{hypothesis}"
@@ -167,9 +175,7 @@ class D34CycleWorker:
                 "provider_receipt_digest": snapshot.provider_receipt_digest,
                 "universe": list(mandate.universe),
                 "max_iterations": int(mandate.max_iterations),
-                "experiments_per_iteration": int(
-                    mandate.max_experiments_per_iteration
-                ),
+                "experiments_per_iteration": int(mandate.max_experiments_per_iteration),
                 "top_k": 1,
                 "paper_execution_allowed": bool(mandate.paper_execution_allowed),
                 "objective": (
@@ -178,9 +184,7 @@ class D34CycleWorker:
                 ),
             }
             input_digest = _digest(input_document)
-            reservation = min(
-                Decimal("10"), Decimal(str(mandate.llm_budget_usd))
-            )
+            reservation = min(Decimal("10"), Decimal(str(mandate.llm_budget_usd)))
             self.jobs.enqueue(
                 EnqueueJobCommand(
                     mandate_id=mandate.mandate_id,
@@ -213,8 +217,7 @@ class D34CycleWorker:
             return_dates=tuple(str(value) for value in raw["return_dates"]),
             terminal_nav=float(raw["terminal_nav"]),
             terminal_weights={
-                str(key): float(value)
-                for key, value in dict(raw["terminal_weights"]).items()
+                str(key): float(value) for key, value in dict(raw["terminal_weights"]).items()
             },
             receipt_digest=receipt_digest,
         )
@@ -309,10 +312,7 @@ class D34CycleWorker:
             recovery_digest = str(raw.pop("recovery_digest"))
         except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
             raise ValueError("d34_recovery_bundle_unreadable") from exc
-        if (
-            raw.get("contract") != "hqa.d34_terminal_recovery/v1"
-            or _digest(raw) != recovery_digest
-        ):
+        if raw.get("contract") != "hqa.d34_terminal_recovery/v1" or _digest(raw) != recovery_digest:
             raise ValueError("d34_recovery_bundle_digest_mismatch")
         return raw
 
@@ -329,9 +329,7 @@ class D34CycleWorker:
             job_root = phase_path.parent
             job_id = str(phase_document.get("job_id", job_root.name))
             try:
-                bundle = self._read_recovery_bundle(
-                    job_root / "terminal_recovery.json"
-                )
+                bundle = self._read_recovery_bundle(job_root / "terminal_recovery.json")
                 if (
                     bundle.get("job_id") != job_id
                     or bundle.get("mandate_id") != mandate.mandate_id
@@ -399,9 +397,7 @@ class D34CycleWorker:
                         **phase_document,
                         "phase": "needs_recovery",
                         "last_recovery_at": self.now().isoformat(),
-                        "last_recovery_code": str(
-                            getattr(exc, "code", type(exc).__name__)
-                        ),
+                        "last_recovery_code": str(getattr(exc, "code", type(exc).__name__)),
                         "last_recovery_error": str(exc)[:2_000],
                     },
                 )
@@ -413,9 +409,7 @@ class D34CycleWorker:
         return None
 
     def _run_lease(self, lease: Any, mandate: Any) -> D34WorkerResult:
-        durable = self.jobs.read_leased_input(
-            job_id=lease.job.job_id, lease_id=lease.lease_id
-        )
+        durable = self.jobs.read_leased_input(job_id=lease.job.job_id, lease_id=lease.lease_id)
         if _digest(durable.input_document) != durable.input_digest:
             raise ValueError("d34_job_input_digest_mismatch")
         document = durable.input_document
@@ -433,13 +427,9 @@ class D34CycleWorker:
         phase = "starting"
         research_output: dict[str, object] | None = None
         try:
-            self.jobs.mark_running(
-                job_id=job_id, lease_id=lease.lease_id, container_id=None
-            )
+            self.jobs.mark_running(job_id=job_id, lease_id=lease.lease_id, container_id=None)
             self._heartbeat(lease)
-            snapshot_parquet = self.config.workspace_root / str(
-                document["snapshot_parquet"]
-            )
+            snapshot_parquet = self.config.workspace_root / str(document["snapshot_parquet"])
             phase = "qlib_adapt"
             _write_json(phase_path, {"phase": phase, "job_id": job_id})
             qlib_root = job_root / "qlib"
@@ -474,9 +464,7 @@ class D34CycleWorker:
                 "universe": list(document["universe"]),
                 "calendar": list(calendar),
                 "max_iterations": int(document["max_iterations"]),
-                "experiments_per_iteration": int(
-                    document["experiments_per_iteration"]
-                ),
+                "experiments_per_iteration": int(document["experiments_per_iteration"]),
                 "top_k": int(document["top_k"]),
                 "initial_cash": 100_000,
                 "budget_reservation_usd": float(lease.job.budget_reserved_usd),
@@ -501,9 +489,7 @@ class D34CycleWorker:
             qlib_receipt = self._engine_receipt(
                 self._host_path(research_output["qlib_receipt_path"])
             )
-            target_weights_path = self._host_path(
-                research_output["target_weights_path"]
-            )
+            target_weights_path = self._host_path(research_output["target_weights_path"])
             phase = "platform_replay"
             _write_json(phase_path, {"phase": phase, "job_id": job_id})
             replay = self.platform_replay(
@@ -574,9 +560,7 @@ class D34CycleWorker:
                     qlib_receipt=qlib_receipt,
                     platform_receipt=replay.engine_receipt,
                     comparison=comparison,
-                    candidate_code_digest=str(
-                        research_output["candidate_code_digest"]
-                    ),
+                    candidate_code_digest=str(research_output["candidate_code_digest"]),
                     qlib_config_digest=str(research_output["qlib_config_digest"]),
                     rdagent_commit=str(research_output["rdagent_commit"]),
                     qlib_commit=str(research_output["qlib_commit"]),
@@ -588,9 +572,7 @@ class D34CycleWorker:
                     phase_path,
                     {"phase": "rejected", "job_id": job_id, **outcome_document},
                 )
-                return D34WorkerResult(
-                    status="rejected", code=outcome_code, job_id=job_id
-                )
+                return D34WorkerResult(status="rejected", code=outcome_code, job_id=job_id)
             phase = "canary_activation"
             artifact = evaluation.artifact
             canary = self.canary_activator(
@@ -618,9 +600,7 @@ class D34CycleWorker:
         except Exception as exc:  # noqa: BLE001 - durable worker boundary
             code = getattr(exc, "code", type(exc).__name__)
             if not terminal:
-                ambiguous = phase == "research" and isinstance(
-                    exc, D34DockerRuntimeError
-                )
+                ambiguous = phase == "research" and isinstance(exc, D34DockerRuntimeError)
                 self.jobs.finish(
                     job_id=job_id,
                     lease_id=lease.lease_id,
@@ -652,25 +632,52 @@ class D34CycleWorker:
             )
 
     def run_once(self) -> D34WorkerResult:
+        try:
+            safety = self.safety_observer()
+        except Exception as exc:  # noqa: BLE001 - authority boundary
+            return D34WorkerResult(
+                status="failed",
+                code=str(getattr(exc, "code", "d34_safety_unavailable")),
+            )
+        try:
+            paper_cycle = self.canary_operator(safety)
+        except Exception as exc:  # noqa: BLE001 - paper operations boundary
+            return D34WorkerResult(
+                status="failed",
+                code=str(getattr(exc, "code", "d34_canary_operation_failed")),
+            )
+        if safety.get("research_execution_enabled") is not True:
+            raw_blockers = safety.get("research_blockers")
+            blockers = (
+                [str(value) for value in raw_blockers]
+                if isinstance(raw_blockers, (list, tuple))
+                else []
+            )
+            return D34WorkerResult(
+                status="idle",
+                code=blockers[0] if blockers else "d34_research_not_authorized",
+                paper_cycle=paper_cycle,
+            )
         self.jobs.reconcile_expired(workspace_id=self.config.workspace_id)
         mandate = self.mandates.get_active(workspace_id=self.config.workspace_id)
         if mandate is None:
-            return D34WorkerResult(status="idle", code="no_active_mandate")
+            return D34WorkerResult(status="idle", code="no_active_mandate", paper_cycle=paper_cycle)
         if (
             mandate.status != "active"
             or mandate.expires_at <= self.now()
             or mandate.paper_execution_allowed is not True
         ):
-            return D34WorkerResult(status="idle", code="mandate_inactive")
+            return D34WorkerResult(status="idle", code="mandate_inactive", paper_cycle=paper_cycle)
         recovered = self._recover_terminal(mandate)
         if recovered is not None:
-            return recovered
+            return replace(recovered, paper_cycle=paper_cycle)
         try:
             self._schedule(mandate, self.today())
         except Exception as exc:  # noqa: BLE001 - Futu scheduling boundary
             return D34WorkerResult(
                 status="failed",
                 code=str(getattr(exc, "code", type(exc).__name__)),
+                paper_cycle=paper_cycle,
             )
         lease = self.jobs.lease_next(
             workspace_id=self.config.workspace_id,
@@ -678,8 +685,8 @@ class D34CycleWorker:
             lease_seconds=self.config.lease_seconds,
         )
         if lease is None:
-            return D34WorkerResult(status="idle", code="no_queued_job")
-        return self._run_lease(lease, mandate)
+            return D34WorkerResult(status="idle", code="no_queued_job", paper_cycle=paper_cycle)
+        return replace(self._run_lease(lease, mandate), paper_cycle=paper_cycle)
 
 
 __all__ = ["D34CycleWorker", "D34WorkerConfig", "D34WorkerResult"]

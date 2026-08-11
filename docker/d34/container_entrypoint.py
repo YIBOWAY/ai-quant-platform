@@ -37,10 +37,7 @@ def versions() -> dict[str, object]:
         "qlib_commit": _head("/opt/qlib"),
         "qlib_version": getattr(qlib, "__version__", "unknown"),
     }
-    if (
-        observed["rdagent_commit"] != RDAGENT_COMMIT
-        or observed["qlib_commit"] != QLIB_COMMIT
-    ):
+    if observed["rdagent_commit"] != RDAGENT_COMMIT or observed["qlib_commit"] != QLIB_COMMIT:
         raise RuntimeError("pinned upstream commit mismatch")
     return observed
 
@@ -48,33 +45,40 @@ def versions() -> dict[str, object]:
 def qlib_smoke() -> dict[str, object]:
     import pandas as pd  # noqa: PLC0415
     import qlib  # noqa: PLC0415
+    from qlib.contrib.evaluate import backtest_daily  # noqa: PLC0415
+    from qlib.contrib.strategy import TopkDropoutStrategy  # noqa: PLC0415
     from qlib.data import D  # noqa: PLC0415
 
     with tempfile.TemporaryDirectory(prefix="d34-qlib-smoke-") as raw:
         root = Path(raw)
         csv_dir, provider = root / "csv", root / "provider"
         csv_dir.mkdir()
-        rows = []
-        for day, close in (("2026-01-05", 100.0), ("2026-01-06", 101.0), ("2026-01-07", 102.0)):
-            rows.append(
-                {
-                    "date": day,
-                    "symbol": "SPY",
-                    "open": close - 0.5,
-                    "high": close + 1,
-                    "low": close - 1,
-                    "close": close,
-                    "volume": 1_000_000,
-                    "factor": 1.0,
-                }
-            )
-        pd.DataFrame(rows).to_csv(csv_dir / "SPY.csv", index=False)
+        # Keep one extra trading day in the provider because Qlib resolves the
+        # decision made at ``end_time`` against the next exchange calendar step.
+        days = pd.bdate_range("2026-01-05", periods=16)
+        for symbol, offset, drift in (("SPY", 100.0, 1.0), ("QQQ", 80.0, 1.4)):
+            rows = []
+            for index, day in enumerate(days):
+                close = offset + index * drift + (index % 3 - 1) * 0.2
+                rows.append(
+                    {
+                        "date": day.date().isoformat(),
+                        "symbol": symbol,
+                        "open": close - 0.5,
+                        "high": close + 1,
+                        "low": close - 1,
+                        "close": close,
+                        "volume": 1_000_000,
+                        "factor": 1.0,
+                    }
+                )
+            pd.DataFrame(rows).to_csv(csv_dir / f"{symbol}.csv", index=False)
         subprocess.run(
             [
                 sys.executable,
                 "/opt/qlib/scripts/dump_bin.py",
                 "dump_all",
-                "--csv_path",
+                "--data_path",
                 str(csv_dir),
                 "--qlib_dir",
                 str(provider),
@@ -89,15 +93,51 @@ def qlib_smoke() -> dict[str, object]:
             timeout=120,
         )
         qlib.init(provider_uri=str(provider), region="us")
-        frame = D.features(
-            ["SPY"], ["$close"], start_time="2026-01-05", end_time="2026-01-07"
-        )
-        if frame.empty or len(frame) != 3:
+        start, end = days[0], days[-2]
+        frame = D.features(["SPY", "QQQ"], ["$close"], start_time=start, end_time=end)
+        if frame.empty or len(frame) != 30:
             raise RuntimeError("Qlib provider smoke returned incomplete data")
+        scores = (
+            D.features(
+                ["SPY", "QQQ"],
+                ["$close/Ref($close,1)-1"],
+                start_time=start,
+                end_time=end,
+            )
+            .iloc[:, 0]
+            .dropna()
+        )
+        strategy = TopkDropoutStrategy(
+            signal=scores,
+            topk=1,
+            n_drop=1,
+            hold_thresh=0,
+            risk_degree=0.99,
+            only_tradable=True,
+            forbid_all_trade_at_limit=False,
+        )
+        report, _positions = backtest_daily(
+            start_time=start,
+            end_time=end,
+            strategy=strategy,
+            account=100_000.0,
+            benchmark="SPY",
+            exchange_kwargs={
+                "deal_price": "$open",
+                "open_cost": 0.0005,
+                "close_cost": 0.0005,
+                "min_cost": 0,
+                "trade_unit": 1,
+                "limit_threshold": None,
+            },
+        )
+        if report.empty or not {"return", "cost"}.issubset(report.columns):
+            raise RuntimeError("Qlib backtest smoke returned no portfolio report")
         return {
             "contract": "hqa.d34_qlib_smoke/v1",
             "rows": len(frame),
-            "last_close": float(frame.iloc[-1, 0]),
+            "backtest_rows": len(report),
+            "last_close": float(frame.loc[("SPY", end), "$close"]),
         }
 
 
@@ -186,9 +226,7 @@ def main() -> int:
     if parsed.command == "research":
         research_parser = argparse.ArgumentParser(prog="d34 research")
         research_parser.add_argument("--request", required=True)
-        research_parser.add_argument(
-            "--output-root", default="/workspace/d34/research-results"
-        )
+        research_parser.add_argument("--output-root", default="/workspace/d34/research-results")
         research_args = research_parser.parse_args(parsed.args)
         from quant_system.d34.rdagent_qlib_runtime import (  # noqa: PLC0415
             run_container_research,
@@ -228,6 +266,7 @@ def main() -> int:
                     "provider_uri": str(receipt.provider_uri),
                     "source_digest": receipt.source_digest,
                     "provider_digest": receipt.provider_digest,
+                    "future_calendar_boundary": receipt.future_calendar_boundary,
                     "receipt_digest": receipt.receipt_digest,
                 },
                 sort_keys=True,
