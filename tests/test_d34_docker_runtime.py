@@ -228,10 +228,69 @@ def test_worker_requires_explicit_owner_only_provider_env(
     with pytest.raises(RuntimeError, match="d34_env_file_required"):
         _existing_env_file(repo)
 
-    configured.write_text("D34_TEST_VALUE=not-a-secret\n", encoding="utf-8")
+    configured.write_text(
+        "LITELLM_CHAT_MODEL=test-chat\n"
+        "LITELLM_EMBEDDING_MODEL=test-embedding\n",
+        encoding="utf-8",
+    )
     configured.chmod(0o600)
 
     assert _existing_env_file(repo) == configured.resolve()
+
+
+def test_worker_rejects_owner_env_without_explicit_chat_and_embedding_models(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "platform"
+    repo.mkdir()
+    configured = tmp_path / "owner-d34.env"
+    configured.write_text(
+        "LITELLM_CHAT_MODEL=test-chat\nOPENAI_API_KEY=not-a-real-secret\n",
+        encoding="utf-8",
+    )
+    configured.chmod(0o600)
+    monkeypatch.setenv("QS_D34_ENV_FILE", str(configured))
+
+    with pytest.raises(RuntimeError, match="d34_env_models_required"):
+        _existing_env_file(repo)
+
+
+def test_worker_rejects_secrets_in_rdagent_logged_litellm_settings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "platform"
+    repo.mkdir()
+    configured = tmp_path / "owner-d34.env"
+    configured.write_text(
+        "LITELLM_CHAT_MODEL=test-chat\n"
+        "LITELLM_EMBEDDING_MODEL=test-embedding\n"
+        "LITELLM_CHAT_OPENAI_API_KEY=must-not-reach-logs\n",
+        encoding="utf-8",
+    )
+    configured.chmod(0o600)
+    monkeypatch.setenv("QS_D34_ENV_FILE", str(configured))
+
+    with pytest.raises(RuntimeError, match="d34_env_logged_secret_forbidden"):
+        _existing_env_file(repo)
+
+
+def test_owner_env_template_uses_pinned_rdagent_litellm_model_names() -> None:
+    template = Path("docker/d34/.env.example").read_text(encoding="utf-8")
+
+    assert "LITELLM_CHAT_MODEL=" in template
+    assert "LITELLM_EMBEDDING_MODEL=" in template
+    assert "\nCHAT_MODEL=" not in template
+    assert "\nEMBEDDING_MODEL=" not in template
+    assert "OPENAI_API_KEY=" in template
+    assert "OPENAI_API_BASE=" in template
+    assert "LITELLM_MAX_RETRY=3" in template
+    assert "LITELLM_RETRY_WAIT_SECONDS=2" in template
+    assert "LITELLM_LOG_LLM_CHAT_CONTENT=false" in template
+    assert "LITELLM_PROXY_API_KEY=" not in template
+    assert "LITELLM_PROXY_API_BASE=" not in template
+    assert "\nMAX_RETRY=" not in template
+    assert "\nRETRY_WAIT_SECONDS=" not in template
+    assert "\nLOG_LLM_CHAT_CONTENT=" not in template
 
 
 def test_dockerfile_pins_exact_upstream_tarball_bytes() -> None:

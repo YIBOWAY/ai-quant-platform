@@ -56,6 +56,29 @@ def _existing_env_file(repo: Path) -> Path:
         or stat.S_IMODE(metadata.st_mode) != 0o600
     ):
         raise RuntimeError("d34_env_file_must_be_owner_only")
+    try:
+        lines = candidate.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError) as exc:
+        raise RuntimeError("d34_env_file_unreadable") from exc
+    required_models = {"LITELLM_CHAT_MODEL", "LITELLM_EMBEDDING_MODEL"}
+    configured_models: set[str] = set()
+    configured_names: set[str] = set()
+    for line in lines:
+        if not line.strip() or line.lstrip().startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        name = key.strip()
+        configured_names.add(name)
+        if name in required_models and value.strip():
+            configured_models.add(name)
+    if configured_models != required_models:
+        raise RuntimeError("d34_env_models_required")
+    if any(
+        name.startswith("LITELLM_")
+        and name.endswith(("_KEY", "_TOKEN", "_SECRET", "_PASSWORD"))
+        for name in configured_names
+    ):
+        raise RuntimeError("d34_env_logged_secret_forbidden")
     return candidate.resolve()
 
 
