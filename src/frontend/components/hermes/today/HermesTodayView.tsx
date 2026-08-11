@@ -10,10 +10,6 @@ import { TodayRunning } from "./TodayRunning";
 import { TodayStateNode } from "./TodayStateNode";
 import { TodayStatusLine } from "./TodayStatusLine";
 
-const READ_ONLY_DESK_STATUS =
-  "Read-only research desk prioritizing action, exceptions, and conclusions. Submit remains disabled.";
-const READ_ONLY_DESK_STATUS_ZH = "以行动、异常与结论为先的只读研究工作台。提交仍保持禁用。";
-
 export type HermesTodayViewProps = {
   model: HermesTodayOverviewModel;
   /** Read-only artifact envelope for collapsed source detail. */
@@ -28,6 +24,9 @@ export type HermesTodayViewProps = {
  */
 export function HermesTodayView({ model, artifacts, locale }: HermesTodayViewProps) {
   const copy = hermesWorkbenchCopy(locale);
+  const deskStatus = model.gateway.chatWriteReady
+    ? copy.today.deskStatus.writeReady
+    : copy.today.deskStatus.writeBlocked;
 
   return (
     <section
@@ -35,16 +34,14 @@ export function HermesTodayView({ model, artifacts, locale }: HermesTodayViewPro
       className="flex flex-col gap-6"
       data-hermes-today
       data-hermes-today-state={model.state}
+      data-hermes-chat-write-ready={model.gateway.chatWriteReady ? "true" : "false"}
       data-state={model.state}
     >
-      <TodayStateNode
-        label={locale === "zh" ? READ_ONLY_DESK_STATUS_ZH : READ_ONLY_DESK_STATUS}
-        state={model.state}
-      />
+      <TodayStateNode label={deskStatus} state={model.state} />
       <TodayGreeting locale={locale} model={model} />
 
-      <p className="text-xs text-text-secondary">
-        {locale === "zh" ? READ_ONLY_DESK_STATUS_ZH : READ_ONLY_DESK_STATUS}
+      <p className="text-xs text-text-secondary" data-hermes-desk-status>
+        {deskStatus}
       </p>
 
       <TodayStatusLine locale={locale} model={model} />

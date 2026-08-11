@@ -224,7 +224,7 @@ describe("Hermes Today hierarchy (UI-1 Direction A)", () => {
     const model = buildHermesTodayOverviewModel({
       artifacts: healthyArtifacts,
       candidates,
-      gateway: gatewayFixture(),
+      gateway: gatewayFixture({ chat_write_ready: true }),
       now,
     });
     const html = renderToStaticMarkup(
@@ -236,10 +236,14 @@ describe("Hermes Today hierarchy (UI-1 Direction A)", () => {
     );
 
     expect(model.state).toBe("normal");
+    expect(model.gateway.chatWriteReady).toBe(true);
     expect(html).toContain("早上好");
     expect(html).toContain("系统正常，");
     expect(html).toContain("有 1 件事需要你处理");
     expect(html).toContain("Hermes 正在值班");
+    expect(html).toContain("发送前请先新建受管对话");
+    expect(html).not.toContain("提交仍保持禁用");
+    expect(html).toContain('data-hermes-chat-write-ready="true"');
     expect(html).toContain('data-hermes-status-item="sources"');
     expect(html).toContain('data-hermes-status-item="automation"');
     expect(html).toContain('href="#hermes-technical-details"');

@@ -85,6 +85,8 @@ export type HermesGatewaySummary = {
   connected: boolean;
   /** available + connected — the only posture shown as "online". */
   online: boolean;
+  /** True when local managed-session write admission is open (not public cutover). */
+  chatWriteReady: boolean;
   blockers: string[];
   warningCodes: string[];
 };

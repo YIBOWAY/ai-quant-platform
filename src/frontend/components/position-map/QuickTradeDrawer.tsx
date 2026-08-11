@@ -27,6 +27,7 @@ const drawerCopy = {
     all: "All",
     close: "Close",
     needValues: "Enter a quantity and a limit price (or leave price empty for market).",
+    frozen: "Account is frozen — unfreeze on Paper Trading before submitting orders.",
     filled: (sym: string, side: Side, qty: number) =>
       `Filled: ${side === "buy" ? "bought" : "sold"} ${qty.toLocaleString()} ${sym}`,
     pending: (reason: string) => `Limit order queued${reason ? `: ${reason}` : ""}`,
@@ -51,6 +52,7 @@ const drawerCopy = {
     all: "全部",
     close: "关闭",
     needValues: "请填写数量；价格留空按市价成交。",
+    frozen: "账户已冻结 — 请先到「模拟交易」页解冻后再下单。",
     filled: (sym: string, side: Side, qty: number) =>
       `已成交：${side === "buy" ? "买入" : "卖出"} ${sym} ${qty.toLocaleString()} 股`,
     pending: (reason: string) => `限价单已挂起${reason ? `：${reason}` : ""}`,
@@ -71,12 +73,15 @@ export function QuickTradeDrawer({
   positions,
   request,
   onClose,
+  accountFrozen = false,
 }: {
   locale: Locale;
   positions: AccountPositionView[];
   /** Non-null => drawer is open. */
   request: QuickTradeRequest | null;
   onClose: () => void;
+  /** Paper account kill_switch / freeze — mirror Paper Trading form disabled state. */
+  accountFrozen?: boolean;
 }) {
   const router = useRouter();
   const text = drawerCopy[locale];
@@ -87,6 +92,7 @@ export function QuickTradeDrawer({
   const [quantity, setQuantity] = useState("");
   const [limitPrice, setLimitPrice] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const formDisabled = accountFrozen || submitting;
 
   const position = useMemo(
     () => positions.find((row) => row.symbol === symbol.trim().toUpperCase()),
@@ -128,6 +134,10 @@ export function QuickTradeDrawer({
       : null;
 
   async function submit() {
+    if (accountFrozen) {
+      toast.warning(text.frozen);
+      return;
+    }
     const sym = symbol.trim().toUpperCase();
     if (!sym || !(qtyNum > 0)) {
       toast.warning(text.needValues);
@@ -188,6 +198,11 @@ export function QuickTradeDrawer({
               </span>
             </div>
             <p className="mt-1 font-body-sm text-text-secondary">{text.desc}</p>
+            {accountFrozen ? (
+              <p className="mt-2 font-body-sm text-danger" data-position-map-frozen="true">
+                {text.frozen}
+              </p>
+            ) : null}
           </div>
           <button
             aria-label={text.close}
@@ -200,6 +215,7 @@ export function QuickTradeDrawer({
         </div>
 
         <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-5 py-5">
+          <fieldset className="contents" disabled={formDisabled}>
           <div>
             <label className={labelClass} htmlFor="qtd-symbol">{text.symbol}</label>
             <input
@@ -299,12 +315,13 @@ export function QuickTradeDrawer({
 
           <button
             className="rounded-lg border border-[#0C6B56] bg-[#0C6B56] px-4 py-2.5 text-center font-body-sm font-semibold text-[#DFF3EC] transition-colors hover:bg-[#0E7E66] disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={submitting}
+            disabled={formDisabled}
             onClick={submit}
             type="button"
           >
             {submitting ? text.submitting : text.submit}
           </button>
+          </fieldset>
         </div>
       </aside>
     </>

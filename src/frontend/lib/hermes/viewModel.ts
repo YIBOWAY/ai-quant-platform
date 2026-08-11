@@ -555,6 +555,7 @@ export function buildGatewaySummary(
     readStatus,
     connected,
     online: readStatus === "available" && connected,
+    chatWriteReady: gateway.chat_write_ready === true,
     blockers,
     warningCodes,
   };

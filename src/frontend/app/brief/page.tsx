@@ -27,6 +27,7 @@ import {
   type OptionsDailyScanStatusResponse,
   type RecentRun,
 } from "@/lib/api";
+import { buildAsiaRadarNote } from "@/lib/briefAsiaRadarNote";
 import {
   dashboardRunHref,
   dashboardRunKindLabel,
@@ -356,30 +357,8 @@ function _semisVsSoftwareNote(
     : `; software (IGV) outperformed semis (SOXX) by ${formatPercent(Math.abs(diff))}`;
 }
 
-function buildAsiaRadarNote(
-  envelope: { summary?: import("@/lib/asiaRadar").AsiaRadarSummary; apiError?: string },
-  locale: "en" | "zh",
-): string {
-  const zh = locale === "zh";
-  if (!envelope.summary || envelope.summary.status !== "available") {
-    return zh ? "亚洲雷达数据暂不可用。" : "Asia Radar is unavailable today.";
-  }
-  const summary = envelope.summary;
-  const top = summary.top_ytd_symbol;
-  const bottom = summary.bottom_ytd_symbol;
-  const spread = summary.spread_pct;
-  if (!top || !bottom || spread === null || spread === undefined) {
-    return zh
-      ? `亚洲雷达覆盖 ${summary.market_count} 个市场（截至 ${summary.as_of}）。`
-      : `Asia Radar covers ${summary.market_count} markets as of ${summary.as_of}.`;
-  }
-  const winners = summary.winner_symbols.join("/");
-  const laggards = summary.laggard_symbols.join("/");
-  if (zh) {
-    return `亚洲雷达（截至 ${summary.as_of}）：${winners} 领跑、${laggards} 落后，YTD 前三后三篮子分化 ${formatPercent(Math.abs(spread))}。`;
-  }
-  return `Asia Radar (as of ${summary.as_of}): ${winners} lead while ${laggards} lag, with a ${formatPercent(Math.abs(spread))} YTD spread between the top-three and bottom-three baskets.`;
-}
+// Asia Radar note builder lives in lib/briefAsiaRadarNote.ts so spread_pct
+// (already percentage points) is never double-scaled by formatPercent.
 
 function buildLede({
   text,

@@ -123,6 +123,11 @@ export type HermesWorkbenchCopy = {
       lastSuccessPrefix: string;
       lastSuccessNever: string;
     };
+    /** Desk posture under the greeting — must not contradict capability banner. */
+    deskStatus: {
+      writeReady: string;
+      writeBlocked: string;
+    };
   };
 };
 
@@ -251,6 +256,12 @@ const en: HermesWorkbenchCopy = {
       lastSuccessPrefix: "last success",
       lastSuccessNever: "no successful run yet",
     },
+    deskStatus: {
+      writeReady:
+        "Action-first research desk. Create a new managed conversation before sending.",
+      writeBlocked:
+        "Read-only research desk prioritizing action, exceptions, and conclusions. Submit remains disabled.",
+    },
   },
 };
 
@@ -373,6 +384,10 @@ const zh: HermesWorkbenchCopy = {
       title: "自动化",
       lastSuccessPrefix: "上次成功",
       lastSuccessNever: "尚无成功运行",
+    },
+    deskStatus: {
+      writeReady: "以行动、异常与结论为先的研究工作台。发送前请先新建受管对话。",
+      writeBlocked: "以行动、异常与结论为先的只读研究工作台。提交仍保持禁用。",
     },
   },
 };
