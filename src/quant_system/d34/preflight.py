@@ -13,7 +13,7 @@ from typing import Any, Protocol
 from quant_system.d34.docker_runtime import D34DockerReceipt
 
 PREFLIGHT_CONTRACT = "hqa.d34_preflight/v1"
-_SAFETY_CONTRACT = "hqa.d34_effective_safety/v2"
+_SAFETY_CONTRACT = "hqa.effective_paper_safety/v2"
 _SMOKE_CONTRACTS = {
     "versions": "hqa.d34_container_versions/v1",
     "qlib-smoke": "hqa.d34_qlib_smoke/v1",

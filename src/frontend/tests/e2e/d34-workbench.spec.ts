@@ -57,7 +57,7 @@ async function installD34OwnerFixture(page: Page) {
   );
   await page.route("**/api/safety/effective/v2?**", (route) =>
     fulfill(route, {
-      contract: "hqa.d34_effective_safety/v2",
+      contract: "hqa.effective_paper_safety/v2",
       workspace_id: "default",
       paper_execution_enabled: true,
       research_execution_enabled: true,

@@ -51,7 +51,7 @@ def test_preflight_proves_schema_and_every_real_runtime_boundary(tmp_path: Path)
         workspace_root=tmp_path,
         docker_runtime=docker,
         safety_observer=lambda: {
-            "contract": "hqa.d34_effective_safety/v2",
+            "contract": "hqa.effective_paper_safety/v2",
             "workspace_id": "default",
             "live_execution_enabled": False,
             "research_execution_enabled": False,
@@ -64,7 +64,7 @@ def test_preflight_proves_schema_and_every_real_runtime_boundary(tmp_path: Path)
     assert receipt.ready is True
     assert docker.commands == [("smoke",)]
     assert receipt.image_digest == "sha256:" + "9" * 64
-    assert receipt.safety_contract == "hqa.d34_effective_safety/v2"
+    assert receipt.safety_contract == "hqa.effective_paper_safety/v2"
     assert receipt.live_execution_enabled is False
     assert len(receipt.receipt_digest) == 64
     durable = json.loads(
@@ -107,7 +107,7 @@ def test_preflight_cli_emits_one_machine_readable_ready_receipt(
 
         def observe(self, *, workspace_id: str):
             return {
-                "contract": "hqa.d34_effective_safety/v2",
+                "contract": "hqa.effective_paper_safety/v2",
                 "workspace_id": workspace_id,
                 "live_execution_enabled": False,
                 "research_blockers": ["no_active_mandate"],
