@@ -2634,6 +2634,58 @@ export interface components {
             /** Winners */
             winners: string[];
         };
+        /** AsiaRadarLocalIndexPointResponse */
+        AsiaRadarLocalIndexPointResponse: {
+            /** Close */
+            close: number;
+            /** Date */
+            date: string;
+            /** Indexed Return Pct */
+            indexed_return_pct: number;
+        };
+        /**
+         * AsiaRadarLocalIndexResponse
+         * @description Display-only local index overlay for one market (Slice 2A).
+         *
+         *     Never mixed into the USD ETF proxy metrics. ``status="unavailable"``
+         *     carries an explicit reason (pending channel or provider error) so the
+         *     index lane is fail-closed without taking the ETF main path down.
+         */
+        AsiaRadarLocalIndexResponse: {
+            /** Adjustment */
+            adjustment: string | null;
+            /** As Of */
+            as_of: string | null;
+            /** Currency */
+            currency: string | null;
+            /** Fetched At */
+            fetched_at: string | null;
+            /** Index Name En */
+            index_name_en: string | null;
+            /** Index Name Zh */
+            index_name_zh: string | null;
+            /** Index Symbol */
+            index_symbol: string | null;
+            /** Provenance */
+            provenance: ("futu" | "futu_cache") | null;
+            /** Provider */
+            provider: "futu" | null;
+            /** Provider Code */
+            provider_code: string | null;
+            /** Reason */
+            reason: string | null;
+            /** Reason Code */
+            reason_code: string | null;
+            /** Series */
+            series: components["schemas"]["AsiaRadarLocalIndexPointResponse"][];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "available" | "unavailable";
+            /** Timezone */
+            timezone: string | null;
+        };
         /** AsiaRadarMarketResponse */
         AsiaRadarMarketResponse: {
             /**
@@ -2648,6 +2700,7 @@ export interface components {
              * @enum {string}
              */
             k_leg: "winner" | "middle" | "laggard";
+            local_index?: components["schemas"]["AsiaRadarLocalIndexResponse"] | null;
             /**
              * Market Coverage
              * @constant
@@ -2759,7 +2812,7 @@ export interface components {
              * Schema Version
              * @enum {string}
              */
-            schema_version: "1.0" | "1.1";
+            schema_version: "1.0" | "1.1" | "1.2";
             /**
              * Timezone
              * @constant

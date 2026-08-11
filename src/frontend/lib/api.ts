@@ -23,11 +23,16 @@ import type {
   HermesResultsQuery,
 } from "./hermes/resultsTypes";
 import type {
+  AsiaRadarLocalIndex,
   AsiaRadarMarket,
   AsiaRadarMarketSummary,
   AsiaRadarOverview,
   AsiaRadarSummary,
 } from "./asiaRadar";
+import type {
+  MarketCrossSectionResponse as MarketCrossSectionApiResponse,
+  MarketCrossSectionRow,
+} from "./marketCrossSection";
 
 export type AsiaRadarMetaResponse = AsiaRadarMarket["meta"];
 export type AsiaRadarReturnsResponse = AsiaRadarMarket["returns"];
@@ -38,6 +43,16 @@ export type AsiaRadarKShapePointResponse = AsiaRadarOverview["k_shape"]["series"
 export type AsiaRadarKShapeResponse = AsiaRadarOverview["k_shape"];
 export type AsiaRadarOverviewResponse = AsiaRadarOverview;
 export type AsiaRadarSummaryResponse = AsiaRadarSummary;
+export type AsiaRadarLocalIndexPointResponse = AsiaRadarLocalIndex["series"][number];
+export type AsiaRadarLocalIndexResponse = AsiaRadarLocalIndex;
+export type MarketCrossSectionMetaResponse = MarketCrossSectionRow["meta"];
+export type MarketCrossSectionReturnsResponse = MarketCrossSectionRow["returns"];
+export type MarketCrossSectionHistoryPointResponse = MarketCrossSectionRow["history"][number];
+export type MarketCrossSectionRowResponse = MarketCrossSectionRow;
+export type MarketCrossSectionBasketLabelResponse = NonNullable<
+  MarketCrossSectionApiResponse["basket_label"]
+>;
+export type MarketCrossSectionResponse = MarketCrossSectionApiResponse;
 
 export type SafetyFooter = {
   dry_run: boolean;

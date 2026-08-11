@@ -14,7 +14,10 @@ def main() -> None:
     output_dir = Path("data/_runtime/openapi-export")
     # create_app configures JSON logging to stdout; keep logs out of the schema stream.
     with redirect_stdout(io.StringIO()):
-        schema = create_app(output_dir=output_dir).openapi()
+        schema = create_app(
+            output_dir=output_dir,
+            bind_address="127.0.0.1",
+        ).openapi()
     json.dump(schema, sys.stdout, indent=2, sort_keys=True)
     sys.stdout.write("\n")
 
