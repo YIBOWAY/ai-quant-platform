@@ -56,6 +56,12 @@ Artifact、canary、预算和 order 都必须幂等。租约发放在锁定 Mand
 6. 容器 timeout/启动失败留下 `workspace/jobs/<job_id>/docker_failure.json`，记录 image、命令、
    return code、stdout/stderr 长度与 digest 以及精确容器清理结果，不保存可能含 secret 的原始日志。
 
+启用态 LaunchAgent 安装前必须通过 `hqa.d34_preflight/v1`。该 preflight 先观察正式
+`hqa.d34_effective_safety/v2` 并证明 live 仍关闭，再在同一个 pinned container 中真实验证
+versions、Qlib、LLM JSON、embedding、Futu socket 与 Docker child。成功 receipt 持久化到
+`data/_runtime/d34/preflight/latest.json`；它是基础设施 readiness，不会代替 Mandate，也不会
+创建研究、Artifact、sleeve 或订单。
+
 日亏 2% 或回撤 10% 时先 pause sleeve，再以版本 CAS 更新 canary。pause/demote/rollback 默认
 hold，不自动 flatten；held positions 继续估值。新 canary 先以 `paused/awaiting_registry`
 持久化，Registry 记录成功后才 resume，避免进程崩溃留下未登记但已可成交的 sleeve。
@@ -87,7 +93,7 @@ GET 和 mutation 都要求当前本地 owner session；mutation 还要求现有 
 开发只发生在主 checkout 或 purpose-named source worktree。runtime clone 只允许 fetch/ff-only。
 `QS_D34_WORKER_ENABLED=false` 是部署默认值：即使 LaunchAgent 安装，也不会读取 D-34 表、启动
 容器或创建订单。D-34 合回 main、030–032 获得正式 apply 授权并完成 runtime fast-forward 后，
-operator 才能显式启用。
+operator 才能显式启用；启用后的安装/重载还必须通过上述完整 preflight。
 
 D-33 继续监控已有 sleeve。D-34 rollback 会暂停当前 Mandate、取消仍 queued 的 job、释放其
 预算预留，并把 D-34 canary 变为 hold；不会删除 Artifact/receipt，也不会声称已经平仓。

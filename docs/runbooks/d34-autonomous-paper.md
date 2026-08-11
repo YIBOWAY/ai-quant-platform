@@ -5,7 +5,7 @@
 D-34 source 可以在不改正式数据库和 runtime 的情况下完成构建、测试与一次性 PostgreSQL
 验收。以下三件事彼此独立：
 
-1. source 合入 `main`；
+1. purpose worktree 完成验收并 fast-forward 合入 `main`；
 2. migration 030–032 经单独授权 apply 到正式库；
 3. owner runtime 设置 `QS_D34_WORKER_ENABLED=true` 并重启 stack。
 
@@ -40,6 +40,10 @@ LLM/embedding smoke 只从权限严格为 `0600` 的 owner-only 普通文件注�
 docker run --rm --env-file /absolute/owner-only/d34.env \
   hqa-d34-rdagent-qlib:0.1.0 llm-smoke
 ```
+
+可从 `docker/d34/.env.example` 复制变量名。启用入口会在启动容器前验证 chat/embedding
+模型均为显式非空值，并拒绝 `LITELLM_*_KEY|TOKEN|SECRET|PASSWORD`；provider secret 应继续使用
+LiteLLM 原生变量，例如 `OPENAI_API_KEY`。这些检查只读取变量名和是否为空，不输出 secret。
 
 镜像使用开放本机模式：root、bridge、Docker socket、source/workspace/cache 读写挂载。
 作业运行器只提供可配置超时、失败 receipt 和精确容器清理。失败凭证位于
@@ -96,6 +100,20 @@ QS_D34_ENV_FILE=/absolute/owner-only/d34.env
 配置；未配置时 container 会 fail closed，不能用 Hermes OAuth 配置或 sample response 冒充。
 `QS_D34_WORKER_PYTHON` 必须精确指向 Python 3.11；runner 会拒绝显式配置的其他 minor，自动
 发现时也只选择 3.11，避免 purpose worktree 验收使用 3.11、LaunchAgent 却落到旧 3.12 venv。
+
+启用态必须先运行完整 preflight：
+
+```bash
+bash scripts/run_d34_worker.sh --check
+```
+
+当 `QS_D34_WORKER_ENABLED=true` 时，`--check` 会读取正式 D-34 authority 与
+`live_execution_enabled=false`，并在同一个 pinned container 中真实执行 versions、Qlib
+backtest、LLM JSON mode、embedding、Futu socket 和 Docker child smoke。它会产生少量 provider
+调用成本，但不会创建 Mandate/job/Artifact/sleeve/order，也不会 apply migration。成功 receipt
+原子写入 `data/_runtime/d34/preflight/latest.json`（`0600`）；任一 seam 未通过都会以
+`runtime_preflight_failed` 阻止 LaunchAgent 安装或重载。worker disabled 时，`--check` 只验证
+Python/source import，不接触数据库、provider 或 Docker。
 
 然后从 Platform runtime 运行：
 
