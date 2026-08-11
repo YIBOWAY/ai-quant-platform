@@ -319,6 +319,61 @@ def test_maintenance_pauses_breached_sleeve_and_audits_before_state_change(
     )
 
 
+def test_d33_maintenance_ignores_d34_managed_sleeves(tmp_path, monkeypatch) -> None:
+    settings = _settings(monkeypatch, tmp_path)
+    api_runs = tmp_path / "api_runs"
+    account_storage = PaperAccountStorage(api_runs)
+    sleeve_storage = PaperStrategySleeveStorage(api_runs)
+    account = PaperAccount.open_new(initial_cash=1_000_000)
+    config = make_config()
+    sleeve_storage.save_strategy_config(config)
+    sleeve = PaperStrategySleeveService(sleeve_storage).create_sleeve(
+        account,
+        config=config,
+        mode=StrategySleeveMode.ALLOCATED,
+        allocated_cash=10_000,
+        metadata={
+            "automation_managed": True,
+            "automation_source": "d34",
+            "artifact_id": "artifact-d34-test",
+        },
+        sleeve_id="sleeve-d34-test",
+    )
+    sleeve_storage.save_sleeve(sleeve)
+    account_storage.save(account)
+
+    class Registry:
+        @staticmethod
+        def factor_ids():
+            return []
+
+    monkeypatch.setattr(
+        "quant_system.execution.factor_automation_activation.build_factor_registry",
+        lambda **_kwargs: Registry(),
+    )
+    current = account_storage.load()
+    assert current is not None
+
+    result = maintain_automatic_paper_sleeves(
+        settings,
+        valuation=AccountValuation(
+            account_id=current.account_id,
+            account_updated_at=current.updated_at,
+            nav=current.cash,
+            prices={},
+            price_metadata={},
+        ),
+        account_storage=account_storage,
+        sleeve_storage=sleeve_storage,
+        event_writer=lambda *_args: pytest.fail("D-33 must not audit a D-34 sleeve"),
+    )
+
+    assert result == {"checked": 0, "paused": 0, "quarantined": 0}
+    assert sleeve_storage.load_sleeve(sleeve.sleeve_id).status == (
+        StrategySleeveStatus.RUNNING
+    )
+
+
 def test_automatic_paper_cycle_materializes_one_next_open_plan_idempotently(
     tmp_path,
     monkeypatch,
@@ -337,8 +392,16 @@ def test_automatic_paper_cycle_materializes_one_next_open_plan_idempotently(
         config=config,
         mode=StrategySleeveMode.ALLOCATED,
         allocated_cash=10_000,
-        metadata={"automation_managed": True},
+        metadata={"automation_managed": True, "automation_source": "d33"},
         sleeve_id="sleeve-auto-0123456789abcdef",
+    )
+    d34 = service.create_sleeve(
+        account,
+        config=config,
+        mode=StrategySleeveMode.ALLOCATED,
+        allocated_cash=10_000,
+        metadata={"automation_managed": True, "automation_source": "d34"},
+        sleeve_id="sleeve-d34-0123456789abcdef",
     )
     manual = service.create_sleeve(
         account,
@@ -347,6 +410,7 @@ def test_automatic_paper_cycle_materializes_one_next_open_plan_idempotently(
         allocated_cash=10_000,
     )
     sleeve_storage.save_sleeve(automated)
+    sleeve_storage.save_sleeve(d34)
     sleeve_storage.save_sleeve(manual)
     account_storage.save(account)
     local_tz = ZoneInfo("Asia/Shanghai")
@@ -374,6 +438,7 @@ def test_automatic_paper_cycle_materializes_one_next_open_plan_idempotently(
     assert len(signals) == len(executions) == 1
     assert executions[0].signal_id == signals[0].signal_id
     assert executions[0].target_date == "2026-06-29"
+    assert sleeve_storage.load_signals(d34.sleeve_id) == []
     assert sleeve_storage.load_signals(manual.sleeve_id) == []
 
     executed = run_automatic_paper_cycle(

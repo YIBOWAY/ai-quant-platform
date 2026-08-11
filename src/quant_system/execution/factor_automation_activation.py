@@ -419,7 +419,10 @@ def maintain_automatic_paper_sleeves(
     day = date.today().isoformat()
 
     for observed in sleeve_storage.list_sleeves():
-        if observed.metadata.get("automation_managed") is not True:
+        if (
+            observed.metadata.get("automation_managed") is not True
+            or observed.metadata.get("automation_source") != "d33"
+        ):
             continue
         checked += 1
         lineage = _lineage_from_sleeve(observed)
@@ -545,6 +548,7 @@ def run_automatic_paper_cycle(
         sleeve
         for sleeve in sleeve_storage.list_sleeves()
         if sleeve.metadata.get("automation_managed") is True
+        and sleeve.metadata.get("automation_source") == "d33"
         and sleeve.status == StrategySleeveStatus.RUNNING
     ]
     runner = PaperStrategyOperationsRunner(
