@@ -61,6 +61,40 @@ def test_d34_install_assets_are_user_launchagent_only() -> None:
     assert "sudo" not in installer + uninstaller
 
 
+def test_hermes_oauth_proxy_is_a_persistent_project_launchagent() -> None:
+    runner = (ROOT / "scripts" / "run_hermes_oauth_proxy.sh").read_text(encoding="utf-8")
+    template = plistlib.loads(
+        (
+            ROOT
+            / "scripts"
+            / "launchd"
+            / "com.aiquant.hermes-oauth-proxy.plist.template"
+        )
+        .read_bytes()
+        .replace(b"__ROOT__", str(ROOT).encode("utf-8"))
+    )
+    stack = (ROOT / "scripts" / "local_mac_stack.sh").read_text(encoding="utf-8")
+
+    assert "/Users/sunyibo/.local/bin/hermes" in runner
+    assert "hermes proxy status" not in runner
+    assert '"$HERMES_BIN" proxy status' in runner
+    assert '"$HERMES_BIN" proxy start --provider xai --host 127.0.0.1 --port 8645' in runner
+    assert 'case "${1:-}" in' in runner
+    assert "--check" in runner
+    assert template["RunAtLoad"] is True
+    assert template["KeepAlive"] is True
+    assert template["ProcessType"] == "Background"
+    assert template["ProgramArguments"] == [
+        "/bin/bash",
+        str(ROOT / "scripts" / "run_hermes_oauth_proxy.sh"),
+    ]
+    assert 'bash "$ROOT/scripts/install_hermes_oauth_proxy_launchagent.sh"' in stack
+    assert "bootout_job com.aiquant.hermes-oauth-proxy" in stack
+    assert "print_job_status com.aiquant.hermes-oauth-proxy" in stack
+    assert "hermes_oauth_proxy_log=" in stack
+    assert "http://127.0.0.1:8645/v1/models" in stack
+
+
 def test_d34_runner_check_imports_release_without_using_an_agent_terminal(
     tmp_path: Path,
 ) -> None:

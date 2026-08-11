@@ -50,7 +50,7 @@ API，必须同时携带现有 owner session 与 CSRF header，且 body 中提�
 |---|---|
 | `d34_worker_disabled` | 这是 source/部署默认状态；只在正式 migration 与 runtime 就绪后显式启用。 |
 | `d34_env_file_required` | 创建 owner-only `0600` provider env，并由 `QS_D34_ENV_FILE` 指向它。 |
-| `d34_env_models_required` | 显式设置非空 `LITELLM_CHAT_MODEL` 与 `LITELLM_EMBEDDING_MODEL`。 |
+| `d34_env_models_required` | 显式设置非空 `LITELLM_CHAT_MODEL`。本地默认经 Hermes xAI OAuth 代理调用 Grok，不需要单独 embedding 服务。 |
 | `d34_env_logged_secret_forbidden` | 将 secret 从会被 RD-Agent 展开的 `LITELLM_*` setting 移到 provider 原生变量。 |
 | `runtime_preflight_failed` | 读取 preflight JSON 错误并修复 DB/live、LLM、Qlib、Futu 或 Docker seam；不得跳过后启用。 |
 | Mandate missing/paused/expired | 在工作台创建、恢复或续期 Mandate。 |

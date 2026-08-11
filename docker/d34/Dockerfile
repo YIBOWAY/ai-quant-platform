@@ -53,7 +53,7 @@ RUN curl --fail --location --retry 8 --retry-all-errors \
 # dependency set also installs JupyterLab, Streamlit, Selenium, AzureML and
 # other interactive/demo stacks that this bounded research path never imports.
 # Keep the real pinned upstream source, but install only the runtime packages
-# exercised by versions/LLM/embedding/Qlib data/backtest/Docker-child smokes.
+# exercised by versions/LLM JSON/Qlib data/backtest/Docker-child smokes.
 RUN python -m pip install --upgrade "pip==25.2" "setuptools==80.9.0" "wheel==0.45.1" \
     && python -m pip install \
        "setuptools-scm==9.2.2" \

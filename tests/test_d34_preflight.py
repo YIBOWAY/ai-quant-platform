@@ -88,8 +88,7 @@ def test_preflight_cli_emits_one_machine_readable_ready_receipt(
         root.mkdir()
     env_file = tmp_path / "d34.env"
     env_file.write_text(
-        "LITELLM_CHAT_MODEL=test-chat\n"
-        "LITELLM_EMBEDDING_MODEL=test-embedding\n",
+        "LITELLM_CHAT_MODEL=test-chat\n",
         encoding="utf-8",
     )
     env_file.chmod(0o600)
@@ -146,7 +145,7 @@ def test_preflight_cli_emits_a_stable_owner_env_blocker(
     for root in roots.values():
         root.mkdir()
     env_file = tmp_path / "d34.env"
-    env_file.write_text("LITELLM_CHAT_MODEL=test-chat\n", encoding="utf-8")
+    env_file.write_text("OPENAI_API_KEY=local-proxy\n", encoding="utf-8")
     env_file.chmod(0o600)
     monkeypatch.setenv("QS_D34_ENV_FILE", str(env_file))
 

@@ -58,7 +58,7 @@ Artifact、canary、预算和 order 都必须幂等。租约发放在锁定 Mand
 
 启用态 LaunchAgent 安装前必须通过 `hqa.d34_preflight/v1`。该 preflight 先观察正式
 `hqa.effective_paper_safety/v2` 并证明 live 仍关闭，再在同一个 pinned container 中真实验证
-versions、Qlib、LLM JSON、embedding、Futu socket 与 Docker child。成功 receipt 持久化到
+versions、Qlib、LLM JSON、Futu socket 与 Docker child。成功 receipt 持久化到
 `data/_runtime/d34/preflight/latest.json`；它是基础设施 readiness，不会代替 Mandate，也不会
 创建研究、Artifact、sleeve 或订单。
 

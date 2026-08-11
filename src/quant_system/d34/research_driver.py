@@ -178,7 +178,6 @@ ProposalProvider = Callable[
 ExperimentRunner = Callable[
     [D34ResearchRequest, ResearchProposal, str, Path], QlibExperimentResult
 ]
-EmbeddingProvider = Callable[[str], list[float]]
 CostProvider = Callable[[], float]
 
 
@@ -341,7 +340,6 @@ def execute_research_request(
     output_root: str | Path,
     proposal_provider: ProposalProvider,
     experiment_runner: ExperimentRunner,
-    embedding_provider: EmbeddingProvider,
     cost_provider: CostProvider,
 ) -> D34ResearchResult:
     root = Path(output_root)
@@ -414,15 +412,9 @@ def execute_research_request(
         target_digest = _file_digest(target_path)
         qlib_config = dict(selected.qlib_config)
         qlib_config_digest = _digest(qlib_config)
-        embedding = embedding_provider(
-            f"{selected_proposal.title}\n{selected_proposal.thesis}\n"
-            f"{selected_proposal.rationale}"
+        research_summary_digest = _digest(
+            selected_proposal.model_dump(mode="json")
         )
-        if not embedding or any(not math.isfinite(float(value)) for value in embedding):
-            raise D34ResearchError(
-                "d34_research_embedding_invalid", "RD-Agent embedding receipt is invalid"
-            )
-        embedding_digest = _digest([float(value) for value in embedding])
         budget_spent = float(cost_provider())
         if (
             not math.isfinite(budget_spent)
@@ -454,7 +446,7 @@ def execute_research_request(
             "qlib_config": qlib_config,
             "qlib_config_digest": qlib_config_digest,
             "selected_experiment": selected_id,
-            "research_embedding_digest": embedding_digest,
+            "research_summary_digest": research_summary_digest,
         }
         qlib_receipt_digest = _digest(receipt_body)
         qlib_receipt = {**receipt_body, "receipt_digest": qlib_receipt_digest}

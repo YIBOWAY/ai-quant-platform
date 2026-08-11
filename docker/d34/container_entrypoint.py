@@ -153,16 +153,14 @@ def llm_smoke() -> dict[str, object]:
     response = backend.build_messages_and_create_chat_completion(
         "Return ok=true and marker='d34-smoke'.",
         system_prompt="Respond only with the requested JSON object.",
-        response_format=JsonAnswer,
+        json_mode=True,
     )
     parsed = JsonAnswer.model_validate_json(response)
-    embedding = backend.create_embedding("D-34 embedding smoke")
-    if parsed.ok is not True or parsed.marker != "d34-smoke" or not embedding:
-        raise RuntimeError("RD-Agent LLM or embedding smoke failed")
+    if parsed.ok is not True or parsed.marker != "d34-smoke":
+        raise RuntimeError("RD-Agent LLM JSON smoke failed")
     return {
         "contract": "hqa.d34_llm_smoke/v1",
         "json_mode": True,
-        "embedding_dimensions": len(embedding),
     }
 
 

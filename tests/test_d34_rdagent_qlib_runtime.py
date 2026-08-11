@@ -10,7 +10,7 @@ from quant_system.d34.rdagent_qlib_runtime import (
     RDAgentProposalProvider,
     shifted_target_weights,
 )
-from quant_system.d34.research_driver import D34ResearchRequest, ResearchProposal
+from quant_system.d34.research_driver import D34ResearchRequest
 
 
 def test_rdagent_proposal_uses_structured_json_and_prior_receipts(tmp_path) -> None:
@@ -40,11 +40,13 @@ def test_rdagent_proposal_uses_structured_json_and_prior_receipts(tmp_path) -> N
 
     class Backend:
         prompt = ""
-        response_format = None
+        json_mode = False
+        response_format_present = False
 
         def build_messages_and_create_chat_completion(self, prompt, **kwargs):
             self.prompt = prompt
-            self.response_format = kwargs["response_format"]
+            self.json_mode = kwargs["json_mode"]
+            self.response_format_present = "response_format" in kwargs
             return json.dumps(
                 {
                     "title": "Five day momentum",
@@ -71,7 +73,8 @@ def test_rdagent_proposal_uses_structured_json_and_prior_receipts(tmp_path) -> N
     )
 
     assert proposal.operator == "momentum"
-    assert backend.response_format is ResearchProposal
+    assert backend.json_mode is True
+    assert backend.response_format_present is False
     assert "iteration-01-experiment-01" in backend.prompt
     assert "Do not output Python code" in backend.prompt
 

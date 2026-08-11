@@ -68,7 +68,7 @@ def _existing_env_file(repo: Path) -> Path:
         lines = candidate.read_text(encoding="utf-8").splitlines()
     except (OSError, UnicodeError) as exc:
         raise D34EnvConfigError("d34_env_file_unreadable") from exc
-    required_models = {"LITELLM_CHAT_MODEL", "LITELLM_EMBEDDING_MODEL"}
+    required_models = {"LITELLM_CHAT_MODEL"}
     configured_models: set[str] = set()
     configured_names: set[str] = set()
     for line in lines:

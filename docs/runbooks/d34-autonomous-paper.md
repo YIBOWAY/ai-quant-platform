@@ -30,10 +30,10 @@ docker run --rm \
   hqa-d34-rdagent-qlib:0.1.0 docker-smoke
 ```
 
-LLM/embedding smoke 只从权限严格为 `0600` 的 owner-only 普通文件注入真实配置；symlink、
+LLM JSON smoke 只从权限严格为 `0600` 的 owner-only 普通文件注入真实配置；symlink、
 目录、组/其他用户可读写的文件都会 fail closed。不要把 secret 放进
 命令或 Git。secret 使用 LiteLLM 原生 provider 变量（例如 `OPENAI_API_KEY`），模型选择使用
-`LITELLM_CHAT_MODEL` / `LITELLM_EMBEDDING_MODEL`；不要把 secret 写入 RD-Agent 的
+`LITELLM_CHAT_MODEL`；不要把 secret 写入 RD-Agent 的
 `LITELLM_*_API_KEY` 设置，因为 pinned 上游初始化日志会展开这些设置。
 
 ```bash
@@ -41,9 +41,11 @@ docker run --rm --env-file /absolute/owner-only/d34.env \
   hqa-d34-rdagent-qlib:0.1.0 llm-smoke
 ```
 
-可从 `docker/d34/.env.example` 复制变量名。启用入口会在启动容器前验证 chat/embedding
-模型均为显式非空值，并拒绝 `LITELLM_*_KEY|TOKEN|SECRET|PASSWORD`；provider secret 应继续使用
-LiteLLM 原生变量，例如 `OPENAI_API_KEY`。这些检查只读取变量名和是否为空，不输出 secret。
+可从 `docker/d34/.env.example` 复制变量名。本地默认由常驻 Hermes xAI OAuth 代理把
+`grok-4.5` 以 OpenAI-compatible 协议提供给容器；当前研究链不依赖单独 embedding
+服务。启用入口会在启动容器前验证 chat 模型为显式非空值，并拒绝
+`LITELLM_*_KEY|TOKEN|SECRET|PASSWORD`；provider secret 应继续使用 LiteLLM 原生变量，
+例如 `OPENAI_API_KEY`。这些检查只读取变量名和是否为空，不输出 secret。
 
 镜像使用开放本机模式：root、bridge、Docker socket、source/workspace/cache 读写挂载。
 作业运行器只提供可配置超时、失败 receipt 和精确容器清理。失败凭证位于
@@ -96,8 +98,8 @@ QS_D34_HQA_ROOT=/absolute/runtime/Hermes-quant-agent
 QS_D34_ENV_FILE=/absolute/owner-only/d34.env
 ```
 
-`QS_D34_ENV_FILE` 是 worker 传给每个 research container 的同一份 `0600` LLM/embedding
-配置；未配置时 container 会 fail closed，不能用 Hermes OAuth 配置或 sample response 冒充。
+`QS_D34_ENV_FILE` 是 worker 传给每个 research container 的同一份 `0600` LLM
+配置。默认配置指向宿主机 Hermes xAI OAuth 代理，不需要复制 OAuth token 进容器。
 `QS_D34_WORKER_PYTHON` 必须精确指向 Python 3.11；runner 会拒绝显式配置的其他 minor，自动
 发现时也只选择 3.11，避免 purpose worktree 验收使用 3.11、LaunchAgent 却落到旧 3.12 venv。
 
@@ -109,7 +111,7 @@ bash scripts/run_d34_worker.sh --check
 
 当 `QS_D34_WORKER_ENABLED=true` 时，`--check` 会读取正式 D-34 authority 与
 `live_execution_enabled=false`，并在同一个 pinned container 中真实执行 versions、Qlib
-backtest、LLM JSON mode、embedding、Futu socket 和 Docker child smoke。它会产生少量 provider
+backtest、LLM JSON mode、Futu socket 和 Docker child smoke。它会产生少量 provider
 调用成本，但不会创建 Mandate/job/Artifact/sleeve/order，也不会 apply migration。成功 receipt
 原子写入 `data/_runtime/d34/preflight/latest.json`（`0600`）；任一 seam 未通过都会以
 `runtime_preflight_failed` 阻止 LaunchAgent 安装或重载。worker disabled 时，`--check` 只验证

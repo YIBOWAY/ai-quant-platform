@@ -217,7 +217,7 @@ def test_runtime_rejects_non_owner_only_provider_env(
         runtime.run(job_id="job-123", command=("versions",))
 
 
-def test_worker_requires_explicit_owner_only_provider_env(
+def test_worker_requires_only_explicit_owner_only_chat_provider_env(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = tmp_path / "platform"
@@ -229,8 +229,7 @@ def test_worker_requires_explicit_owner_only_provider_env(
         _existing_env_file(repo)
 
     configured.write_text(
-        "LITELLM_CHAT_MODEL=test-chat\n"
-        "LITELLM_EMBEDDING_MODEL=test-embedding\n",
+        "LITELLM_CHAT_MODEL=test-chat\n",
         encoding="utf-8",
     )
     configured.chmod(0o600)
@@ -238,14 +237,14 @@ def test_worker_requires_explicit_owner_only_provider_env(
     assert _existing_env_file(repo) == configured.resolve()
 
 
-def test_worker_rejects_owner_env_without_explicit_chat_and_embedding_models(
+def test_worker_rejects_owner_env_without_explicit_chat_model(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = tmp_path / "platform"
     repo.mkdir()
     configured = tmp_path / "owner-d34.env"
     configured.write_text(
-        "LITELLM_CHAT_MODEL=test-chat\nOPENAI_API_KEY=not-a-real-secret\n",
+        "OPENAI_API_KEY=not-a-real-secret\n",
         encoding="utf-8",
     )
     configured.chmod(0o600)
@@ -263,7 +262,6 @@ def test_worker_rejects_secrets_in_rdagent_logged_litellm_settings(
     configured = tmp_path / "owner-d34.env"
     configured.write_text(
         "LITELLM_CHAT_MODEL=test-chat\n"
-        "LITELLM_EMBEDDING_MODEL=test-embedding\n"
         "LITELLM_CHAT_OPENAI_API_KEY=must-not-reach-logs\n",
         encoding="utf-8",
     )
@@ -278,9 +276,8 @@ def test_owner_env_template_uses_pinned_rdagent_litellm_model_names() -> None:
     template = Path("docker/d34/.env.example").read_text(encoding="utf-8")
 
     assert "LITELLM_CHAT_MODEL=" in template
-    assert "LITELLM_EMBEDDING_MODEL=" in template
+    assert "LITELLM_EMBEDDING_MODEL=" not in template
     assert "\nCHAT_MODEL=" not in template
-    assert "\nEMBEDDING_MODEL=" not in template
     assert "OPENAI_API_KEY=" in template
     assert "OPENAI_API_BASE=" in template
     assert "LITELLM_MAX_RETRY=3" in template
@@ -291,6 +288,13 @@ def test_owner_env_template_uses_pinned_rdagent_litellm_model_names() -> None:
     assert "\nMAX_RETRY=" not in template
     assert "\nRETRY_WAIT_SECONDS=" not in template
     assert "\nLOG_LLM_CHAT_CONTENT=" not in template
+
+
+def test_llm_smoke_uses_rdagent_portable_json_mode() -> None:
+    entrypoint = Path("docker/d34/container_entrypoint.py").read_text(encoding="utf-8")
+
+    assert "json_mode=True" in entrypoint
+    assert "response_format=JsonAnswer" not in entrypoint
 
 
 def test_dockerfile_pins_exact_upstream_tarball_bytes() -> None:

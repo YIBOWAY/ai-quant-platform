@@ -63,7 +63,7 @@ Qlib syntax, trading orders, or any live-trading instruction.
                 "Propose bounded, falsifiable paper-research hypotheses. "
                 "Respond only with the requested JSON schema."
             ),
-            response_format=ResearchProposal,
+            json_mode=True,
             chat_cache_prefix=f"d34:{request.job_id}:{iteration}:{experiment}:",
         )
         return ResearchProposal.model_validate_json(response)
@@ -309,20 +309,11 @@ def run_container_research(
     backend = APIBackend()
     meter = RDAgentCostMeter(request.budget_reservation_usd)
 
-    def embed(text: str) -> list[float]:
-        value = backend.create_embedding(text)
-        if not isinstance(value, list) or (value and isinstance(value[0], list)):
-            raise D34ResearchError(
-                "d34_research_embedding_invalid", "RD-Agent returned an invalid embedding"
-            )
-        return [float(item) for item in value]
-
     result = execute_research_request(
         request,
         output_root=output_root,
         proposal_provider=RDAgentProposalProvider(backend),
         experiment_runner=QlibExperimentRunner(),
-        embedding_provider=embed,
         cost_provider=meter.spent,
     )
     return {

@@ -155,6 +155,10 @@ install_platform_jobs() {
   bash "$ROOT/scripts/install_asia_radar_refresh_launchagent.sh"
 }
 
+install_hermes_oauth_proxy() {
+  bash "$ROOT/scripts/install_hermes_oauth_proxy_launchagent.sh"
+}
+
 ensure_hermes_job() {
   local attempt_no bootstrap_attempt bootstrap_output bootstrap_status old_pid
   local stable_free_count=0
@@ -223,11 +227,27 @@ wait_for_url() {
   fail "${name}_not_ready"
 }
 
+wait_for_hermes_oauth_proxy() {
+  local attempt_no
+  for attempt_no in {1..30}; do
+    if "$CURL_BIN" --fail --silent --max-time 3 \
+      --header "Authorization: Bearer local-d34-proxy" \
+      "http://127.0.0.1:8645/v1/models" >/dev/null 2>&1; then
+      echo "hermes_oauth_proxy_ready=true url=http://127.0.0.1:8645/v1/models"
+      return 0
+    fi
+    sleep 1
+  done
+  fail "hermes_oauth_proxy_not_ready"
+}
+
 start_stack() {
   start_database
   build_stack
   configure_hermes_proxy_environment
   ensure_hermes_job
+  install_hermes_oauth_proxy
+  wait_for_hermes_oauth_proxy
   install_platform_jobs
   wait_for_url "hermes_ready" "http://127.0.0.1:8642/health"
   wait_for_url "backend_ready" "http://127.0.0.1:8765/api/health"
@@ -244,6 +264,7 @@ bootout_job() {
 stop_stack() {
   bootout_job com.aiquant.asia-radar-refresh
   bootout_job com.aiquant.d34-worker
+  bootout_job com.aiquant.hermes-oauth-proxy
   bootout_job com.aiquant.factor-automation
   bootout_job com.aiquant.agent-v02-connector
   bootout_job com.aiquant.frontend
@@ -279,12 +300,20 @@ status_stack() {
     echo "docker_ready=false"
   fi
   print_job_status ai.hermes.gateway
+  print_job_status com.aiquant.hermes-oauth-proxy
   print_job_status com.aiquant.backend
   print_job_status com.aiquant.frontend
   print_job_status com.aiquant.agent-v02-connector
   print_job_status com.aiquant.factor-automation
   print_job_status com.aiquant.d34-worker
   print_job_status com.aiquant.asia-radar-refresh
+  if "$CURL_BIN" --fail --silent --max-time 2 \
+    --header "Authorization: Bearer local-d34-proxy" \
+    "http://127.0.0.1:8645/v1/models" >/dev/null; then
+    echo "endpoint=hermes_oauth_proxy ready=true url=http://127.0.0.1:8645/v1/models"
+  else
+    echo "endpoint=hermes_oauth_proxy ready=false url=http://127.0.0.1:8645/v1/models"
+  fi
   for endpoint in \
     "hermes=http://127.0.0.1:8642/health" \
     "backend=http://127.0.0.1:8765/api/health" \
@@ -302,6 +331,8 @@ status_stack() {
 show_logs() {
   echo "hermes_log=$HOME/.hermes/logs/gateway.log"
   echo "hermes_error_log=$HOME/.hermes/logs/gateway.error.log"
+  echo "hermes_oauth_proxy_log=$ROOT/data/_runtime/logs/hermes-oauth-proxy.launchd.out.log"
+  echo "hermes_oauth_proxy_error_log=$ROOT/data/_runtime/logs/hermes-oauth-proxy.launchd.err.log"
   echo "backend_log=$ROOT/data/_runtime/logs/backend-api.launchd.log"
   echo "frontend_log=$ROOT/data/_runtime/logs/frontend-next.launchd.log"
   echo "connector_log=$ROOT/data/_runtime/logs/agent-v02-connector.launchd.out.log"
@@ -318,7 +349,7 @@ Commands:
   start    Start Docker/PostgreSQL, run the production build, install/restart LaunchAgents, and wait for readiness.
   restart  Same as start; all long-running services are replaced by launchd.
   build    Validate the Python backend and run the Next.js production build.
-  stop     Unload all seven LaunchAgents and stop the project PostgreSQL container.
+  stop     Unload all eight LaunchAgents and stop the project PostgreSQL container.
   status   Show Docker, launchd, and HTTP readiness without changing state.
   logs     Print the stable log paths.
 EOF

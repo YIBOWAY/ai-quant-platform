@@ -165,7 +165,6 @@ def test_research_loop_iterates_selects_best_and_is_idempotent(tmp_path: Path) -
         output_root=output_root,
         proposal_provider=propose,
         experiment_runner=run_experiment,
-        embedding_provider=lambda text: [float(len(text)), 1.0],
         cost_provider=lambda: 1.25,
     )
 
@@ -185,14 +184,13 @@ def test_research_loop_iterates_selects_best_and_is_idempotent(tmp_path: Path) -
     assert receipt["engine"] == "qlib"
     assert receipt["snapshot_digest"] == request.snapshot_digest
     assert receipt["target_weights_digest"] == result.target_weights_digest
-    assert receipt["research_embedding_digest"]
+    assert receipt["research_summary_digest"]
 
     replay = execute_research_request(
         request,
         output_root=output_root,
         proposal_provider=lambda *_args: pytest.fail("idempotent replay called LLM"),
         experiment_runner=lambda *_args: pytest.fail("idempotent replay reran Qlib"),
-        embedding_provider=lambda _text: pytest.fail("idempotent replay called embedding"),
         cost_provider=lambda: 99,
     )
     assert replay == result
