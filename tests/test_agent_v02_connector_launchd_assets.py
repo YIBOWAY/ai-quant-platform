@@ -84,6 +84,7 @@ def _write_eio_launchctl(
     launchctl.write_text(
         "#!/usr/bin/env bash\n"
         f'printf "%s\\n" "$*" >> "{launchctl_log}"\n'
+        '[[ "${1:-}" == "print" ]] && exit 1\n'
         '[[ "${1:-}" == "bootstrap" ]] || exit 0\n'
         "attempt=0\n"
         f'[[ ! -f "{state_file}" ]] || attempt="$(cat "{state_file}")"\n'
@@ -93,6 +94,29 @@ def _write_eio_launchctl(
         '  echo "Bootstrap failed: 5: Input/output error" >&2\n'
         "  exit 5\n"
         "fi\n",
+        encoding="utf-8",
+    )
+    launchctl.chmod(0o700)
+    return launchctl, launchctl_log
+
+
+def _write_loaded_eio_launchctl(tmp_path: Path) -> tuple[Path, Path]:
+    launchctl_log = tmp_path / "launchctl.log"
+    loaded = tmp_path / "launchctl-loaded"
+    launchctl = tmp_path / "launchctl"
+    launchctl.write_text(
+        "#!/usr/bin/env bash\n"
+        f'printf "%s\\n" "$*" >> "{launchctl_log}"\n'
+        'if [[ "${1:-}" == "bootstrap" ]]; then\n'
+        f'  : > "{loaded}"\n'
+        '  echo "Bootstrap failed: 5: Input/output error" >&2\n'
+        "  exit 5\n"
+        "fi\n"
+        'if [[ "${1:-}" == "print" ]]; then\n'
+        f'  [[ -f "{loaded}" ]]\n'
+        "  exit $?\n"
+        "fi\n"
+        "exit 0\n",
         encoding="utf-8",
     )
     launchctl.chmod(0o700)
@@ -407,6 +431,43 @@ def test_connector_installer_retries_transient_launchctl_bootstrap_eio(
     assert calls.count("bootout ") == 1
     assert calls.count("bootstrap ") == 2
     assert result.stderr.count("launchctl_bootstrap_eio") == 1
+
+
+def test_connector_installer_accepts_eio_when_launchd_loaded_the_job(
+    tmp_path: Path,
+) -> None:
+    release_root, _, installer = _copy_connector_assets(tmp_path)
+    env_file = _write_connector_env(release_root)
+    python = _write_fake_python(tmp_path / "python", tmp_path / "python.log")
+    launchctl, launchctl_log = _write_loaded_eio_launchctl(tmp_path)
+    plutil = tmp_path / "plutil"
+    plutil.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    plutil.chmod(0o700)
+    home = tmp_path / "home"
+    home.mkdir()
+
+    result = subprocess.run(
+        [str(installer)],
+        cwd=release_root,
+        env={
+            **os.environ,
+            "HOME": str(home),
+            "QS_AGENT_V02_CONNECTOR_ENV_FILE": str(env_file),
+            "QS_AGENT_V02_CONNECTOR_PYTHON": str(python),
+            "QS_LAUNCHCTL_BIN": str(launchctl),
+            "QS_PLUTIL_BIN": str(plutil),
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    calls = launchctl_log.read_text(encoding="utf-8")
+    assert calls.count("bootout ") == 1
+    assert calls.count("bootstrap ") == 1
+    assert calls.count("print ") == 1
+    assert "launchctl_bootstrap_eio" not in result.stderr
 
 
 def test_connector_installer_exhausts_bounded_eio_retries_and_fails(

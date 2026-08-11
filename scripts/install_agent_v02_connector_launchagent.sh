@@ -78,6 +78,13 @@ bootstrap_launchagent() {
       status=$?
     fi
 
+    # launchctl may return EIO after it has already registered this exact job.
+    # A second bootstrap then conflicts with the loaded generation and can make
+    # the enclosing stack startup stop before later scheduled jobs are installed.
+    if "$LAUNCHCTL" print "$DOMAIN/$LABEL" >/dev/null 2>&1; then
+      return 0
+    fi
+
     if [[ "$output" != *"Input/output error"* \
       && "$output" != *"input/output error"* \
       && "$output" != *"EIO"* \
