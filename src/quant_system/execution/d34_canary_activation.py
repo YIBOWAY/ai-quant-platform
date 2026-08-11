@@ -141,6 +141,7 @@ def activate_d34_paper_canary(
 ) -> tuple[StrategySleeve, object]:
     """Create the file/account sleeve once, then converge the DB canary."""
     lookback = _validate(request)
+    nav = Decimal(str(request.nav))
     config_id, sleeve_id = _ids(request.artifact.artifact_id)
     expected_config = _expected_config(
         request,
@@ -222,7 +223,7 @@ def activate_d34_paper_canary(
         ProvisionCanaryCommand(
             artifact_id=request.artifact.artifact_id,
             sleeve_id=sleeve.sleeve_id,
-            nav=request.nav,
+            nav=nav,
             allocated_cash=Decimal(str(sleeve.initial_allocated_cash)),
             workspace_id=request.artifact.workspace_id,
         )

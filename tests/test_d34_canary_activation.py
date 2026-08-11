@@ -96,7 +96,7 @@ def test_artifact_activates_one_real_digest_bound_paper_sleeve_idempotently(
         artifact_code_path=code_path,
         universe=("SPY", "QQQ", "IWM", "DIA"),
         provider="futu",
-        nav=Decimal("100000"),
+        nav=100_000.0,  # type: ignore[arg-type] - account.equity returns float at runtime
         account_updated_at=account.updated_at,
         prices={},
         price_metadata={},
@@ -174,3 +174,5 @@ def test_artifact_activates_one_real_digest_bound_paper_sleeve_idempotently(
     assert len(sleeve_storage.list_sleeves()) == 1
     assert account_storage.load().sleeve_cash[first.sleeve_id] == 1000  # type: ignore[union-attr]
     assert registry.commands[0].allocated_cash == Decimal("1000.0")
+    assert isinstance(registry.commands[0].nav, Decimal)
+    assert registry.commands[0].nav == Decimal("100000.0")
