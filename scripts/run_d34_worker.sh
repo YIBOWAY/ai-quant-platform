@@ -95,6 +95,13 @@ case "${QS_DATABASE_AUTO_MIGRATE:-false}" in
     fail "database_auto_migrate_forbidden"
     ;;
 esac
+case "$D34_WORKER_ENABLED" in
+  true | false)
+    ;;
+  *)
+    fail "d34_worker_enabled_must_be_true_or_false"
+    ;;
+esac
 
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
@@ -102,8 +109,23 @@ export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 case "${1:-}" in
   --check)
     [[ "$#" -eq 1 ]] || fail "unexpected_arguments"
-    "$PYTHON" -c "from quant_system.d34.cli import build_local_worker" >/dev/null ||
-      fail "release_runtime_import_failed"
+    if [[ "$D34_WORKER_ENABLED" == "true" ]]; then
+      umask 077
+      install -d -m 700 "$ROOT/data/_runtime/d34" "$ROOT/data/_runtime/d34/cache"
+      preflight_output="$(
+        "$PYTHON" -m quant_system.cli d34 preflight \
+          --platform-root "$ROOT" \
+          --hqa-root "$HQA_ROOT" \
+          --workspace-root "$ROOT/data/_runtime/d34" \
+          --cache-root "$ROOT/data/_runtime/d34/cache"
+      )" || {
+        [[ -z "$preflight_output" ]] || printf '%s\n' "$preflight_output" >&2
+        fail "runtime_preflight_failed"
+      }
+    else
+      "$PYTHON" -c "from quant_system.d34.cli import build_local_worker" >/dev/null ||
+        fail "release_runtime_import_failed"
+    fi
     printf 'd34_worker_ready=true enabled=%s release_root=%s python=%s hqa_root=%s\n' \
       "$D34_WORKER_ENABLED" "$ROOT" "$PYTHON" "$HQA_ROOT"
     exit 0
@@ -115,17 +137,10 @@ case "${1:-}" in
     ;;
 esac
 
-case "$D34_WORKER_ENABLED" in
-  true)
-    ;;
-  false)
-    printf 'state=disabled code=d34_worker_disabled\n'
-    exit 0
-    ;;
-  *)
-    fail "d34_worker_enabled_must_be_true_or_false"
-    ;;
-esac
+if [[ "$D34_WORKER_ENABLED" == "false" ]]; then
+  printf 'state=disabled code=d34_worker_disabled\n'
+  exit 0
+fi
 
 umask 077
 install -d -m 700 "$ROOT/data/_runtime/d34" "$ROOT/data/_runtime/d34/cache"

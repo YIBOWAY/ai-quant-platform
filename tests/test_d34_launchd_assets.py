@@ -158,3 +158,49 @@ def test_d34_runner_rejects_an_explicit_non_pinned_python(tmp_path: Path) -> Non
     assert completed.returncode == 78
     assert completed.stdout == ""
     assert completed.stderr.strip() == "d34_worker_config_error=python_must_be_3_11"
+
+
+def test_enabled_d34_runner_check_requires_full_runtime_preflight(tmp_path: Path) -> None:
+    env_file = tmp_path / "backend.env"
+    env_file.write_text(
+        "QS_DATABASE_AUTO_MIGRATE=false\nQS_D34_WORKER_ENABLED=true\n",
+        encoding="utf-8",
+    )
+    env_file.chmod(0o600)
+    hqa_root = tmp_path / "hqa-root"
+    (hqa_root / "hqa").mkdir(parents=True)
+    marker = tmp_path / "python-call.txt"
+    fake_python = tmp_path / "python-3.11"
+    fake_python.write_text(
+        "#!/bin/sh\n"
+        "if [ \"$1\" = \"-I\" ]; then exit 0; fi\n"
+        "case \"$*\" in\n"
+        "  *\"d34 preflight\"*) printf 'preflight\\n' > \"$D34_TEST_MARKER\"; exit 19 ;;\n"
+        "  *\"worker-once\"*) printf 'worker\\n' > \"$D34_TEST_MARKER\"; exit 0 ;;\n"
+        "esac\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    fake_python.chmod(0o700)
+
+    completed = subprocess.run(
+        [str(ROOT / "scripts" / "run_d34_worker.sh"), "--check"],
+        cwd=ROOT,
+        env={
+            **os.environ,
+            "D34_TEST_MARKER": str(marker),
+            "QS_AGENT_V02_BACKEND_ENV_FILE": str(env_file),
+            "QS_D34_HQA_ROOT": str(hqa_root),
+            "QS_D34_WORKER_PYTHON": str(fake_python),
+            "QS_MAIN_REPO_ROOT": str(ROOT),
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=10,
+    )
+
+    assert completed.returncode == 78
+    assert completed.stdout == ""
+    assert completed.stderr.strip() == "d34_worker_config_error=runtime_preflight_failed"
+    assert marker.read_text(encoding="utf-8") == "preflight\n"

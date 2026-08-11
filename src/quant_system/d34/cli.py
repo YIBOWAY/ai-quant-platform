@@ -15,6 +15,7 @@ from quant_system.config.settings import load_settings
 from quant_system.d34.docker_runtime import D34DockerConfig, D34DockerRuntime
 from quant_system.d34.paper_cycle import run_d34_paper_cycle
 from quant_system.d34.platform_replay import run_platform_replay
+from quant_system.d34.preflight import run_d34_preflight
 from quant_system.d34.worker import D34CycleWorker, D34WorkerConfig
 from quant_system.data.provider_factory import build_ohlcv_provider
 from quant_system.execution.account_repository_factory import (
@@ -181,6 +182,70 @@ def build_local_worker(
         safety_observer=lambda: D34SafetyAuthority(settings).observe(workspace_id=workspace_id),
         canary_operator=operate_canaries,
     )
+
+
+@d34_app.command("preflight")
+def preflight(
+    platform_root: Annotated[
+        Path,
+        typer.Option("--platform-root", help="Platform source checkout mount."),
+    ] = _DEFAULT_PLATFORM_ROOT,
+    hqa_root: Annotated[
+        Path,
+        typer.Option("--hqa-root", help="HQA source checkout mount."),
+    ] = _DEFAULT_HQA_ROOT,
+    workspace_root: Annotated[
+        Path | None,
+        typer.Option("--workspace-root", help="Durable D-34 data and receipt root."),
+    ] = None,
+    cache_root: Annotated[
+        Path | None,
+        typer.Option("--cache-root", help="Durable RD-Agent/Qlib cache root."),
+    ] = None,
+    image_ref: Annotated[
+        str,
+        typer.Option("--image-ref", help="Pinned local D-34 image reference."),
+    ] = os.environ.get("D34_IMAGE_REF", "hqa-d34-rdagent-qlib:0.1.0"),
+    workspace_id: Annotated[str, typer.Option("--workspace-id")] = "default",
+) -> None:
+    """Prove schema, live isolation, LLM, Qlib, Futu and Docker readiness."""
+
+    settings = load_settings()
+    workspace = (workspace_root or settings.data.data_dir / "d34").resolve()
+    cache = (cache_root or workspace / "cache").resolve()
+    try:
+        runtime = D34DockerRuntime(
+            D34DockerConfig(
+                image_ref=image_ref,
+                workspace_root=workspace,
+                platform_root=platform_root.resolve(),
+                hqa_root=hqa_root.resolve(),
+                cache_root=cache,
+                env_file=_existing_env_file(platform_root.resolve()),
+                timeout_seconds=7200,
+            )
+        )
+        receipt = run_d34_preflight(
+            workspace_root=workspace,
+            docker_runtime=runtime,
+            safety_observer=lambda: D34SafetyAuthority(settings).observe(
+                workspace_id=workspace_id
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001 - CLI boundary
+        typer.echo(
+            json.dumps(
+                {
+                    "contract": "hqa.d34_preflight/v1",
+                    "ready": False,
+                    "code": str(getattr(exc, "code", type(exc).__name__)),
+                    "message": str(exc),
+                },
+                sort_keys=True,
+            )
+        )
+        raise typer.Exit(code=1) from exc
+    typer.echo(json.dumps(receipt.to_public_dict(), sort_keys=True))
 
 
 @d34_app.command("worker-once")
