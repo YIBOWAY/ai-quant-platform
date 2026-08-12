@@ -287,9 +287,14 @@ class D34FinalAcceptanceAuditor:
                     WHERE artifacts.owner_user_id = %s
                       AND artifacts.workspace_id = %s
                       AND (
-                        decisions.subject_kind <> 'artifact'
+                        decisions.owner_user_id <> artifacts.owner_user_id
+                        OR decisions.workspace_id <> artifacts.workspace_id
+                        OR decisions.mandate_id <> artifacts.mandate_id
+                        OR decisions.subject_kind <> 'artifact'
                         OR decisions.subject_id <> artifacts.artifact_id
                         OR decisions.outcome <> 'accepted'
+                        OR decisions.policy_digest <> artifacts.policy_digest
+                        OR decisions.input_digest <> artifacts.comparison_digest
                       )
                     """,
                     params,
