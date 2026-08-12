@@ -374,6 +374,59 @@ def test_cycle_waits_for_post_close_window_before_snapshot_or_research(
     assert docker.commands == []
 
 
+def test_cycle_uses_shanghai_date_when_research_window_crosses_utc_day(
+    tmp_path: Path,
+) -> None:
+    roots = [tmp_path / name for name in ("workspace", "platform", "hqa", "cache")]
+    for path in roots:
+        path.mkdir()
+    mandate = SimpleNamespace(
+        mandate_id="mandate-cycle-12345678",
+        workspace_id="default",
+        status="active",
+        universe=("SPY", "QQQ", "IWM", "DIA"),
+        hypotheses_per_cycle=1,
+        max_iterations=2,
+        max_experiments_per_iteration=2,
+        max_concurrent_jobs=1,
+        llm_budget_usd=Decimal("100"),
+        paper_execution_allowed=True,
+        policy_digest="5" * 64,
+        expires_at=datetime(2026, 9, 1, tzinfo=UTC),
+    )
+
+    class SchedulingOnlyJobs(Jobs):
+        def lease_next(self, *, workspace_id, worker_id, lease_seconds):
+            return None
+
+    jobs = SchedulingOnlyJobs()
+    worker = D34CycleWorker(
+        config=D34WorkerConfig(
+            workspace_root=roots[0],
+            platform_root=roots[1],
+            hqa_root=roots[2],
+            cache_root=roots[3],
+        ),
+        mandates=SimpleNamespace(get_active=lambda **_kwargs: mandate),
+        jobs=jobs,
+        registry=Registry(),
+        docker_runtime=Docker(roots[0]),
+        futu_provider=Futu(),
+        platform_replay=lambda **_kwargs: pytest.fail("idle cycle replayed"),
+        canary_activator=lambda **_kwargs: pytest.fail("idle cycle activated canary"),
+        safety_observer=lambda: _open_safety(mandate),
+        canary_operator=lambda _safety: {"sleeves_checked": 0},
+        now=lambda: datetime(2026, 8, 12, 22, 30, tzinfo=UTC),
+    )
+
+    result = worker.run_once()
+
+    assert result.status == "idle"
+    assert result.code == "no_queued_job"
+    assert [job.job_key for job in jobs.items] == ["cycle:2026-08-13:hypothesis:1"]
+    assert jobs.input.input_document["cycle_date"] == "2026-08-13"
+
+
 def test_cycle_records_futu_unavailable_without_enqueuing_research(tmp_path: Path) -> None:
     roots = [tmp_path / name for name in ("workspace", "platform", "hqa", "cache")]
     for path in roots:

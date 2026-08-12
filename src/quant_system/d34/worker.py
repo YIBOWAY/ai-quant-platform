@@ -111,7 +111,7 @@ class D34CycleWorker:
         canary_activator: Callable[..., object],
         safety_observer: Callable[[], Mapping[str, object]] | None = None,
         canary_operator: Callable[[Mapping[str, object]], object] | None = None,
-        today: Callable[[], date] = date.today,
+        today: Callable[[], date] | None = None,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self.config = config
@@ -131,8 +131,8 @@ class D34CycleWorker:
             }
         )
         self.canary_operator = canary_operator or (lambda _safety: None)
-        self.today = today
         self.now = now
+        self.today = today or (lambda: self.now().astimezone(_LOCAL_TIMEZONE).date())
 
     def _container_path(self, path: Path) -> str:
         try:
