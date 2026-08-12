@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
@@ -8,6 +8,7 @@ const frontendRoot = resolve(scriptDir, "..");
 const repoRoot = resolve(frontendRoot, "../..");
 const openapiPath = resolve(frontendRoot, ".tmp/openapi.json");
 const outputPath = resolve(frontendRoot, "lib/api.generated.ts");
+const nextOutputPath = resolve(frontendRoot, ".tmp/api.generated.next.ts");
 const uvCacheDir = resolve(repoRoot, ".tmp/uv-cache");
 const uvProjectEnvironment = resolve(repoRoot, "ai-quant");
 
@@ -29,7 +30,7 @@ const schema = execFileSync(
 writeFileSync(openapiPath, schema, "utf-8");
 execFileSync(
   resolve(frontendRoot, "node_modules/.bin/openapi-typescript"),
-  [openapiPath, "-o", outputPath],
+  [openapiPath, "-o", nextOutputPath],
   { cwd: frontendRoot, stdio: "inherit" },
 );
 
@@ -38,7 +39,7 @@ const responseNames = Object.keys(JSON.parse(schema).components?.schemas ?? {})
   .sort();
 if (responseNames.length > 0) {
   appendFileSync(
-    outputPath,
+    nextOutputPath,
     `\n${responseNames
       .map(
         (name) =>
@@ -48,3 +49,4 @@ if (responseNames.length > 0) {
     "utf-8",
   );
 }
+renameSync(nextOutputPath, outputPath);
