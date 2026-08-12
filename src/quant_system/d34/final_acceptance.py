@@ -92,6 +92,7 @@ def evaluate_final_acceptance(
     for field, code in (
         ("non_paper_artifacts", "d34_non_paper_artifact"),
         ("artifact_policy_lineage_mismatches", "d34_policy_lineage_mismatch"),
+        ("artifact_document_mismatches", "d34_artifact_document_mismatch"),
     ):
         count = database_facts.get(field)
         if type(count) is not int or count < 0:
@@ -300,6 +301,42 @@ class D34FinalAcceptanceAuditor:
                     params,
                 ).fetchone()[0]
             )
+            artifact_document_mismatches = int(
+                conn.execute(
+                    f"""
+                    SELECT count(*) FROM {SCHEMA}.d34_artifacts
+                    WHERE owner_user_id = %s AND workspace_id = %s
+                      AND (
+                        jsonb_typeof(artifact_document) <> 'object'
+                        OR artifact_document->>'contract'
+                           IS DISTINCT FROM 'hqa.d34_artifact/v1'
+                        OR artifact_document->>'job_id' IS DISTINCT FROM job_id
+                        OR artifact_document->>'mandate_id' IS DISTINCT FROM mandate_id
+                        OR artifact_document->>'policy_digest' IS DISTINCT FROM policy_digest
+                        OR artifact_document->>'snapshot_digest' IS DISTINCT FROM snapshot_digest
+                        OR artifact_document->>'candidate_code_digest'
+                           IS DISTINCT FROM candidate_code_digest
+                        OR artifact_document->>'qlib_config_digest'
+                           IS DISTINCT FROM qlib_config_digest
+                        OR artifact_document->>'rdagent_commit' IS DISTINCT FROM rdagent_commit
+                        OR artifact_document->>'qlib_commit' IS DISTINCT FROM qlib_commit
+                        OR artifact_document->>'docker_image_digest'
+                           IS DISTINCT FROM docker_image_digest
+                        OR artifact_document->>'qlib_receipt_digest'
+                           IS DISTINCT FROM qlib_receipt_digest
+                        OR artifact_document->>'platform_receipt_digest'
+                           IS DISTINCT FROM platform_receipt_digest
+                        OR artifact_document->>'comparison_digest'
+                           IS DISTINCT FROM comparison_digest
+                        OR artifact_document->>'policy_decision_id'
+                           IS DISTINCT FROM policy_decision_id
+                        OR artifact_document->>'qualification_scope'
+                           IS DISTINCT FROM qualification_scope
+                      )
+                    """,
+                    params,
+                ).fetchone()[0]
+            )
             nav_fraction = Decimal(
                 str(
                     conn.execute(
@@ -330,6 +367,7 @@ class D34FinalAcceptanceAuditor:
             "active_canary_nav_fraction": f"{nav_fraction:.9f}",
             "non_paper_artifacts": non_paper,
             "artifact_policy_lineage_mismatches": policy_mismatches,
+            "artifact_document_mismatches": artifact_document_mismatches,
             "canary_sleeve_links": canary_sleeve_links,
             "duplicate_groups": duplicates,
         }

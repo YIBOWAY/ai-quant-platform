@@ -45,6 +45,7 @@ def test_final_acceptance_binds_time_gate_zero_duplicates_and_no_live() -> None:
             "active_canary_nav_fraction": "0.040000000",
             "non_paper_artifacts": 0,
             "artifact_policy_lineage_mismatches": 0,
+            "artifact_document_mismatches": 0,
             "canary_sleeve_links": [
                 {"sleeve_id": "sleeve-d34-a", "artifact_id": "artifact-d34-a"}
             ],
@@ -104,6 +105,7 @@ def test_final_acceptance_rejects_duplicate_execution_and_live_eligibility() -> 
             "active_canary_nav_fraction": "0.040000000",
             "non_paper_artifacts": 0,
             "artifact_policy_lineage_mismatches": 0,
+            "artifact_document_mismatches": 1,
             "canary_sleeve_links": [
                 {"sleeve_id": "sleeve-d34-a", "artifact_id": "artifact-d34-a"}
             ],
@@ -137,6 +139,7 @@ def test_final_acceptance_rejects_duplicate_execution_and_live_eligibility() -> 
     assert receipt["accepted"] is False
     assert receipt["blockers"] == [
         "live_execution_not_disabled",
+        "d34_artifact_document_mismatch",
         "d34_canary_sleeve_link_mismatch",
         "duplicate_d34_execution_id",
         "duplicate_d34_order_batch",
