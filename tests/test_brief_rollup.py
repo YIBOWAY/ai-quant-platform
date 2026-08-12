@@ -332,12 +332,12 @@ def test_build_facts_extracts_days_items_and_computes_stats() -> None:
         "event_count": 4,
         "equity_start": 100_000.0,
         "equity_end": 103_000.0,
-        "period_change_pct": pytest.approx(0.03),
+        "period_change_pct": pytest.approx(3.0),
         "warning_count": 2,
     }
     assert facts["account_summary"]["start"]["equity"] == 100_000.0
     assert facts["account_summary"]["end"]["equity"] == 103_000.0
-    assert facts["account_summary"]["period_change_pct"] == pytest.approx(0.03)
+    assert facts["account_summary"]["period_change_pct"] == pytest.approx(3.0)
     assert facts["warnings"] == ["w-a", "w-b"]
 
 
@@ -385,7 +385,7 @@ def test_generate_rollup_happy_path_assembles_validated_payload() -> None:
     assert payload["date_range"] == {"start": "2026-08-10", "end": "2026-08-16"}
     assert payload["main_storyline"] == "本期主线叙述。"
     assert payload["stats"]["daily_count"] == 2
-    assert payload["stats"]["period_change_pct"] == pytest.approx(0.03)
+    assert payload["stats"]["period_change_pct"] == pytest.approx(3.0)
 
     topics = payload["topics"]
     assert [topic["index"] for topic in topics] == [0, 1, 2]

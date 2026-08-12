@@ -383,4 +383,5 @@ def _account_snapshot(day: dict[str, Any]) -> dict[str, Any]:
 def _period_change_pct(equity_start: float | None, equity_end: float | None) -> float | None:
     if equity_start is None or equity_end is None or equity_start == 0:
         return None
-    return round(equity_end / equity_start - 1, 6)
+    # Percentage points (not a ratio), matching the platform's *_pct convention.
+    return round((equity_end / equity_start - 1) * 100, 6)
