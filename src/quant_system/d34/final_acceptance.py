@@ -100,6 +100,7 @@ def evaluate_final_acceptance(
     for field, code in (
         ("duplicate_signal_ids", "duplicate_d34_signal_id"),
         ("duplicate_execution_ids", "duplicate_d34_execution_id"),
+        ("duplicate_order_batches", "duplicate_d34_order_batch"),
         ("pending_execution_journals", "d34_pending_execution_journal"),
         ("corrupt_execution_journals", "d34_corrupt_execution_journal"),
         ("non_paper_only_sleeves", "d34_non_paper_only_sleeve"),
@@ -309,11 +310,14 @@ class D34FinalAcceptanceAuditor:
         ]
         signal_ids: list[str] = []
         execution_ids: list[str] = []
+        execution_signal_links: list[tuple[str, str]] = []
         pending, corrupt, non_paper = 0, 0, 0
         for sleeve in sleeves:
             signal_ids.extend(signal.signal_id for signal in storage.load_signals(sleeve.sleeve_id))
-            execution_ids.extend(
-                execution.execution_id for execution in storage.load_executions(sleeve.sleeve_id)
+            executions = storage.load_executions(sleeve.sleeve_id)
+            execution_ids.extend(execution.execution_id for execution in executions)
+            execution_signal_links.extend(
+                (execution.sleeve_id, execution.signal_id) for execution in executions
             )
             journal_dir = storage.execution_journal_dir(sleeve.sleeve_id)
             if journal_dir.exists():
@@ -327,6 +331,8 @@ class D34FinalAcceptanceAuditor:
             "executions": len(execution_ids),
             "duplicate_signal_ids": len(signal_ids) - len(set(signal_ids)),
             "duplicate_execution_ids": len(execution_ids) - len(set(execution_ids)),
+            "duplicate_order_batches": len(execution_signal_links)
+            - len(set(execution_signal_links)),
             "pending_execution_journals": pending,
             "corrupt_execution_journals": corrupt,
             "non_paper_only_sleeves": non_paper,
