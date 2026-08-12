@@ -67,7 +67,7 @@ function entryMarker(entry: BriefArchiveEntry, kind: BriefArchiveEntryKind, loca
     return Number.isFinite(day) ? String(day) : entry.issue_date;
   }
   if (kind === "weekly") {
-    return entry.iso_week?.slice(4) ?? "W--";
+    return entry.iso_week?.slice(5) ?? "W--";
   }
   const month = Number((entry.month ?? entry.issue_date.slice(0, 7)).slice(5, 7));
   if (!Number.isFinite(month)) {
