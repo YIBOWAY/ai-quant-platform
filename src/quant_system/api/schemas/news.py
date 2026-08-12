@@ -81,6 +81,22 @@ class AiHotDailiesResponse(BaseModel):
     served_from: NewsServedFrom = "primary"
 
 
+class MarketTopicsResponse(BaseModel):
+    """Morning-brief market-topics lane (Polygon primary, Finnhub failover)."""
+
+    provider: str
+    provider_beta: bool
+    fetched_at: str
+    count: int
+    has_next: bool = False
+    next_cursor: str | None = None
+    items: list[AiHotItemResponse]
+    warnings: list[str] = Field(default_factory=list)
+    research_safety: AiHotResearchSafety = Field(default_factory=AiHotResearchSafety)
+    served_from: NewsServedFrom = "primary"
+    keywords: list[str] = Field(default_factory=list)
+
+
 class NewsFailoverStatus(BaseModel):
     auto_enabled: bool = True
     order: list[str] = Field(

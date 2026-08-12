@@ -136,6 +136,8 @@ mode-`600` artifacts; the final receipt is sorted, compact canonical UTF-8.
 | `uninstall_d34_worker_launchagent.sh` | Boot out and remove only the D-34 user LaunchAgent; it does not alter Mandates, Artifact Registry rows or held paper positions. |
 | `run_asia_radar_refresh.sh` | Daily Asia Radar target. Warms the 12-ETF Futu bar cache and persists the day's read-only overview snapshot; fails closed when OpenD is unavailable. |
 | `install_asia_radar_refresh_launchagent.sh` | Render and replay-safely install `com.aiquant.asia-radar-refresh` (17:05 local, calendar interval); never places orders and never substitutes sample data. |
+| `run_brief_auto_archive.sh` | Daily brief auto-archive target. Runs `brief auto-archive` against the local backend to upsert today's `brief_snapshot_v1` issue; fails closed (nothing written, non-zero exit) when a blocking source or the archive database is down. |
+| `install_brief_auto_archive_launchagent.sh` | Render and replay-safely install `com.aiquant.brief-auto-archive` (17:20 local, after the radar refresh). The repo ships the files but never loads them for you; read-only facts in, brief archive rows out — no orders, no kill_switch/live_trading/Gate changes. |
 | `run_paper_strategy_sleeves.sh` | LaunchAgent/CLI wrapper for one-shot Paper Strategy Sleeves ops commands (`ops-status`, `generate-due-signals`, `execute-due`). |
 | `install_paper_strategy_sleeves_launchagent.sh` | Render and bootstrap user-level macOS LaunchAgents under `~/Library/LaunchAgents/`; does not use sudo. |
 | `uninstall_paper_strategy_sleeves_launchagent.sh` | Boot out and remove the rendered user-level LaunchAgents. |

@@ -6,18 +6,30 @@ Phase A order for preference=auto:
   3. AI HOT PG cache
   4. news_unavailable
 
+Morning-brief market-topics order (market_topics()):
+  1. Polygon (primary)
+  2. Finnhub (failover)
+  3. NewsAPI (dev-only tail: requires QS_MARKET_NEWS_NEWSAPI_DEV_ENABLED
+     plus active local trust mode; never a production default)
+  4. market_news_unavailable
+
 Request path never runs Horizon pipeline / ingest / LLM.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
 from quant_system.config.settings import Settings
 from quant_system.news.aihot_client import AiHotProviderError
+from quant_system.news.market_providers import (
+    DEFAULT_ASIA_MARKET_KEYWORDS,
+    MarketNewsProviderError,
+    normalize_keywords,
+)
 from quant_system.news.models import (
     AiHotDailiesPage,
     AiHotDaily,
@@ -37,6 +49,19 @@ _HORIZON_BETA_WARNING = (
     "verified against original sources."
 )
 _FAILOVER_ORDER = ["aihot_live", "horizon_pg", "aihot_cache"]
+_MARKET_NEWS_FAILOVER_ORDER = ["polygon", "finnhub", "newsapi"]
+_POLYGON_WARNING = (
+    "Polygon is a third-party market news source; verify claims against "
+    "original sources."
+)
+_FINNHUB_WARNING = (
+    "Finnhub is a third-party market news source; verify claims against "
+    "original sources."
+)
+_NEWSAPI_WARNING = (
+    "NewsAPI is a dev-only lane (Developer tier: 24h delay, truncated "
+    "content, localhost use only); verify claims against original sources."
+)
 
 
 class NewsFacadeError(RuntimeError):
@@ -69,6 +94,7 @@ class NewsFacade:
         load_cached_aihot_daily: Callable[..., AiHotDaily | None] | None = None,
         remember_error: Callable[[AiHotProviderError], None] | None = None,
         last_error_getter: Callable[[], dict[str, Any] | None] | None = None,
+        market_clients: Mapping[str, Any] | None = None,
         now: Callable[[], datetime] | None = None,
     ) -> None:
         self.settings = settings
@@ -85,6 +111,7 @@ class NewsFacade:
         self._load_cached_aihot_daily = load_cached_aihot_daily
         self._remember_error = remember_error
         self._last_error_getter = last_error_getter
+        self._market_clients = dict(market_clients or {})
         self._now = now or (lambda: datetime.now(UTC))
 
     # ------------------------------------------------------------------ public
@@ -141,6 +168,95 @@ class NewsFacade:
             return self._horizon_dailies(forced=True, preference=pref, take=take)
         return self._auto_dailies(take=take)
 
+    def market_topics(
+        self,
+        *,
+        keywords: list[str] | tuple[str, ...] | None = None,
+        q: str | None = None,
+        take: int = 20,
+    ) -> dict[str, Any]:
+        """Morning-brief market-topics lane: Polygon primary, Finnhub failover.
+
+        NewsAPI is an explicitly dev-only tail of the chain: it is used only
+        when ``QS_MARKET_NEWS_NEWSAPI_DEV_ENABLED`` is set AND local trust mode
+        is active (NewsAPI Developer tier is contractually localhost/dev-only).
+        Fail-closed: when every lane is unavailable the facade raises
+        ``market_news_unavailable`` rather than serving placeholder content.
+        """
+
+        if not self.settings.market_news.enabled:
+            raise NewsFacadeError(
+                "market_news_disabled",
+                "Market news lane is disabled by QS_MARKET_NEWS_ENABLED.",
+                503,
+            )
+        resolved = (
+            normalize_keywords(list(keywords or []))
+            or normalize_keywords((q or "").split(","))
+            or list(DEFAULT_ASIA_MARKET_KEYWORDS)
+        )
+        served_from_by_provider = {
+            "polygon": "primary",
+            "finnhub": "failover",
+            "newsapi": "failover",
+        }
+        notes: list[str] = []
+        for provider in _MARKET_NEWS_FAILOVER_ORDER:
+            client = self._market_clients.get(provider)
+            if client is None:
+                notes.append(f"{provider}=not_configured")
+                continue
+            if provider == "newsapi" and not self._newsapi_dev_allowed():
+                notes.append("newsapi=dev_only_gated")
+                continue
+            try:
+                page = client.search(keywords=resolved, take=take)
+            except MarketNewsProviderError as exc:
+                notes.append(f"{provider}={exc.message}")
+                continue
+            return self._stamp_market_items(
+                page,
+                provider=provider,
+                served_from=served_from_by_provider[provider],
+                keywords=resolved,
+                notes=notes,
+            )
+        raise NewsFacadeError(
+            "market_news_unavailable",
+            "; ".join(notes) if notes else "no market news providers configured",
+            503,
+        )
+
+    def _newsapi_dev_allowed(self) -> bool:
+        """NewsAPI may only run as a dev lane under active local trust mode."""
+
+        if not self.settings.market_news.newsapi_dev_enabled:
+            return False
+        # Lazy import keeps the news module free of hermes import cycles.
+        from quant_system.hermes.local_trust import trust_mode_active
+
+        return trust_mode_active(self.settings)
+
+    def _stamp_market_items(
+        self,
+        page: AiHotItemsPage,
+        *,
+        provider: str,
+        served_from: ServedFrom,
+        keywords: list[str],
+        notes: list[str],
+    ) -> dict[str, Any]:
+        extra_warnings = [f"market_news_failover: {note}" for note in notes] or None
+        payload = self._stamp_items(
+            page,
+            provider=provider,
+            preference="auto",
+            served_from=served_from,
+            extra_warnings=extra_warnings,
+        )
+        payload["keywords"] = list(keywords)
+        return payload
+
     def status(self) -> dict[str, Any]:
         """Local-only status. Must not call AI HOT client or run Horizon."""
 
@@ -175,6 +291,31 @@ class NewsFacade:
                     "provider_beta": bool(settings.horizon.provider_beta),
                     "last_run": _status_run(run),
                     "fresh": fresh,
+                },
+                "market_news": {
+                    "enabled": settings.market_news.enabled,
+                    "failover_order": list(_MARKET_NEWS_FAILOVER_ORDER),
+                    "providers": {
+                        "polygon": {
+                            "enabled": settings.market_news.polygon_enabled,
+                            "key_configured": _secret_configured(
+                                settings.api_keys.polygon_api_key
+                            ),
+                        },
+                        "finnhub": {
+                            "enabled": settings.market_news.finnhub_enabled,
+                            "key_configured": _secret_configured(
+                                settings.api_keys.finnhub_api_key
+                            ),
+                        },
+                        "newsapi": {
+                            "enabled": settings.market_news.newsapi_dev_enabled,
+                            "dev_only": True,
+                            "key_configured": _secret_configured(
+                                settings.api_keys.newsapi_key
+                            ),
+                        },
+                    },
                 },
             },
             "failover": {
@@ -884,6 +1025,12 @@ def _provider_beta(provider: str, settings: Settings) -> bool:
 def _provider_warning(provider: str, settings: Settings) -> str | None:
     if provider == "aihot":
         return _AIHOT_BETA_WARNING
+    if provider == "polygon":
+        return _POLYGON_WARNING
+    if provider == "finnhub":
+        return _FINNHUB_WARNING
+    if provider == "newsapi":
+        return _NEWSAPI_WARNING
     if provider == "horizon" and settings.horizon.provider_beta:
         return _HORIZON_BETA_WARNING
     if provider == "horizon":
@@ -891,6 +1038,16 @@ def _provider_warning(provider: str, settings: Settings) -> str | None:
             "Horizon local research feed; verify claims against original sources."
         )
     return None
+
+
+def _secret_configured(secret: Any) -> bool:
+    """Boolean-only key presence check; never exposes the secret value."""
+
+    if secret is None:
+        return False
+    getter = getattr(secret, "get_secret_value", None)
+    value = getter() if callable(getter) else str(secret)
+    return bool(value)
 
 
 def _merge_warnings(

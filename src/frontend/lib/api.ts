@@ -1,6 +1,9 @@
 import {
   buildBriefIssuePath,
   buildLatestBriefIssuePath,
+  type BriefArchiveEntry,
+  type BriefArchiveGroup,
+  type BriefArchiveViewResponse as BriefArchiveView,
   type BriefIssue,
   type BriefIssueEnvelope,
   type BriefSnapshot,
@@ -23,6 +26,8 @@ import type {
   HermesResultsQuery,
 } from "./hermes/resultsTypes";
 import type {
+  AsiaRadarDriverBasket,
+  AsiaRadarDriverLeader,
   AsiaRadarLocalIndex,
   AsiaRadarMarket,
   AsiaRadarMarketSummary,
@@ -45,6 +50,9 @@ export type AsiaRadarOverviewResponse = AsiaRadarOverview;
 export type AsiaRadarSummaryResponse = AsiaRadarSummary;
 export type AsiaRadarLocalIndexPointResponse = AsiaRadarLocalIndex["series"][number];
 export type AsiaRadarLocalIndexResponse = AsiaRadarLocalIndex;
+export type AsiaRadarDriverLeaderPointResponse = AsiaRadarDriverLeader["series"][number];
+export type AsiaRadarDriverLeaderResponse = AsiaRadarDriverLeader;
+export type AsiaRadarDriverBasketResponse = AsiaRadarDriverBasket;
 export type MarketCrossSectionMetaResponse = MarketCrossSectionRow["meta"];
 export type MarketCrossSectionReturnsResponse = MarketCrossSectionRow["returns"];
 export type MarketCrossSectionHistoryPointResponse = MarketCrossSectionRow["history"][number];
@@ -70,6 +78,9 @@ export type ApiEnvelope = {
 export type BriefIssueResponse = BriefIssue;
 export type BriefSnapshotResponse = BriefSnapshot;
 export type BriefIssueEnvelopeResponse = BriefIssueEnvelope;
+export type BriefArchiveEntryResponse = BriefArchiveEntry;
+export type BriefArchiveGroupResponse = BriefArchiveGroup;
+export type BriefArchiveViewResponse = BriefArchiveView;
 export type BriefIssueListResponse = {
   items: BriefIssue[];
   total: number;
@@ -2353,6 +2364,51 @@ export function getNewsItems(query: NewsItemsQuery = {}) {
     warnings: ["AI news feed is unavailable."],
     research_safety: AIHOT_RESEARCH_SAFETY,
     preference: query.preference ?? "auto",
+    safety: FALLBACK_SAFETY,
+  });
+}
+
+export type MarketTopicsResponse = ApiEnvelope & {
+  provider: string;
+  provider_beta: boolean;
+  fetched_at: string;
+  count: number;
+  has_next?: boolean;
+  next_cursor?: string | null;
+  items: AiHotItem[];
+  warnings: string[];
+  research_safety: AiHotResearchSafety;
+  served_from?: NewsServedFrom;
+  keywords?: string[];
+};
+
+export type MarketTopicsQuery = {
+  q?: string;
+  keywords?: string[];
+  take?: number;
+};
+
+/** Morning-brief market-topics lane (Polygon primary, Finnhub failover). */
+export function getNewsMarketTopics(query: MarketTopicsQuery = {}) {
+  const params = new URLSearchParams();
+  if (query.q) {
+    params.set("q", query.q);
+  }
+  if (query.keywords?.length) {
+    params.set("keywords", query.keywords.join(","));
+  }
+  params.set("take", String(query.take ?? 20));
+  return apiGet<MarketTopicsResponse>(`/api/news/market-topics?${params.toString()}`, {
+    provider: "unavailable",
+    provider_beta: true,
+    fetched_at: "",
+    count: 0,
+    has_next: false,
+    next_cursor: null,
+    items: [],
+    warnings: ["Market topics news is unavailable."],
+    research_safety: AIHOT_RESEARCH_SAFETY,
+    keywords: [],
     safety: FALLBACK_SAFETY,
   });
 }

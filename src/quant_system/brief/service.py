@@ -3,6 +3,11 @@ from __future__ import annotations
 import secrets
 from datetime import date
 
+from quant_system.brief.archive import (
+    BriefArchiveView,
+    archive_range_start,
+    build_archive_view,
+)
 from quant_system.brief.models import (
     BriefArchivePayload,
     BriefIssue,
@@ -77,6 +82,24 @@ class BriefService:
             limit=limit,
             offset=offset,
         )
+
+    def list_archive(
+        self,
+        *,
+        locale: str,
+        months: int = 3,
+        today: date | None = None,
+    ) -> BriefArchiveView:
+        normalized_locale = locale.strip() or "zh"
+        safe_months = max(1, min(int(months), 24))
+        end = today or date.today()
+        start = archive_range_start(end, safe_months)
+        rows = self._repository.list_issue_archive_rows(
+            locale=normalized_locale,
+            start=start,
+            end=end,
+        )
+        return build_archive_view(rows)
 
 
 def _new_public_id(issue_date: date) -> str:

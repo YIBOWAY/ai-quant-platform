@@ -79,6 +79,7 @@ export function mapDigestToBriefAiNews(
 /** Build ai_news source watermark with auto-facade provider / served_from metadata. */
 export function mapDigestToAiNewsSourceEntry(
   digest: BriefAiNewsDigestInput,
+  name = "ai_news",
 ): BriefAiNewsSourceEntry {
   const warnings = digest.warnings ?? [];
   const shortWarnings = warnings
@@ -93,7 +94,7 @@ export function mapDigestToAiNewsSourceEntry(
     !digest.apiError && shortWarnings ? `${baseDetail}; ${shortWarnings}` : baseDetail;
 
   return {
-    name: "ai_news",
+    name,
     status: sourceStatus(
       digest.apiError,
       warnings.some((warning) => /cache|stale/i.test(warning)),

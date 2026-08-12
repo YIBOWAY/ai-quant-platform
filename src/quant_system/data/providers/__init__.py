@@ -2,10 +2,12 @@ from quant_system.data.providers.csv import CSVDataProvider
 from quant_system.data.providers.futu import FutuMarketDataProvider
 from quant_system.data.providers.sample import SampleOHLCVProvider
 from quant_system.data.providers.tiingo import TiingoEODProvider
+from quant_system.data.providers.twelvedata import TwelveDataDailyProvider
 
 __all__ = [
     "CSVDataProvider",
     "FutuMarketDataProvider",
     "SampleOHLCVProvider",
     "TiingoEODProvider",
+    "TwelveDataDailyProvider",
 ]

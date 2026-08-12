@@ -137,6 +137,60 @@ class _RecordingRepository:
         )
 
 
+class _InMemoryBriefRepository:
+    """Mirrors the SQL contract of ``BriefRepository.create_snapshot``: the
+    issue row is keyed by (issue_date, locale) and re-filing the same day
+    upserts that row and appends the next snapshot version instead of
+    creating a second issue. This is what the archive-idempotency claim
+    reduces to, tested without Postgres."""
+
+    def __init__(self) -> None:
+        self._issues: dict[tuple[date, str], BriefIssue] = {}
+        self._snapshots: dict[str, list[BriefSnapshot]] = {}
+
+    def create_snapshot(self, **kwargs: Any) -> BriefIssueEnvelope:
+        key = (kwargs["issue_date"], kwargs["locale"])
+        issue = self._issues.get(key)
+        if issue is None:
+            issue = BriefIssue(
+                issue_id=f"issue-{len(self._issues) + 1}",
+                public_id=kwargs["public_id"],
+                issue_date=kwargs["issue_date"],
+                locale=kwargs["locale"],
+                status="published",
+            )
+            self._issues[key] = issue
+        snapshots = self._snapshots.setdefault(issue.issue_id, [])
+        snapshot = BriefSnapshot(
+            snapshot_id=f"snapshot-{len(snapshots) + 1}",
+            version=len(snapshots) + 1,
+            payload=kwargs["payload"],
+            source_watermark=kwargs["source_watermark"],
+        )
+        snapshots.append(snapshot)
+        return BriefIssueEnvelope(issue=issue, snapshot=snapshot)
+
+
+def test_refile_same_day_upserts_issue_and_appends_snapshot_version() -> None:
+    repository = _InMemoryBriefRepository()
+    service = BriefService(repository)  # type: ignore[arg-type]
+    first = service.generate_issue(
+        issue_date=date(2026, 7, 14),
+        locale="zh",
+        payload=_payload(),
+        source_watermark=_watermark(),
+    )
+    second = service.generate_issue(
+        issue_date=date(2026, 7, 14),
+        locale="zh",
+        payload=_payload(),
+        source_watermark=_watermark(),
+    )
+    assert second.issue.issue_id == first.issue.issue_id
+    assert first.snapshot.version == 1
+    assert second.snapshot.version == 2
+
+
 def test_generate_issue_persists_the_exact_validated_snapshot() -> None:
     repository = _RecordingRepository()
     payload = _payload()

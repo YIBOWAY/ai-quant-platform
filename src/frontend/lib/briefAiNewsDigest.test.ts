@@ -90,6 +90,24 @@ describe("mapDigestToAiNewsSourceEntry", () => {
     expect(entry.provider).toBe("aihot");
     expect(entry.served_from).toBe("primary");
   });
+
+  it("supports a custom watermark name for the market-topics lane", () => {
+    const entry = mapDigestToAiNewsSourceEntry(
+      {
+        provider: "polygon",
+        served_from: "primary",
+        fetched_at: "2026-08-11T08:05:00+00:00",
+        items: [sampleItem],
+      },
+      "market_news",
+    );
+
+    expect(entry.name).toBe("market_news");
+    expect(entry.provider).toBe("polygon");
+    expect(entry.served_from).toBe("primary");
+    expect(entry.detail).toBe("polygon/primary");
+    expect(entry.status).toBe("available");
+  });
 });
 
 describe("buildBriefAiNewsDigest", () => {

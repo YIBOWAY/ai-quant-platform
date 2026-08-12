@@ -410,6 +410,62 @@ class NewsSettings(BaseSettings):
     )
 
 
+class MarketNewsSettings(BaseSettings):
+    """Third-party market-news providers for the morning-brief topics lane.
+
+    Polygon is the primary lane and Finnhub the failover lane. NewsAPI is an
+    opt-in dev-only lane: its Developer tier is contractually localhost/dev-only
+    (24h delay, truncated content), so it defaults OFF and is additionally gated
+    on local trust mode by the news facade. Keys come from ApiKeySettings
+    (QS_POLYGON_API_KEY / QS_FINNHUB_API_KEY / QS_NEWSAPI_KEY); nothing here
+    stores secrets.
+    """
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_prefix="",
+        extra="ignore",
+        populate_by_name=True,
+    )
+
+    enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("QS_MARKET_NEWS_ENABLED"),
+    )
+    polygon_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("QS_MARKET_NEWS_POLYGON_ENABLED"),
+    )
+    finnhub_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("QS_MARKET_NEWS_FINNHUB_ENABLED"),
+    )
+    newsapi_dev_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("QS_MARKET_NEWS_NEWSAPI_DEV_ENABLED"),
+    )
+    polygon_base_url: str = Field(
+        default="https://api.polygon.io",
+        validation_alias=AliasChoices("QS_MARKET_NEWS_POLYGON_BASE_URL"),
+        min_length=1,
+    )
+    finnhub_base_url: str = Field(
+        default="https://finnhub.io",
+        validation_alias=AliasChoices("QS_MARKET_NEWS_FINNHUB_BASE_URL"),
+        min_length=1,
+    )
+    newsapi_base_url: str = Field(
+        default="https://newsapi.org",
+        validation_alias=AliasChoices("QS_MARKET_NEWS_NEWSAPI_BASE_URL"),
+        min_length=1,
+    )
+    timeout_seconds: int = Field(
+        default=8,
+        validation_alias=AliasChoices("QS_MARKET_NEWS_TIMEOUT_SECONDS"),
+        gt=0,
+    )
+
+
 class HorizonSettings(BaseSettings):
     """Local Horizon inbox feed settings for AI News bridge."""
 
@@ -764,6 +820,7 @@ class Settings(BaseSettings):
     llm: LLMSettings = Field(default_factory=LLMSettings)
     aihot: AiHotSettings = Field(default_factory=AiHotSettings)
     news: NewsSettings = Field(default_factory=NewsSettings)
+    market_news: MarketNewsSettings = Field(default_factory=MarketNewsSettings)
     horizon: HorizonSettings = Field(default_factory=HorizonSettings)
     prediction_market: PredictionMarketSettings = Field(
         default_factory=PredictionMarketSettings

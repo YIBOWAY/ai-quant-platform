@@ -106,7 +106,11 @@ def test_gateway_endpoints_fail_closed_when_integration_disabled() -> None:
 def test_gateway_endpoints_expose_only_sanitized_read_models() -> None:
     settings = Settings(
         local_mutation=LocalMutationSettings(enabled=False, composer_open=False),
-        hermes_gateway=HermesGatewaySettings(enabled=True),
+        # api_key_file must stay None: BaseSettings loads QS_HERMES_GATEWAY_* from
+        # a developer's .env even under explicit kwarg construction, and a real key
+        # file would let the default durable-capability probe reach the live
+        # gateway — defeating this test's hermetic "probe unavailable" contract.
+        hermes_gateway=HermesGatewaySettings(enabled=True, api_key_file=None),
     )
     app = create_app(settings=settings, bind_address="127.0.0.1")
     app.dependency_overrides[get_hermes_api_read_client] = _FakeHermesReadClient

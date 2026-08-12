@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import threading
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -11,6 +12,7 @@ from quant_system.api.schemas.news import (
     AiHotDailiesResponse,
     AiHotDailyResponse,
     AiHotItemsResponse,
+    MarketTopicsResponse,
     NewsStatusResponse,
 )
 from quant_system.config.settings import Settings
@@ -21,6 +23,11 @@ from quant_system.news.daily_report_repository import (
     load_cached_aihot_daily_report,
 )
 from quant_system.news.facade import NewsFacade, NewsFacadeError, current_brief_date
+from quant_system.news.market_providers import (
+    FinnhubNewsClient,
+    NewsApiClient,
+    PolygonNewsClient,
+)
 from quant_system.news.models import AiHotDaily, AiHotItemsPage
 from quant_system.news.repository import (
     AiHotItemsCacheQuery,
@@ -35,6 +42,14 @@ NewsPreference = Literal["auto", "aihot", "horizon"]
 _last_error: dict[str, Any] | None = None
 _CLIENTS: dict[tuple[str, int, int, str], AiHotClient] = {}
 _CLIENTS_LOCK = threading.RLock()
+
+_MARKET_PROVIDER_SPECS: dict[str, tuple[str, type]] = {
+    "polygon": ("polygon_base_url", PolygonNewsClient),
+    "finnhub": ("finnhub_base_url", FinnhubNewsClient),
+    "newsapi": ("newsapi_base_url", NewsApiClient),
+}
+_MARKET_CLIENTS: dict[tuple[str, str, int, str], Any] = {}
+_MARKET_CLIENTS_LOCK = threading.RLock()
 
 
 def _client_for_settings(settings: Settings) -> AiHotClient:
@@ -62,6 +77,78 @@ def close_aihot_clients() -> None:
     with _CLIENTS_LOCK:
         clients = list(_CLIENTS.values())
         _CLIENTS.clear()
+    for client in clients:
+        client.close()
+
+
+def _market_api_key(settings: Settings, provider: str) -> str:
+    secret = {
+        "polygon": settings.api_keys.polygon_api_key,
+        "finnhub": settings.api_keys.finnhub_api_key,
+        "newsapi": settings.api_keys.newsapi_key,
+    }[provider]
+    if secret is None:
+        return ""
+    return secret.get_secret_value()
+
+
+def _market_client_for(settings: Settings, provider: str) -> Any | None:
+    """Build (and cache) a market-news client; None when no key is configured.
+
+    The cache key carries a hash of the secret, never the secret itself.
+    """
+
+    api_key = _market_api_key(settings, provider)
+    if not api_key:
+        return None
+    config = settings.market_news
+    base_url_field, client_cls = _MARKET_PROVIDER_SPECS[provider]
+    base_url = getattr(config, base_url_field).rstrip("/")
+    key_hash = hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:16]
+    cache_key = (provider, base_url, config.timeout_seconds, key_hash)
+    with _MARKET_CLIENTS_LOCK:
+        client = _MARKET_CLIENTS.get(cache_key)
+        if client is None:
+            client = client_cls(
+                base_url=base_url,
+                api_key=api_key,
+                timeout_seconds=config.timeout_seconds,
+            )
+            _MARKET_CLIENTS[cache_key] = client
+        return client
+
+
+def _market_clients_for_settings(settings: Settings) -> dict[str, Any]:
+    """Enabled + key-configured market-news providers for the facade.
+
+    NewsAPI is constructed only when explicitly opted in via
+    QS_MARKET_NEWS_NEWSAPI_DEV_ENABLED; the facade additionally gates its use
+    on active local trust mode.
+    """
+
+    config = settings.market_news
+    if not config.enabled:
+        return {}
+    clients: dict[str, Any] = {}
+    if config.polygon_enabled:
+        client = _market_client_for(settings, "polygon")
+        if client is not None:
+            clients["polygon"] = client
+    if config.finnhub_enabled:
+        client = _market_client_for(settings, "finnhub")
+        if client is not None:
+            clients["finnhub"] = client
+    if config.newsapi_dev_enabled:
+        client = _market_client_for(settings, "newsapi")
+        if client is not None:
+            clients["newsapi"] = client
+    return clients
+
+
+def close_market_news_clients() -> None:
+    with _MARKET_CLIENTS_LOCK:
+        clients = list(_MARKET_CLIENTS.values())
+        _MARKET_CLIENTS.clear()
     for client in clients:
         client.close()
 
@@ -178,6 +265,7 @@ def _facade_for_settings(settings: Settings) -> NewsFacade:
         load_cached_aihot_daily=_load_cached_daily_report,
         remember_error=_remember_error,
         last_error_getter=_last_error_snapshot,
+        market_clients=_market_clients_for_settings(settings),
     )
 
 
@@ -247,6 +335,23 @@ def _status_handler(settings: Settings) -> dict:
     return _facade_for_settings(settings).status()
 
 
+def _market_topics_handler(
+    settings: Settings,
+    *,
+    keywords: list[str] | None,
+    q: str | None,
+    take: int,
+) -> dict:
+    try:
+        return _facade_for_settings(settings).market_topics(
+            keywords=keywords,
+            q=q,
+            take=take,
+        )
+    except NewsFacadeError as exc:
+        raise _http_from_facade(exc) from exc
+
+
 # ---------------------------------------------------------------------------
 # Neutral routes (preferred)
 # ---------------------------------------------------------------------------
@@ -296,6 +401,29 @@ def news_dailies(
 @router.get("/news/status", response_model=NewsStatusResponse)
 def news_status(settings: SettingsDep) -> dict:
     return _status_handler(settings)
+
+
+@router.get("/news/market-topics", response_model=MarketTopicsResponse)
+def news_market_topics(
+    settings: SettingsDep,
+    q: str | None = None,
+    keywords: str | None = Query(
+        default=None,
+        description="Comma-separated topic keywords; defaults to Asia-market set.",
+    ),
+    take: int = Query(default=20, ge=1, le=50),
+) -> dict:
+    parsed_keywords = (
+        [part.strip() for part in keywords.split(",") if part.strip()]
+        if keywords
+        else None
+    )
+    return _market_topics_handler(
+        settings,
+        keywords=parsed_keywords,
+        q=q,
+        take=take,
+    )
 
 
 # ---------------------------------------------------------------------------

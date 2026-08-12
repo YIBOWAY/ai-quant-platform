@@ -18,3 +18,8 @@ if sys.version_info < (3, 11):  # noqa: UP036
 os.environ["QS_DATABASE_ENABLED"] = "false"
 os.environ["QS_PAPER_ACCOUNT_AUTO_PROCESS_PENDING_ORDERS_ENABLED"] = "false"
 os.environ["QS_BACKTEST_JOBS_ENABLED"] = "false"
+# Same hermeticity for the Hermes gateway bridge: a developer's .env enables it
+# (QS_HERMES_GATEWAY_ENABLED=true), and create_app's startup validation then
+# requires an explicit loopback bind declaration that plain TestClient apps
+# don't pass — every API test would fail before serving a single request.
+os.environ["QS_HERMES_GATEWAY_ENABLED"] = "false"

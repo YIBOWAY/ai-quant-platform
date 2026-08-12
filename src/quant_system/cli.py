@@ -154,6 +154,7 @@ agent_app = typer.Typer(help="Run Phase 7 AI research assistant commands.")
 prediction_market_app = typer.Typer(help="Run Phase 8 prediction-market dry scanning commands.")
 options_app = typer.Typer(help="Run read-only options research commands.")
 news_app = typer.Typer(help="Read-only AI news maintenance commands.")
+brief_app = typer.Typer(help="Archive the daily morning brief into durable storage.")
 
 
 def _version_callback(value: bool) -> None:
@@ -612,6 +613,133 @@ def data_asia_radar_refresh(
             "provenance": overview["provenance"],
             "market_count": len(overview.get("markets", [])),
             "snapshot_path": snapshot_path,
+        }
+    )
+
+
+@data_app.command("etf-bars-backup-refresh")
+def data_etf_bars_backup_refresh(
+    symbols: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--symbol",
+            "-s",
+            help=(
+                "US-listed ETF to refresh. Repeat for multiple symbols. "
+                "Defaults to the 12-ETF Asia Radar universe."
+            ),
+        ),
+    ] = None,
+    start: Annotated[
+        str,
+        typer.Option("--start", help="Inclusive start date, YYYY-MM-DD. Default: lookback window."),
+    ] = "",
+    end: Annotated[
+        str,
+        typer.Option(
+            "--end",
+            help="Inclusive end date, YYYY-MM-DD. Default: last completed US session.",
+        ),
+    ] = "",
+    backup_providers: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--backup-provider",
+            help=(
+                "Explicit backup lane, in fallback order (twelvedata, tiingo). "
+                "Repeat for multiple lanes. Backups only run after Futu fails."
+            ),
+        ),
+    ] = None,
+    lookback_days: Annotated[
+        int,
+        typer.Option(
+            "--lookback-days",
+            help="Calendar days of history when --start/--end are not given.",
+        ),
+    ] = 419,
+    cache_path: Annotated[
+        str | None,
+        typer.Option(
+            "--cache-path",
+            help="Override EquityBarCache DuckDB path. Defaults to <data>/futu_equity_bars.duckdb.",
+        ),
+    ] = None,
+) -> None:
+    """Refresh Asia ETF daily bars through the explicit backup chain (disaster recovery).
+
+    On-demand operator command: it is NOT wired into the daily LaunchAgent.
+    Futu is always tried first; the named backup lanes run only after Futu
+    fails, and the JSON output records exactly which lane served and why each
+    earlier lane was skipped. Read-only: never places orders, never falls back
+    to sample data. Failure exits non-zero.
+    """
+    from quant_system.data.backup_bars import (
+        SUPPORTED_BACKUP_PROVIDERS,
+        default_backup_window,
+        read_daily_bars_with_backup,
+    )
+    from quant_system.data.equity_bar_cache import EquityBarCache
+    from quant_system.factors.asia_radar import ASIA_ETF_SYMBOLS
+
+    try:
+        settings = load_settings()
+    except Exception as exc:
+        error = HistoricalPriceReadError(
+            code="historical_prices_configuration_error",
+            message="platform settings are invalid for ETF bars backup refresh",
+            provider_code=type(exc).__name__,
+        )
+        _emit_json({"ok": False, "error": error.to_dict()})
+        raise typer.Exit(code=1) from exc
+
+    if not start or not end:
+        default_start, default_end = default_backup_window(
+            lookback_calendar_days=lookback_days
+        )
+        start = start or default_start
+        end = end or default_end
+
+    active_cache: EquityBarCache | None
+    try:
+        active_cache = EquityBarCache(
+            Path(cache_path)
+            if cache_path is not None
+            else Path(settings.data.duckdb_path).parent / "futu_equity_bars.duckdb"
+        )
+    except Exception:  # noqa: BLE001 - optional cache must never block the refresh
+        active_cache = None
+
+    try:
+        with _futu_json_stdout_guard():
+            result = read_daily_bars_with_backup(
+                settings=settings,
+                symbols=list(symbols or ASIA_ETF_SYMBOLS),
+                start=start,
+                end=end,
+                backup_providers=tuple(backup_providers or SUPPORTED_BACKUP_PROVIDERS),
+                cache=active_cache,
+            )
+    except HistoricalPriceReadError as exc:
+        _emit_json({"ok": False, "error": exc.to_dict()})
+        raise typer.Exit(code=2 if exc.code == "historical_prices_invalid_request" else 1) from exc
+
+    snapshot = result.snapshot
+    _emit_json(
+        {
+            "ok": True,
+            "served_by": result.served_by,
+            "provider": snapshot.provider,
+            "source": snapshot.source,
+            "adjustment": snapshot.adjustment,
+            "start": snapshot.start,
+            "end": snapshot.end,
+            "fetched_at": snapshot.fetched_at,
+            "symbols": snapshot.symbols,
+            "row_counts": {
+                item["symbol"]: item["row_count"] for item in snapshot.series
+            },
+            "fallbacks": result.fallbacks,
         }
     )
 
@@ -3834,6 +3962,127 @@ app.add_typer(options_app, name="options")
 app.add_typer(hermes_app, name="hermes")
 app.add_typer(news_app, name="news")
 app.add_typer(d34_app, name="d34")
+app.add_typer(brief_app, name="brief")
+
+
+@brief_app.command("auto-archive")
+def brief_auto_archive(
+    locale: Annotated[
+        str,
+        typer.Option(
+            "--locale",
+            help="Brief locale to archive (zh or en).",
+        ),
+    ] = "zh",
+    base_url: Annotated[
+        str,
+        typer.Option(
+            "--base-url",
+            help="Local FastAPI base URL used to collect brief facts.",
+        ),
+    ] = "http://127.0.0.1:8765",
+    timeout_seconds: Annotated[
+        float,
+        typer.Option(
+            "--timeout-seconds",
+            help="Per-request timeout while collecting brief facts.",
+        ),
+    ] = 30.0,
+) -> None:
+    """Build today's brief snapshot from backend facts and upsert it into Postgres.
+
+    Idempotent: re-running on the same day updates the existing
+    (owner, issue_date, locale) issue with a new snapshot version. Fails
+    closed — if the paper account, equity curve, or performance master is
+    unavailable, or the archive database is down, nothing is written and the
+    command exits non-zero. Never touches the live brief page.
+    """
+    from quant_system.brief.auto_archive import (
+        AutoArchiveUnavailable,
+        build_auto_archive_snapshot,
+    )
+    from quant_system.brief.repository import (
+        BriefDatabaseUnavailable,
+        BriefRepository,
+    )
+    from quant_system.brief.service import BriefService
+
+    normalized_locale = locale.strip().lower()
+    if normalized_locale not in {"zh", "en"}:
+        _emit_json(
+            {
+                "ok": False,
+                "error": {
+                    "code": "brief_auto_archive_invalid_locale",
+                    "message": f"unsupported locale {locale!r}; expected zh or en",
+                },
+            }
+        )
+        raise typer.Exit(code=2)
+
+    try:
+        settings = load_settings()
+    except Exception as exc:
+        _emit_json(
+            {
+                "ok": False,
+                "error": {
+                    "code": "brief_auto_archive_configuration_error",
+                    "message": "platform settings are invalid for brief auto-archive",
+                    "provider_code": type(exc).__name__,
+                },
+            }
+        )
+        raise typer.Exit(code=1) from exc
+
+    try:
+        snapshot = build_auto_archive_snapshot(
+            base_url=base_url,
+            locale=normalized_locale,  # type: ignore[arg-type]
+            timeout_seconds=timeout_seconds,
+        )
+    except AutoArchiveUnavailable as exc:
+        _emit_json(
+            {
+                "ok": False,
+                "error": {
+                    "code": "brief_auto_archive_source_unavailable",
+                    "message": str(exc),
+                },
+            }
+        )
+        raise typer.Exit(code=1) from exc
+
+    service = BriefService(BriefRepository(settings))
+    try:
+        envelope = service.generate_issue(
+            issue_date=snapshot.payload.issue_date,
+            locale=normalized_locale,
+            payload=snapshot.payload,
+            source_watermark=snapshot.source_watermark,
+        )
+    except BriefDatabaseUnavailable as exc:
+        _emit_json(
+            {
+                "ok": False,
+                "error": {
+                    "code": "brief_database_unavailable",
+                    "message": f"brief archive database is unavailable: {exc}",
+                },
+            }
+        )
+        raise typer.Exit(code=1) from exc
+
+    _emit_json(
+        {
+            "ok": True,
+            "issue_date": envelope.issue.issue_date.isoformat(),
+            "locale": envelope.issue.locale,
+            "public_id": envelope.issue.public_id,
+            "snapshot_version": envelope.snapshot.version,
+            "warnings": snapshot.warnings,
+        }
+    )
 
 
 @news_app.command("horizon-ingest")

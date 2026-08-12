@@ -468,15 +468,19 @@ def test_read_overview_never_lets_index_lane_break_the_etf_main_path(monkeypatch
         now=datetime(2026, 3, 30, 21, 0, tzinfo=UTC),
         cache=False,
         local_index_reader=exploding_reader,
+        driver_basket_reader=lambda **_: {},
     )
 
-    assert overview["schema_version"] == "1.2"
+    assert overview["schema_version"] == "1.3"
     assert overview["as_of"] == "2026-03-30"
     assert [market["symbol"] for market in overview["markets"]] == list(ASIA_ETF_SYMBOLS)
     for market in overview["markets"]:
         assert market["local_index"]["status"] == "unavailable"
         assert market["local_index"]["reason_code"] == "overlay_missing"
         assert market["local_index"]["series"] == []
+        assert market["driver_basket"]["status"] == "unavailable"
+        assert market["driver_basket"]["reason_code"] == "overlay_missing"
+        assert market["driver_basket"]["leaders"] == []
 
 
 def test_read_overview_attaches_reader_overlays(monkeypatch) -> None:
@@ -842,9 +846,10 @@ def test_historical_price_read_error_from_index_lane_never_escapes(monkeypatch) 
         now=datetime(2026, 3, 30, 21, 0, tzinfo=UTC),
         cache=False,
         local_index_reader=typed_explosion,
+        driver_basket_reader=lambda **_: {},
     )
 
-    assert overview["schema_version"] == "1.2"
+    assert overview["schema_version"] == "1.3"
     assert [market["symbol"] for market in overview["markets"]] == list(ASIA_ETF_SYMBOLS)
     for market in overview["markets"]:
         assert market["local_index"]["status"] == "unavailable"

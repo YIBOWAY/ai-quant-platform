@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -65,3 +65,26 @@ class BriefIssueListResponse(BaseModel):
     total: int = 0
     limit: int = 30
     offset: int = 0
+
+
+class BriefArchiveEntryResponse(BaseModel):
+    public_id: str
+    issue_date: date
+    title: str
+    snippet: str = ""
+    kind: Literal["daily", "weekly", "monthly"]
+    iso_week: str | None = None
+    month: str | None = None
+
+
+class BriefArchiveGroupResponse(BaseModel):
+    key: str
+    entries: list[BriefArchiveEntryResponse] = Field(default_factory=list)
+
+
+class BriefArchiveViewResponse(BaseModel):
+    locale: str
+    months: int
+    daily: list[BriefArchiveGroupResponse] = Field(default_factory=list)
+    weekly: list[BriefArchiveGroupResponse] = Field(default_factory=list)
+    monthly: list[BriefArchiveGroupResponse] = Field(default_factory=list)

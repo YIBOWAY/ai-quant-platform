@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BriefArchiveSidebar } from "@/components/brief/BriefArchiveSidebar";
 import { BriefDailyChange } from "@/components/brief/BriefDailyChange";
 import { BriefPerformanceChart } from "@/components/brief/BriefPerformanceChart";
 import { getBriefIssue } from "@/lib/api";
@@ -22,7 +23,12 @@ export default async function BriefIssueArchivePage({ params }: Props) {
   const isZh = archive.locale === "zh";
 
   return (
-    <main className="h-full overflow-y-auto bg-paper-ink text-ink">
+    <div className="flex h-full bg-paper-ink text-ink">
+      <BriefArchiveSidebar
+        activePublicId={archive.publicId || publicId}
+        locale={isZh ? "zh" : "en"}
+      />
+      <main className="h-full min-w-0 flex-1 overflow-y-auto">
       <article className="mx-auto flex min-h-full max-w-editorial-column flex-col gap-8 px-5 py-8 md:px-10 lg:px-14">
         <header className="border-b-[3px] border-double border-ink pb-6 text-center">
           <p className="font-editorial-caps text-ink-secondary">
@@ -112,7 +118,8 @@ export default async function BriefIssueArchivePage({ params }: Props) {
           HERMES MORNING BRIEF · {isZh ? "只读历史快照" : "READ-ONLY HISTORICAL SNAPSHOT"}
         </footer>
       </article>
-    </main>
+      </main>
+    </div>
   );
 }
 

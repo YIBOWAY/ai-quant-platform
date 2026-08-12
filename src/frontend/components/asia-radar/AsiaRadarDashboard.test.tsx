@@ -4,9 +4,16 @@ import { describe, expect, it } from "vitest";
 import {
   AsiaRadarDashboard,
   AsiaRadarUnavailable,
+  DriverBasketPanel,
   LocalIndexPanel,
 } from "./AsiaRadarDashboard";
-import type { AsiaRadarLocalIndex, AsiaRadarMarket, AsiaRadarOverview } from "@/lib/asiaRadar";
+import type {
+  AsiaRadarDriverBasket,
+  AsiaRadarDriverLeader,
+  AsiaRadarLocalIndex,
+  AsiaRadarMarket,
+  AsiaRadarOverview,
+} from "@/lib/asiaRadar";
 
 const symbols = [
   "EWY",
@@ -93,6 +100,110 @@ function localIndexFor(symbol: string): AsiaRadarLocalIndex {
   return pendingIndex("no_verified_channel", null, null);
 }
 
+function availableLeader(
+  symbol: string,
+  nameEn: string,
+  nameZh: string,
+  listing: "us_adr" | "hk_local",
+  currency: string,
+  timezone: string,
+  provider: "polygon" | "futu",
+): AsiaRadarDriverLeader {
+  return {
+    status: "available",
+    symbol,
+    name_en: nameEn,
+    name_zh: nameZh,
+    listing,
+    currency,
+    timezone,
+    provider,
+    provenance: provider,
+    fetched_at: "2026-02-12T09:00:00+00:00",
+    adjustment: provider === "polygon" ? "adjusted" : "qfq",
+    as_of: "2026-02-12",
+    series: [
+      { date: "2026-02-10", close: 100, indexed_return_pct: 0 },
+      { date: "2026-02-11", close: 102, indexed_return_pct: 2 },
+      { date: "2026-02-12", close: 101, indexed_return_pct: 1 },
+    ],
+    reason_code: null,
+    reason: null,
+    provider_code: null,
+  };
+}
+
+function failedLeader(
+  symbol: string,
+  nameEn: string,
+  nameZh: string,
+  providerCode: string,
+): AsiaRadarDriverLeader {
+  return {
+    status: "unavailable",
+    symbol,
+    name_en: nameEn,
+    name_zh: nameZh,
+    listing: "hk_local",
+    currency: "HKD",
+    timezone: "Asia/Hong_Kong",
+    provider: "futu",
+    provenance: null,
+    fetched_at: null,
+    adjustment: null,
+    as_of: null,
+    series: [],
+    reason_code: "provider_error",
+    reason: "unable to connect to OpenD at 127.0.0.1:11111",
+    provider_code: providerCode,
+  };
+}
+
+function basketFor(leaders: AsiaRadarDriverLeader[]): AsiaRadarDriverBasket {
+  const available = leaders.some((leader) => leader.status === "available");
+  return {
+    status: available ? "available" : "unavailable",
+    label_en: "DRIVER BASKET — not an index substitute",
+    label_zh: "龙头篮子——非指数替代",
+    basket_note: "unweighted display; no point-in-time index weights",
+    leaders,
+    reason_code: available ? null : "provider_error",
+    reason: available ? null : "No leader series could be loaded for this market.",
+    provider_code: null,
+  };
+}
+
+function pendingBasket(reasonCode: string | null): AsiaRadarDriverBasket {
+  return {
+    status: "unavailable",
+    label_en: "DRIVER BASKET — not an index substitute",
+    label_zh: "龙头篮子——非指数替代",
+    basket_note: "unweighted display; no point-in-time index weights",
+    leaders: [],
+    reason_code: reasonCode,
+    reason: "backend detail",
+    provider_code: null,
+  };
+}
+
+function driverBasketFor(symbol: string): AsiaRadarDriverBasket {
+  if (symbol === "EWH") {
+    return basketFor([
+      availableLeader("HK.00700", "Tencent", "腾讯控股", "hk_local", "HKD", "Asia/Hong_Kong", "futu"),
+      availableLeader("HK.09988", "Alibaba", "阿里巴巴", "hk_local", "HKD", "Asia/Hong_Kong", "futu"),
+    ]);
+  }
+  if (symbol === "EWT") {
+    return basketFor([
+      availableLeader("TSM", "TSMC (ADR)", "台积电 (ADR)", "us_adr", "USD", "America/New_York", "polygon"),
+    ]);
+  }
+  if (symbol === "EWY") {
+    return pendingBasket("no_liquid_us_listing");
+  }
+  return pendingBasket("no_verified_channel");
+}
+
 function marketFixture(symbol: string, index: number): AsiaRadarMarket {
   return {
     market_id: symbol.toLowerCase(),
@@ -124,12 +235,13 @@ function marketFixture(symbol: string, index: number): AsiaRadarMarket {
       provenance: "futu",
     },
     local_index: localIndexFor(symbol),
+    driver_basket: driverBasketFor(symbol),
   };
 }
 
 function overview(): AsiaRadarOverview {
   return {
-    schema_version: "1.2",
+    schema_version: "1.3",
     provider: "futu",
     as_of: "2026-02-13",
     timezone: "America/New_York",
@@ -342,5 +454,143 @@ describe("LocalIndexPanel", () => {
     expect(html).toContain("未用任何替代曲线冒充指数");
     expect(html).not.toContain("<polyline");
     expect(html.toLowerCase()).not.toContain("sample");
+  });
+});
+
+describe("DriverBasketPanel", () => {
+  function marketWithBasket(symbol: string, basket: AsiaRadarDriverBasket | null) {
+    const market = marketFixture(symbol, 0);
+    market.driver_basket = basket;
+    return market;
+  }
+
+  it("renders an available HK basket with badges, charts and disclosures (zh)", () => {
+    const html = renderToStaticMarkup(
+      <DriverBasketPanel
+        locale="zh"
+        market={marketWithBasket(
+          "EWH",
+          basketFor([
+            availableLeader("HK.00700", "Tencent", "腾讯控股", "hk_local", "HKD", "Asia/Hong_Kong", "futu"),
+            availableLeader("HK.09988", "Alibaba", "阿里巴巴", "hk_local", "HKD", "Asia/Hong_Kong", "futu"),
+          ]),
+        )}
+      />,
+    );
+
+    expect(html).toContain('data-driver-basket-state="available"');
+    expect(html).toContain("龙头篮子——非指数替代");
+    expect(html).toContain("unweighted display; no point-in-time index weights");
+    expect(html).toContain("腾讯控股");
+    expect(html).toContain("HK.00700");
+    expect(html).toContain("港股本地");
+    expect(html).toContain("HKD");
+    expect(html).toContain("futu");
+    expect(html).toContain("Asia/Hong_Kong");
+    expect(html.match(/data-driver-basket-chart/g)).toHaveLength(2);
+    expect(html.match(/data-driver-basket-leader="available"/g)).toHaveLength(2);
+    // the not-an-index-substitute / never-blended discipline is stated
+    expect(html).toContain("不是指数替代");
+    expect(html).toContain("不与美元 ETF 代理混合计算任何指标");
+  });
+
+  it("renders the ADR lane with USD / US calendar badges (en)", () => {
+    const html = renderToStaticMarkup(
+      <DriverBasketPanel
+        locale="en"
+        market={marketWithBasket(
+          "EWT",
+          basketFor([
+            availableLeader("TSM", "TSMC (ADR)", "台积电 (ADR)", "us_adr", "USD", "America/New_York", "polygon"),
+          ]),
+        )}
+      />,
+    );
+
+    expect(html).toContain('data-driver-basket-state="available"');
+    expect(html).toContain("DRIVER BASKET — not an index substitute");
+    expect(html).toContain("TSMC (ADR)");
+    expect(html).toContain("US ADR");
+    expect(html).toContain("USD");
+    expect(html).toContain("polygon");
+    expect(html).toContain("America/New_York");
+    expect(html).toContain("never blended into the USD ETF proxy metrics");
+  });
+
+  it("keeps an explicit pending empty state for markets without a leader channel (zh)", () => {
+    const html = renderToStaticMarkup(
+      <DriverBasketPanel
+        locale="zh"
+        market={marketWithBasket("EWY", pendingBasket("no_liquid_us_listing"))}
+      />,
+    );
+
+    expect(html).toContain('data-driver-basket-state="pending"');
+    expect(html).toContain("龙头篮子待接入");
+    expect(html).toContain("三星电子与 SK 海力士无流动性充足的美国上市凭证");
+    expect(html).not.toContain("<polyline");
+  });
+
+  it("localizes the no-channel pending reason", () => {
+    const zh = renderToStaticMarkup(
+      <DriverBasketPanel
+        locale="zh"
+        market={marketWithBasket("INDA", pendingBasket("no_verified_channel"))}
+      />,
+    );
+    expect(zh).toContain("该市场暂无已验证的龙头数据通道");
+
+    const en = renderToStaticMarkup(
+      <DriverBasketPanel
+        locale="en"
+        market={marketWithBasket("INDA", pendingBasket("no_verified_channel"))}
+      />,
+    );
+    expect(en).toContain("Driver basket not connected");
+    expect(en).toContain("No verified leader data channel for this market yet.");
+  });
+
+  it("renders a lane outage as an explicit error state with per-leader detail", () => {
+    const outage = basketFor([
+      failedLeader("HK.00005", "HSBC", "汇丰控股", "opend_unavailable"),
+    ]);
+    const html = renderToStaticMarkup(
+      <DriverBasketPanel locale="zh" market={marketWithBasket("EWH", outage)} />,
+    );
+
+    expect(html).toContain('data-driver-basket-state="provider_error"');
+    expect(html).toContain("龙头篮子暂不可用");
+    expect(html).toContain("HK.00005");
+    expect(html).toContain("opend_unavailable");
+    expect(html).toContain("未用替代篮子或 ETF 代理曲线冒充");
+    expect(html).not.toContain("<polyline");
+    expect(html.toLowerCase()).not.toContain("sample");
+  });
+
+  it("keeps a partially failed basket available with an honest error chip", () => {
+    const partial = basketFor([
+      availableLeader("HK.00700", "Tencent", "腾讯控股", "hk_local", "HKD", "Asia/Hong_Kong", "futu"),
+      failedLeader("HK.00005", "HSBC", "汇丰控股", "opend_unavailable"),
+    ]);
+    const html = renderToStaticMarkup(
+      <DriverBasketPanel locale="zh" market={marketWithBasket("EWH", partial)} />,
+    );
+
+    expect(html).toContain('data-driver-basket-state="available"');
+    expect(html.match(/data-driver-basket-leader="available"/g)).toHaveLength(1);
+    expect(html.match(/data-driver-basket-leader="unavailable"/g)).toHaveLength(1);
+    expect(html).toContain("汇丰控股");
+    expect(html).toContain("龙头暂不可用");
+    expect(html).toContain("opend_unavailable");
+  });
+
+  it("falls back to an honest pending state when the overlay field is missing", () => {
+    const html = renderToStaticMarkup(
+      <DriverBasketPanel locale="en" market={marketWithBasket("EWH", null)} />,
+    );
+
+    expect(html).toContain('data-driver-basket-state="pending"');
+    expect(html).toContain("Driver basket data was not loaded for this market.");
+    expect(html).not.toContain("<polyline");
   });
 });

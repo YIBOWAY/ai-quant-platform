@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 import psycopg
 from psycopg.types.json import Jsonb
 
+from quant_system.brief.archive import BriefArchiveRow
 from quant_system.brief.models import BriefIssue, BriefIssueEnvelope, BriefSnapshot
 from quant_system.config.settings import Settings
 from quant_system.storage.database import (
@@ -262,6 +263,53 @@ class BriefRepository:
         except psycopg.Error as exc:
             raise BriefDatabaseUnavailable(str(exc)) from exc
         return [_issue_from_row(row) for row in rows], int(total_row[0])
+
+    def list_issue_archive_rows(
+        self,
+        *,
+        locale: str,
+        start: date,
+        end: date,
+    ) -> list[BriefArchiveRow]:
+        """Issues inside [start, end] with their latest snapshot's title/lede.
+
+        Read-only companion to ``list_issues`` for the grouped archive view;
+        the existing list contract is unchanged.
+        """
+        database = self._require_database()
+        try:
+            with database.connect() as conn:
+                rows = conn.execute(
+                    f"""
+                    SELECT i.public_id,
+                           i.issue_date,
+                           s.payload ->> 'title' AS title,
+                           s.payload ->> 'lede' AS lede
+                    FROM {SCHEMA}.brief_issues AS i
+                    LEFT JOIN {SCHEMA}.brief_snapshots AS s
+                      ON s.issue_id = i.issue_id
+                     AND s.snapshot_id = i.latest_snapshot_id
+                    WHERE i.owner_user_id = %s
+                      AND i.locale = %s
+                      AND i.issue_date >= %s
+                      AND i.issue_date <= %s
+                    ORDER BY i.issue_date DESC, i.updated_at DESC, i.issue_id DESC
+                    """,
+                    (ROOT_USER_ID, locale, start, end),
+                ).fetchall()
+        except DatabaseUnavailable as exc:
+            raise BriefDatabaseUnavailable(str(exc)) from exc
+        except psycopg.Error as exc:
+            raise BriefDatabaseUnavailable(str(exc)) from exc
+        return [
+            BriefArchiveRow(
+                public_id=str(row[0]),
+                issue_date=row[1],
+                title=str(row[2]) if row[2] is not None else None,
+                lede=str(row[3]) if row[3] is not None else None,
+            )
+            for row in rows
+        ]
 
     def _require_database(self) -> Database:
         database = get_database(self._settings)

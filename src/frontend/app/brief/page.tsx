@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { BriefArchiveControl } from "@/components/brief/BriefArchiveControl";
+import { BriefArchiveSidebar } from "@/components/brief/BriefArchiveSidebar";
 import { BriefDailyChange } from "@/components/brief/BriefDailyChange";
 import { BriefPerformanceChart } from "@/components/brief/BriefPerformanceChart";
 import { BriefPerformanceRangeSelector } from "@/components/brief/BriefPerformanceRangeSelector";
@@ -18,6 +19,7 @@ import {
   getBriefIssueList,
   getLatestBriefIssue,
   getNewsItems,
+  getNewsMarketTopics,
   getOptionsDailyScanStatus,
   getPaperRuns,
   getRecentRuns,
@@ -37,7 +39,7 @@ import {
 import { isSampleSource } from "@/lib/runSource";
 import { localizePath } from "@/lib/locale";
 import type { BriefArchivePayload, BriefSourceWatermark } from "@/lib/briefArchive";
-import { buildBriefAiNewsDigest } from "@/lib/briefAiNewsDigest";
+import { buildBriefAiNewsDigest, mapDigestToAiNewsSourceEntry, mapDigestToBriefAiNews } from "@/lib/briefAiNewsDigest";
 import { briefDateKey } from "@/lib/briefDate";
 import {
   buildBriefPerformanceSnapshot,
@@ -102,6 +104,9 @@ const copy = {
     marketEn: "THE MARKET",
     marketSummary: "Market summary",
     marketUnavailable: "market move unavailable",
+    topics: "Market Topics",
+    topicsEn: "MARKET TOPICS WIRE",
+    noTopics: "No market topics are available from the news lane.",
     quote:
       "Market data is incomplete; waiting for fresh SPY, QQQ, SOXX, and IGV daily bars before forming a full market read.",
     quoteSig: "Platform market note",
@@ -163,6 +168,9 @@ const copy = {
     marketEn: "THE MARKET",
     marketSummary: "市场概括",
     marketUnavailable: "市场涨跌数据不足",
+    topics: "市场要闻",
+    topicsEn: "MARKET TOPICS WIRE",
+    noTopics: "市场新闻源暂无可匹配要闻。",
     quoteSig: "平台市场手记",
     quote:
       "市场涨跌数据暂不完整；待 SPY、QQQ、SOXX、IGV 四组日线全部刷新后再形成完整判断。",
@@ -728,6 +736,7 @@ export default async function BriefPage({ searchParams }: BriefPageProps) {
     recentRuns,
     candidates,
     digest,
+    marketTopics,
     optionsStatus,
     spyHistory,
     qqqHistory,
@@ -748,6 +757,7 @@ export default async function BriefPage({ searchParams }: BriefPageProps) {
     getRecentRuns(8),
     getAgentCandidates(),
     getNewsItems({ take: 6, preference: "auto" }),
+    getNewsMarketTopics({ take: 6 }),
     getOptionsDailyScanStatus(),
     getCachedBriefMarketDataHistory("SPY", briefDateKey(marketStart), briefDateKey(today), "1d"),
     getCachedBriefMarketDataHistory("QQQ", briefDateKey(marketStart), briefDateKey(today), "1d"),
@@ -802,6 +812,8 @@ export default async function BriefPage({ searchParams }: BriefPageProps) {
       : undefined;
   const rangeLabel = performanceRangeLabel(selectedRange, locale);
   const { items: digestItems, source: aiNewsSource } = buildBriefAiNewsDigest(digest);
+  const marketTopicItems = mapDigestToBriefAiNews(marketTopics);
+  const marketTopicsSource = mapDigestToAiNewsSourceEntry(marketTopics, "market_news");
   const archivedIssuePublicId =
     archivedEnvelope.issue.status !== "unavailable" &&
     archivedEnvelope.issue.issue_date === issueDate &&
@@ -822,6 +834,7 @@ export default async function BriefPage({ searchParams }: BriefPageProps) {
     recentRuns.apiError,
     candidates.apiError,
     digest.apiError,
+    marketTopics.apiError,
     optionsStatus.apiError,
     spyHistory.apiError,
     qqqHistory.apiError,
@@ -832,6 +845,7 @@ export default async function BriefPage({ searchParams }: BriefPageProps) {
     ...selectedPerformance.warnings,
     ...masterPerformance.warnings,
     ...digest.warnings,
+    ...marketTopics.warnings,
   ]);
   const archiveBlockedReason = resolveBriefArchiveBlockedReason(
     paperEquityAvailability.blockedReason,
@@ -992,6 +1006,7 @@ export default async function BriefPage({ searchParams }: BriefPageProps) {
         detail: recentRuns.apiError ?? candidates.apiError ?? optionsStatus.apiError ?? `${logEntries.length} entries`,
       },
       aiNewsSource,
+      marketTopicsSource,
       ...[
         ["SPY", spyHistory],
         ["QQQ", qqqHistory],
@@ -1010,7 +1025,9 @@ export default async function BriefPage({ searchParams }: BriefPageProps) {
   };
 
   return (
-    <div className="h-full overflow-y-auto bg-paper-ink text-ink">
+    <div className="flex h-full bg-paper-ink text-ink">
+      <BriefArchiveSidebar locale={locale} />
+      <div className="h-full min-w-0 flex-1 overflow-y-auto">
       <div className="border-b border-editorial-rule bg-paper-ink px-4 py-1.5 text-center font-data-mono text-[11px] text-ink-secondary">
         <strong className="text-ink">{text.stripTitle}</strong>
         <span className="px-2">·</span>
@@ -1035,6 +1052,7 @@ export default async function BriefPage({ searchParams }: BriefPageProps) {
             recentRuns.apiError,
             candidates.apiError,
             digest.apiError,
+            marketTopics.apiError,
             optionsStatus.apiError,
             spyHistory.apiError,
             qqqHistory.apiError,
@@ -1180,6 +1198,42 @@ export default async function BriefPage({ searchParams }: BriefPageProps) {
               />
             ))}
           </div>
+          <div className="mt-6 border-t border-editorial-rule pt-4">
+            <div className="mb-2 font-data-mono text-[11px] uppercase tracking-[0.18em] text-ink-secondary">
+              {text.topics} · {text.topicsEn}
+              {marketTopics.apiError
+                ? ""
+                : ` · ${marketTopics.provider}/${marketTopics.served_from ?? "primary"}`}
+            </div>
+            {marketTopicItems.length ? (
+              <ul className="space-y-1.5">
+                {marketTopicItems.slice(0, 3).map((item) => {
+                  const topicUrl = safeExternalUrl(item.url);
+                  return (
+                    <li className="font-editorial-body text-sm leading-6 text-ink" key={item.id}>
+                      {topicUrl ? (
+                        <a
+                          className="transition-colors hover:text-editorial-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-editorial-accent"
+                          href={topicUrl}
+                          rel="noreferrer noopener"
+                          target="_blank"
+                        >
+                          {item.title}
+                        </a>
+                      ) : (
+                        item.title
+                      )}
+                      <span className="ml-2 font-data-mono text-[11px] text-ink-secondary">
+                        {item.source} · {formatTimestamp(item.published_at)}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="font-data-mono text-sm text-ink-secondary">{text.noTopics}</p>
+            )}
+          </div>
         </section>
 
         <aside className="mx-auto my-7 max-w-3xl border-l-4 border-editorial-accent bg-paper-surface px-6 py-4">
@@ -1212,6 +1266,7 @@ export default async function BriefPage({ searchParams }: BriefPageProps) {
           <br />
           {text.liveTrading}: {liveTradingStatus} · {text.neverActive}
         </footer>
+      </div>
       </div>
     </div>
   );

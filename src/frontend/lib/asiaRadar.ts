@@ -29,6 +29,44 @@ export type AsiaRadarLocalIndex = {
   provider_code: string | null;
 };
 
+export type AsiaRadarDriverListing = "us_adr" | "hk_local";
+export type AsiaRadarDriverProvider = "polygon" | "futu";
+export type AsiaRadarDriverProvenance =
+  | "polygon"
+  | "polygon_cache"
+  | "futu"
+  | "futu_cache";
+
+export type AsiaRadarDriverLeader = {
+  status: "available" | "unavailable";
+  symbol: string;
+  name_en: string;
+  name_zh: string;
+  listing: AsiaRadarDriverListing;
+  currency: string;
+  timezone: string;
+  provider: AsiaRadarDriverProvider;
+  provenance: AsiaRadarDriverProvenance | null;
+  fetched_at: string | null;
+  adjustment: string | null;
+  as_of: string | null;
+  series: AsiaRadarLocalIndexPoint[];
+  reason_code: string | null;
+  reason: string | null;
+  provider_code: string | null;
+};
+
+export type AsiaRadarDriverBasket = {
+  status: "available" | "unavailable";
+  label_en: string;
+  label_zh: string;
+  basket_note: string;
+  leaders: AsiaRadarDriverLeader[];
+  reason_code: string | null;
+  reason: string | null;
+  provider_code: string | null;
+};
+
 export type AsiaRadarMarket = {
   market_id: string;
   name_en: string;
@@ -60,10 +98,11 @@ export type AsiaRadarMarket = {
     provenance: AsiaRadarProvenance;
   };
   local_index: AsiaRadarLocalIndex;
+  driver_basket: AsiaRadarDriverBasket | null;
 };
 
 export type AsiaRadarOverview = {
-  schema_version: "1.0" | "1.1" | "1.2";
+  schema_version: "1.0" | "1.1" | "1.2" | "1.3";
   provider: "futu";
   as_of: string;
   timezone: "America/New_York";

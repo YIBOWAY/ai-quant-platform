@@ -79,3 +79,29 @@ curl -fsS 'http://127.0.0.1:8765/api/asia-radar/overview?provider=futu'
   让该市场页签显示不可用，不影响 12 ETF 主宇宙。响应 schema_version 为 1.2，
   `local_index` overlay 挂在每个 market 上。
 
+## 龙头驱动页签（Phase 2 Slice 2B，2026-08-12 起）
+
+市场详情的「龙头驱动」页签对部分市场展示**真实本地龙头篮子**
+（`driver_basket` overlay，schema_version 1.3），与本地指数同一纪律：
+
+- 中国香港 → 腾讯 `HK.00700`、阿里巴巴 `HK.09988`、汇丰 `HK.00005`，走已加白
+  名单的 Futu 本地通道（HKD 仅展示，与 HK.800000 指数 overlay 同一口径）。
+- 日本 → 丰田 `TM`、索尼 `SONY`、三菱日联 `MUFG`、本田 `HMC`；中国台湾 →
+  台积电 `TSM`、联电 `UMC`。均为美股上市 ADR，经 Polygon grouped-daily
+  （一次调用覆盖全部 ADR 一个交易日；稳态 1 次/天，free tier 已验证），bar
+  以 `provider=polygon` / `adjustment=adjusted` 累积进同一个
+  `EquityBarCache` 文件，与 Futu 键空间互不可见。冷启动每次读取最多回填
+  5 个交易日；累积不足 20 根时龙头如实显示 `insufficient_history`，
+  不虚构曲线。
+- 韩国保持如实「待接入」：三星电子与 SK 海力士无流动性充足的美国上市凭证
+  （`no_liquid_us_listing`，伦敦 GDR / 场外 SSNGY 等因 provenance 风险被拒），
+  Futu 不支持 KS 格式，Twelve Data 免费档对 KR 市场 plan-gate。
+- 其余市场：`permission_not_granted`（A 股龙头待 Futu 权限）或
+  `no_verified_channel`。**不会**用 ETF 代理或合成篮子冒充龙头篮子。
+- 篮子为非加权展示（`basket_note` 明示无 point-in-time 指数权重）：ADR 通道
+  与 ETF 代理共享美元与美股日历，可并排对照；港股通道为 HKD 仅展示。
+  龙头序列只在 ETF 指标全部算完后挂载（`attach_driver_basket_overlays`），
+  永不进入 `build_asia_radar_overview`；任一通道失败只降级该市场的篮子，
+  12 ETF 主路径与 local_index 页签不受影响。汇总路径（daily brief）完全跳过
+  本通道。
+

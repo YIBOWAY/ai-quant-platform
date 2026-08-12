@@ -58,6 +58,57 @@ class AsiaRadarLocalIndexResponse(BaseModel):
     provider_code: str | None
 
 
+class AsiaRadarDriverLeaderPointResponse(BaseModel):
+    date: str
+    close: float
+    indexed_return_pct: float
+
+
+class AsiaRadarDriverLeaderResponse(BaseModel):
+    """One leader inside a Slice 2B driver basket.
+
+    ``status="unavailable"`` carries an explicit per-leader reason so a
+    single failed leader never silently disappears from the basket.
+    """
+
+    status: Literal["available", "unavailable"]
+    symbol: str
+    name_en: str
+    name_zh: str
+    listing: Literal["us_adr", "hk_local"]
+    currency: str
+    timezone: str
+    provider: Literal["polygon", "futu"]
+    provenance: Literal["polygon", "polygon_cache", "futu", "futu_cache"] | None
+    fetched_at: str | None
+    adjustment: str | None
+    as_of: str | None
+    series: list[AsiaRadarDriverLeaderPointResponse]
+    reason_code: str | None
+    reason: str | None
+    provider_code: str | None
+
+
+class AsiaRadarDriverBasketResponse(BaseModel):
+    """Display-only driver-basket overlay for one market (Slice 2B).
+
+    Unweighted leader display, never blended into the USD ETF proxy metrics
+    and never substituted with the ETF proxy or a synthetic basket.
+    ``status="unavailable"`` carries an explicit reason (pending channel or
+    provider error) so the driver lane is fail-closed without taking the ETF
+    main path down.
+    """
+
+    status: Literal["available", "unavailable"]
+    label_en: str
+    label_zh: str
+    basket_note: str
+    leaders: list[AsiaRadarDriverLeaderResponse]
+    reason_code: str | None
+    reason: str | None
+    provider_code: str | None
+
+
 class AsiaRadarMarketResponse(BaseModel):
     market_id: str
     name_en: str
@@ -73,6 +124,7 @@ class AsiaRadarMarketResponse(BaseModel):
     history: list[AsiaRadarHistoryPointResponse]
     meta: AsiaRadarMetaResponse
     local_index: AsiaRadarLocalIndexResponse | None = None
+    driver_basket: AsiaRadarDriverBasketResponse | None = None
 
 
 class AsiaRadarKShapePointResponse(BaseModel):
@@ -89,7 +141,7 @@ class AsiaRadarKShapeResponse(BaseModel):
 
 
 class AsiaRadarOverviewResponse(BaseModel):
-    schema_version: Literal["1.0", "1.1", "1.2"]
+    schema_version: Literal["1.0", "1.1", "1.2", "1.3"]
     provider: Literal["futu"]
     as_of: str
     timezone: Literal["America/New_York"]

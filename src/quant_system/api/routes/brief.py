@@ -7,12 +7,16 @@ from fastapi import APIRouter, HTTPException, Query
 
 from quant_system.api.dependencies import SettingsDep
 from quant_system.api.schemas.brief import (
+    BriefArchiveEntryResponse,
+    BriefArchiveGroupResponse,
+    BriefArchiveViewResponse,
     BriefGenerateRequest,
     BriefIssueEnvelopeResponse,
     BriefIssueListResponse,
     BriefIssueResponse,
     BriefSnapshotResponse,
 )
+from quant_system.brief.archive import BriefArchiveGroup
 from quant_system.brief.models import BriefIssueEnvelope
 from quant_system.brief.repository import (
     BriefDatabaseUnavailable,
@@ -57,6 +61,34 @@ def list_brief_issues(
         total=total,
         limit=limit,
         offset=offset,
+    )
+
+
+@router.get(
+    "/brief/archive",
+    response_model=BriefArchiveViewResponse,
+)
+def get_brief_archive(
+    settings: SettingsDep,
+    locale: Annotated[str, Query()] = "zh",
+    months: Annotated[int, Query(ge=1, le=24)] = 3,
+) -> BriefArchiveViewResponse:
+    """Grouped archive view: daily issues plus weekly/monthly rollups.
+
+    Weekly/monthly entries are views over stored daily snapshots (last daily
+    issue of each ISO week / calendar month); no separate rollup storage.
+    """
+    service = BriefService(BriefRepository(settings))
+    try:
+        view = service.list_archive(locale=locale, months=months)
+    except BriefDatabaseUnavailable as exc:
+        raise _database_unavailable_503() from exc
+    return BriefArchiveViewResponse(
+        locale=locale.strip() or "zh",
+        months=months,
+        daily=_to_group_responses(view.daily),
+        weekly=_to_group_responses(view.weekly),
+        monthly=_to_group_responses(view.monthly),
     )
 
 
@@ -121,6 +153,29 @@ def get_brief_issue(
     except BriefNotFound as exc:
         raise _not_found_404(public_id) from exc
     return _to_response(envelope)
+
+
+def _to_group_responses(
+    groups: tuple[BriefArchiveGroup, ...],
+) -> list[BriefArchiveGroupResponse]:
+    return [
+        BriefArchiveGroupResponse(
+            key=group.key,
+            entries=[
+                BriefArchiveEntryResponse(
+                    public_id=entry.public_id,
+                    issue_date=entry.issue_date,
+                    title=entry.title,
+                    snippet=entry.snippet,
+                    kind=entry.kind,
+                    iso_week=entry.iso_week,
+                    month=entry.month,
+                )
+                for entry in group.entries
+            ],
+        )
+        for group in groups
+    ]
 
 
 def _to_response(envelope: BriefIssueEnvelope) -> BriefIssueEnvelopeResponse:

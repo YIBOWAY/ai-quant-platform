@@ -436,6 +436,7 @@ def create_app(
             backtest_reconcile_thread.join(timeout=1.0)
             backtest_job_runner.shutdown(wait=True, cancel_futures=True)
             news.close_aihot_clients()
+            news.close_market_news_clients()
             if pending_order_processor is not None:
                 stop_event, thread = pending_order_processor
                 stop_event.set()

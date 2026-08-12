@@ -209,7 +209,8 @@ def test_index_lane_outage_still_returns_200_with_honest_overlays(
     tmp_path, monkeypatch
 ) -> None:
     # Route-level proof: with the REAL composed reader, an OpenD outage on the
-    # local-index lane degrades to overlay_missing states instead of a 503.
+    # local-index lane (and any driver-lane outage) degrades to overlay_missing
+    # states instead of a 503.
     from quant_system.data.price_history import HistoricalPriceSnapshot
     from quant_system.factors import asia_radar
 
@@ -256,6 +257,7 @@ def test_index_lane_outage_still_returns_200_with_honest_overlays(
         )
 
     monkeypatch.setattr(asia_radar, "read_local_index_overlays", lane_outage)
+    monkeypatch.setattr(asia_radar, "read_driver_basket_overlays", lane_outage)
 
     class _FrozenDateTime:
         @staticmethod
@@ -271,9 +273,95 @@ def test_index_lane_outage_still_returns_200_with_honest_overlays(
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["schema_version"] == "1.2"
+    assert payload["schema_version"] == "1.3"
     assert len(payload["markets"]) == 12
     for market in payload["markets"]:
         assert market["local_index"]["status"] == "unavailable"
         assert market["local_index"]["reason_code"] == "overlay_missing"
         assert market["local_index"]["series"] == []
+        assert market["driver_basket"]["status"] == "unavailable"
+        assert market["driver_basket"]["reason_code"] == "overlay_missing"
+        assert market["driver_basket"]["leaders"] == []
+
+
+def test_overview_response_carries_driver_basket_overlays(tmp_path) -> None:
+    available_basket = {
+        "status": "available",
+        "label_en": "DRIVER BASKET — not an index substitute",
+        "label_zh": "龙头篮子——非指数替代",
+        "basket_note": "unweighted display; no point-in-time index weights",
+        "leaders": [
+            {
+                "status": "available",
+                "symbol": "HK.00700",
+                "name_en": "Tencent",
+                "name_zh": "腾讯控股",
+                "listing": "hk_local",
+                "currency": "HKD",
+                "timezone": "Asia/Hong_Kong",
+                "provider": "futu",
+                "provenance": "futu",
+                "fetched_at": "2026-02-12T09:00:00+00:00",
+                "adjustment": "qfq",
+                "as_of": "2026-02-12",
+                "series": [
+                    {"date": "2026-02-11", "close": 500.0, "indexed_return_pct": 0.0},
+                    {"date": "2026-02-12", "close": 505.0, "indexed_return_pct": 1.0},
+                ],
+                "reason_code": None,
+                "reason": None,
+                "provider_code": None,
+            }
+        ],
+        "reason_code": None,
+        "reason": None,
+        "provider_code": None,
+    }
+    pending_basket = {
+        "status": "unavailable",
+        "label_en": "DRIVER BASKET — not an index substitute",
+        "label_zh": "龙头篮子——非指数替代",
+        "basket_note": "unweighted display; no point-in-time index weights",
+        "leaders": [],
+        "reason_code": "no_liquid_us_listing",
+        "reason": "Samsung Electronics and SK Hynix have no liquid US listing.",
+        "provider_code": None,
+    }
+
+    def fake_reader(*, settings, today=None):
+        overview = _overview()
+        overview["schema_version"] = "1.3"
+        overview["markets"] = [
+            _market("EWH", "hong-kong", None),
+            _market("EWY", "south-korea", None),
+        ]
+        overview["markets"][0]["driver_basket"] = available_basket
+        overview["markets"][1]["driver_basket"] = pending_basket
+        return overview
+
+    app = create_app(output_dir=tmp_path)
+    app.dependency_overrides[get_asia_radar_reader] = lambda: fake_reader
+    client = TestClient(app)
+
+    response = client.get("/api/asia-radar/overview?provider=futu")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["schema_version"] == "1.3"
+    by_symbol = {market["symbol"]: market for market in payload["markets"]}
+    hong_kong = by_symbol["EWH"]["driver_basket"]
+    assert hong_kong["status"] == "available"
+    leader = hong_kong["leaders"][0]
+    assert leader["symbol"] == "HK.00700"
+    assert leader["listing"] == "hk_local"
+    assert leader["currency"] == "HKD"
+    assert leader["provider"] == "futu"
+    assert leader["series"][-1] == {
+        "date": "2026-02-12",
+        "close": 505.0,
+        "indexed_return_pct": 1.0,
+    }
+    south_korea = by_symbol["EWY"]["driver_basket"]
+    assert south_korea["status"] == "unavailable"
+    assert south_korea["reason_code"] == "no_liquid_us_listing"
+    assert south_korea["leaders"] == []

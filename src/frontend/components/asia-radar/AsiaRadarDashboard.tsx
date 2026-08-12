@@ -5,6 +5,7 @@ import { AlertTriangle, BarChart3, Globe2, RefreshCw, TrendingUp } from "lucide-
 
 import {
   getAsiaRadarOverview,
+  type AsiaRadarDriverBasket,
   type AsiaRadarLocalIndex,
   type AsiaRadarMarket,
   type AsiaRadarOverview,
@@ -60,7 +61,22 @@ const copy = {
       "Futu OpenD does not support this market's index code format; a dedicated channel (TWSE / Twelve Data) is planned.",
     indexReasonChannel: "No verified local index channel for this market yet.",
     indexReasonMissing: "Local index data was not loaded for this market.",
-    driversEmpty: "Driver mapping is reserved for Phase 2. No stock weights or contribution figures are shown yet.",
+    driverBasketNote:
+      "Unweighted leader display — not an index substitute and never blended into the USD ETF proxy metrics. Each leader keeps its own provider, currency, trading calendar, and vertical scale.",
+    driverUsAdr: "US ADR",
+    driverHkLocal: "HK local",
+    driverPendingTitle: "Driver basket not connected",
+    driverErrorTitle: "Driver basket temporarily unavailable",
+    driverErrorHint: "No substitute basket or ETF proxy curve was used; the ETF proxy tab is unaffected.",
+    driverReasonNoListing:
+      "Samsung Electronics and SK Hynix have no liquid US listing; no verified leader channel for this market yet.",
+    driverReasonPermission:
+      "The Futu account has no A-share quote permission; A-share leaders unlock once it is enabled in Futu.",
+    driverReasonFormat:
+      "The verified channels do not support this market's leader code format yet.",
+    driverReasonChannel: "No verified leader data channel for this market yet.",
+    driverReasonMissing: "Driver basket data was not loaded for this market.",
+    driverLeaderErrorPrefix: "Leader unavailable",
     close: "Latest close",
     methodology: "Methodology",
     readOnly: "Read-only market research. Not investment advice and no trading action is available here.",
@@ -113,7 +129,21 @@ const copy = {
       "Futu OpenD 不支持该市场的指数代码格式，待接入专用通道（TWSE / Twelve Data）。",
     indexReasonChannel: "该市场指数暂无已验证的本地数据通道。",
     indexReasonMissing: "该市场的本地指数数据未加载。",
-    driversEmpty: "龙头映射留待 Phase 2。本页暂不展示个股权重或贡献数字。",
+    driverBasketNote:
+      "龙头篮子为非加权展示，不是指数替代，也不与美元 ETF 代理混合计算任何指标；每只龙头保留各自的数据源、币种、交易日历与纵轴刻度。",
+    driverUsAdr: "美股 ADR",
+    driverHkLocal: "港股本地",
+    driverPendingTitle: "龙头篮子待接入",
+    driverErrorTitle: "龙头篮子暂不可用",
+    driverErrorHint: "未用替代篮子或 ETF 代理曲线冒充；ETF 代理页签不受影响。",
+    driverReasonNoListing:
+      "三星电子与 SK 海力士无流动性充足的美国上市凭证，该市场暂无已验证的龙头数据通道。",
+    driverReasonPermission:
+      "Futu 账户未开通 A 股行情权限；开通后可接入 A 股龙头。",
+    driverReasonFormat: "已验证通道暂不支持该市场的龙头代码格式。",
+    driverReasonChannel: "该市场暂无已验证的龙头数据通道。",
+    driverReasonMissing: "该市场的龙头篮子数据未加载。",
+    driverLeaderErrorPrefix: "龙头暂不可用",
     close: "最新收盘",
     methodology: "口径",
     readOnly: "仅供只读市场研究，不构成投资建议，本页不提供任何交易操作。",
@@ -537,7 +567,7 @@ function MarketDetail({
       </div>
       <div className="min-h-36 py-5" role="tabpanel">
         {tab === "index" ? <LocalIndexPanel locale={locale} market={market} /> : null}
-        {tab === "drivers" ? <EmptyDetail message={text.driversEmpty} /> : null}
+        {tab === "drivers" ? <DriverBasketPanel locale={locale} market={market} /> : null}
         {tab === "proxy" ? (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <DetailMetric label={text.close} value={latestClose == null ? "—" : `${latestClose.toFixed(2)} USD`} />
@@ -699,6 +729,187 @@ export function LocalIndexPanel({
   );
 }
 
+export function DriverBasketPanel({
+  locale,
+  market,
+}: {
+  locale: Locale;
+  market: AsiaRadarMarket;
+}) {
+  const text = copy[locale];
+  const basket = market.driver_basket;
+  if (!basket) {
+    return <PendingDriverDetail locale={locale} reason={text.driverReasonMissing} />;
+  }
+  if (basket.status !== "available") {
+    if (basket.reason_code === "provider_error") {
+      return (
+        <div
+          className="rounded-xl border border-accent-danger/40 bg-bg-base/40 p-5"
+          data-driver-basket-state="provider_error"
+        >
+          <div className="flex items-center gap-2 text-sm font-semibold text-accent-danger">
+            <AlertTriangle size={15} /> {text.driverErrorTitle}
+          </div>
+          <div className="mt-2 font-mono text-xs text-text-secondary">
+            {locale === "zh" ? basket.label_zh : basket.label_en}
+          </div>
+          <p className="mt-2 font-mono text-xs text-accent-danger">
+            {text.indexErrorReasonPrefix}
+            {basket.provider_code ? ` · ${basket.provider_code}` : ""}
+          </p>
+          {basket.leaders.length ? (
+            <ul className="mt-2 space-y-1 font-mono text-[11px] text-text-secondary">
+              {basket.leaders.map((leader) => (
+                <li key={leader.symbol}>
+                  {leader.symbol} · {text.driverLeaderErrorPrefix}
+                  {leader.provider_code ? ` · ${leader.provider_code}` : ""}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <p className="mt-2 text-xs text-text-secondary">{text.driverErrorHint}</p>
+          {basket.reason ? (
+            <details className="mt-2 text-[10px] text-text-secondary">
+              <summary className="cursor-pointer font-mono">{text.methodology}</summary>
+              <p className="mt-1 break-all font-mono">{basket.reason}</p>
+            </details>
+          ) : null}
+        </div>
+      );
+    }
+    return (
+      <PendingDriverDetail
+        locale={locale}
+        reason={driverBasketReasonCopy(text, basket)}
+      />
+    );
+  }
+
+  return (
+    <div data-driver-basket-state="available">
+      <div className="flex flex-wrap items-center gap-2 text-[10px]">
+        <span className="rounded-full border border-warning/40 bg-warning/10 px-2.5 py-1 font-semibold text-warning">
+          {locale === "zh" ? basket.label_zh : basket.label_en}
+        </span>
+        <span className="rounded-full border border-border-subtle px-2.5 py-1 font-mono text-text-secondary">
+          {basket.basket_note}
+        </span>
+      </div>
+      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        {basket.leaders.map((leader) => {
+          const leaderName = locale === "zh" ? leader.name_zh : leader.name_en;
+          const listingBadge =
+            leader.listing === "us_adr" ? text.driverUsAdr : text.driverHkLocal;
+          if (leader.status !== "available") {
+            return (
+              <div
+                className="rounded-xl border border-accent-danger/40 bg-bg-base/40 p-4"
+                data-driver-basket-leader="unavailable"
+                key={leader.symbol}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <span className="font-semibold text-text-primary">
+                    {leaderName} · {leader.symbol}
+                  </span>
+                  <span className="font-mono text-accent-danger">
+                    {text.driverLeaderErrorPrefix}
+                    {leader.provider_code ? ` · ${leader.provider_code}` : ""}
+                  </span>
+                </div>
+                {leader.reason ? (
+                  <p className="mt-2 font-mono text-[10px] text-text-secondary">
+                    {leader.reason}
+                  </p>
+                ) : null}
+              </div>
+            );
+          }
+          const lastPoint = leader.series.at(-1);
+          return (
+            <div
+              className="rounded-xl border border-border-subtle bg-bg-base/40 p-4"
+              data-driver-basket-leader="available"
+              key={leader.symbol}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                <span className="font-semibold text-text-primary">
+                  {leaderName} · {leader.symbol}
+                </span>
+                <span className="font-mono text-warning">
+                  {listingBadge} · {leader.currency}
+                </span>
+              </div>
+              <Sparkline
+                chartAttr="data-driver-basket-chart"
+                label={`${leaderName} ${leader.symbol}`}
+                stroke={
+                  leader.listing === "us_adr"
+                    ? "var(--color-accent-success)"
+                    : "var(--color-warning)"
+                }
+                values={leader.series.map((point) => point.indexed_return_pct)}
+              />
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2 font-mono text-xs text-text-secondary">
+                <span>
+                  {text.close}:{" "}
+                  {lastPoint ? `${lastPoint.close.toFixed(2)} ${leader.currency}` : "—"}
+                </span>
+                <ReturnValue locale={locale} value={lastPoint?.indexed_return_pct ?? null} />
+              </div>
+              <div className="mt-1 font-mono text-[10px] text-text-secondary">
+                {leader.series.length} {text.sessions} · {leader.provider}
+                {leader.provenance ? ` · ${leader.provenance}` : ""} · {text.asOf}{" "}
+                {leader.as_of} · {leader.timezone}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <p className="mt-3 text-xs text-text-secondary">{text.driverBasketNote}</p>
+    </div>
+  );
+}
+
+function PendingDriverDetail({
+  locale,
+  reason,
+}: {
+  locale: Locale;
+  reason: string;
+}) {
+  const text = copy[locale];
+  return (
+    <div
+      className="rounded-xl border border-dashed border-border-subtle p-5"
+      data-driver-basket-state="pending"
+    >
+      <div className="text-sm font-semibold text-text-secondary">
+        {text.driverPendingTitle}
+      </div>
+      <p className="mt-2 text-sm text-text-secondary">{reason}</p>
+    </div>
+  );
+}
+
+function driverBasketReasonCopy(
+  text: (typeof copy)[Locale],
+  basket: AsiaRadarDriverBasket,
+): string {
+  switch (basket.reason_code) {
+    case "no_liquid_us_listing":
+      return text.driverReasonNoListing;
+    case "permission_not_granted":
+      return text.driverReasonPermission;
+    case "market_format_unsupported":
+      return text.driverReasonFormat;
+    case "no_verified_channel":
+      return text.driverReasonChannel;
+    default:
+      return basket.reason ?? text.driverReasonMissing;
+  }
+}
+
 function ReturnValue({
   locale,
   value,
@@ -758,10 +969,12 @@ function localIndexReasonCopy(
 }
 
 function Sparkline({
+  chartAttr,
   label,
   stroke,
   values,
 }: {
+  chartAttr?: string;
   label: string;
   stroke: string;
   values: number[];
@@ -770,11 +983,14 @@ function Sparkline({
   const minimum = Math.min(0, ...values);
   const maximum = Math.max(0, ...values);
   const points = polylinePoints(values, minimum, maximum);
+  const markerProps: Record<string, string> = chartAttr
+    ? { [chartAttr]: "" }
+    : { "data-local-index-chart": "" };
   return (
     <svg
       aria-label={label}
       className="mt-3 h-[150px] w-full overflow-visible rounded-xl bg-bg-base/50"
-      data-local-index-chart
+      {...markerProps}
       role="img"
       viewBox="0 0 720 240"
     >
@@ -789,10 +1005,6 @@ function Sparkline({
       <polyline fill="none" points={points} stroke={stroke} strokeWidth={3} />
     </svg>
   );
-}
-
-function EmptyDetail({ message }: { message: string }) {
-  return <div className="rounded-xl border border-dashed border-border-subtle p-5 text-sm text-text-secondary">{message}</div>;
 }
 
 function DetailMetric({ label, value }: { label: string; value: string }) {

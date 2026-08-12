@@ -117,6 +117,60 @@ class EquityBarCache:
             frame[column] = pd.to_datetime(frame[column], utc=True, errors="raise")
         return frame
 
+    def read_bars(
+        self,
+        *,
+        provider: str,
+        symbols: list[str],
+        interval: str,
+        adjustment: str,
+        start: str,
+        end: str,
+    ) -> pd.DataFrame | None:
+        """Coverage-agnostic read of stored bars for accumulation lanes.
+
+        Unlike ``read``, this does not require an unexpired coverage request
+        and may return a partial symbol set: callers must treat the result as
+        potentially stale and top it up from the provider before serving it.
+        """
+        normalized_provider = provider.lower().strip()
+        normalized_symbols = [symbol.upper().strip() for symbol in symbols]
+        normalized_interval = interval.lower().strip()
+        normalized_adjustment = adjustment.lower().strip()
+
+        placeholders = ", ".join("?" for _ in normalized_symbols)
+        with duckdb.connect(str(self.duckdb_path)) as connection:
+            self._ensure_schema(connection)
+            rows = connection.execute(
+                f"""
+                SELECT symbol, timestamp, open, high, low, close, volume,
+                       provider, interval, event_ts, knowledge_ts, adjustment
+                FROM equity_bars
+                WHERE provider = ?
+                  AND interval = ?
+                  AND adjustment = ?
+                  AND symbol IN ({placeholders})
+                  AND session_date >= ?
+                  AND session_date <= ?
+                ORDER BY symbol, session_date
+                """,
+                [
+                    normalized_provider,
+                    normalized_interval,
+                    normalized_adjustment,
+                    *normalized_symbols,
+                    start,
+                    end,
+                ],
+            ).fetchall()
+
+        if not rows:
+            return None
+        frame = pd.DataFrame(rows, columns=_BAR_COLUMNS)
+        for column in ("timestamp", "event_ts", "knowledge_ts"):
+            frame[column] = pd.to_datetime(frame[column], utc=True, errors="raise")
+        return frame
+
     def write(
         self,
         frame: pd.DataFrame,

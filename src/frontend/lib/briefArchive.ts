@@ -71,6 +71,38 @@ export type BriefIssueListResponse = {
   apiError?: string;
 };
 
+export type BriefArchiveEntryKind = "daily" | "weekly" | "monthly";
+
+export type BriefArchiveEntry = {
+  public_id: string;
+  issue_date: string;
+  title: string;
+  snippet: string;
+  kind: BriefArchiveEntryKind;
+  iso_week: string | null;
+  month: string | null;
+};
+
+export type BriefArchiveGroup = {
+  key: string;
+  entries: BriefArchiveEntry[];
+};
+
+export type BriefArchiveViewResponse = {
+  locale: string;
+  months: number;
+  daily: BriefArchiveGroup[];
+  weekly: BriefArchiveGroup[];
+  monthly: BriefArchiveGroup[];
+};
+
+export function buildBriefArchivePath(locale: string, months = 3) {
+  const params = new URLSearchParams();
+  params.set("locale", locale || "zh");
+  params.set("months", String(months));
+  return `/api/brief/archive?${params.toString()}`;
+}
+
 export function normalizeBriefIssueEnvelope(envelope: BriefIssueEnvelope): BriefIssueArchiveView {
   const payloadTitle = envelope.snapshot.payload.title;
   const payloadResult = briefArchivePayloadSchema.safeParse(envelope.snapshot.payload);
