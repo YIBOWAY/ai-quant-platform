@@ -73,9 +73,15 @@ class PaperStrategyExecutionService:
         *,
         sleeve: StrategySleeve,
         plan: StrategyExecutionPlan,
+        allow_frozen_account: bool = False,
     ) -> StrategyExecutionPlan:
         try:
-            self._validate_execution_context(account, sleeve=sleeve, plan=plan)
+            self._validate_execution_context(
+                account,
+                sleeve=sleeve,
+                plan=plan,
+                allow_frozen_account=allow_frozen_account,
+            )
             quotes = self._load_quotes(plan)
             steps = self._build_steps(plan, quotes)
             if self.execution_policy_guard is not None:
@@ -333,6 +339,7 @@ class PaperStrategyExecutionService:
         *,
         sleeve: StrategySleeve,
         plan: StrategyExecutionPlan,
+        allow_frozen_account: bool = False,
     ) -> None:
         if plan.status != StrategyExecutionStatus.PENDING:
             raise PaperStrategyExecutionError("execution_not_pending")
@@ -344,7 +351,7 @@ class PaperStrategyExecutionService:
             raise PaperStrategyExecutionError("sleeve_paused")
         if sleeve.status == StrategySleeveStatus.STOPPED:
             raise PaperStrategyExecutionError("sleeve_stopped")
-        if account.kill_switch:
+        if account.kill_switch and not allow_frozen_account:
             raise PaperStrategyExecutionError("account_frozen")
         if sleeve.account_id != account.account_id or plan.account_id != account.account_id:
             raise PaperStrategyExecutionError("account_sleeve_mismatch")

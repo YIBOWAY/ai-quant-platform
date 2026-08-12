@@ -50,11 +50,16 @@ class PaperStrategySignalService:
         account: PaperAccount,
         signal_date: str | date | None = None,
         history_days: int = 180,
+        allow_frozen_account: bool = False,
     ) -> StrategySignal:
         if sleeve.status == StrategySleeveStatus.STOPPED:
             raise StrategySignalGenerationError("stopped sleeves cannot generate signals")
         resolved_signal_date = self._resolve_signal_date(signal_date)
-        blocked_reason = self._execution_blocked_reason(sleeve, account)
+        blocked_reason = self._execution_blocked_reason(
+            sleeve,
+            account,
+            allow_frozen_account=allow_frozen_account,
+        )
         warnings = self._blocked_warnings(blocked_reason)
 
         signal = self._build_signal(
@@ -305,10 +310,12 @@ class PaperStrategySignalService:
     def _execution_blocked_reason(
         sleeve: StrategySleeve,
         account: PaperAccount,
+        *,
+        allow_frozen_account: bool = False,
     ) -> str | None:
         if sleeve.status == StrategySleeveStatus.PAUSED:
             return "sleeve_paused"
-        if account.kill_switch:
+        if account.kill_switch and not allow_frozen_account:
             return "account_frozen"
         return None
 

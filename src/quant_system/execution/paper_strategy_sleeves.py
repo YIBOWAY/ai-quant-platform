@@ -598,6 +598,7 @@ class PaperStrategySleeveService:
         execution_window: str = "next_open",
         target_date: str | None = None,
         metadata: dict[str, Any] | None = None,
+        allow_frozen_account: bool = False,
     ) -> StrategyExecutionPlan:
         if sleeve.mode == StrategySleeveMode.SIGNAL_ONLY:
             raise StrategyExecutionPlanError("signal_only_no_execution")
@@ -613,7 +614,7 @@ class PaperStrategySleeveService:
             raise StrategyExecutionPlanError("signal_not_generated")
         if signal.execution_blocked_reason:
             raise StrategyExecutionPlanError(signal.execution_blocked_reason)
-        if account.kill_switch:
+        if account.kill_switch and not allow_frozen_account:
             raise StrategyExecutionPlanError("account_frozen")
         if execution_window != "next_open":
             raise StrategyExecutionPlanError("unsupported_execution_window")

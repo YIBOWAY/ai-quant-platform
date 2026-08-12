@@ -266,6 +266,28 @@ class PaperStrategyOperationsRunner:
             return "automation_d34_mandate_paper_execution_not_allowed"
         return None
 
+    @staticmethod
+    def _d34_scoped_frozen_account_authorized(
+        sleeve: StrategySleeve,
+        context: Mapping[str, Any],
+    ) -> bool:
+        if (
+            sleeve.metadata.get("automation_managed") is not True
+            or str(sleeve.metadata.get("automation_source", "")) != "d34"
+            or str(sleeve.metadata.get("promotion_scope", "")) != "paper_only"
+            or not str(sleeve.metadata.get("artifact_id", ""))
+            or not str(sleeve.metadata.get("mandate_id", ""))
+            or context.get("emergency_stop") is True
+            or context.get("paper_execution_enabled") is not True
+            or context.get("mandate_active") is not True
+            or context.get("mandate_paper_execution_allowed") is not True
+        ):
+            return False
+        context_mandate_id = context.get("mandate_id")
+        return context_mandate_id is None or str(context_mandate_id) == str(
+            sleeve.metadata["mandate_id"]
+        )
+
     def _current_automation_execution_blocker(
         self,
         account: PaperAccount,
@@ -350,6 +372,11 @@ class PaperStrategyOperationsRunner:
             if account is None:
                 account = PaperAccount.open_new(account_id=self.account_storage.account_id)
             sleeve = self.sleeve_storage.load_sleeve(sleeve_id)
+            context = (
+                self.paper_execution_context_provider(sleeve)
+                if str(sleeve.metadata.get("automation_source", "d33")) == "d34"
+                else {}
+            )
             config = self.sleeve_storage.load_strategy_config(
                 sleeve.strategy_config_id,
                 version=sleeve.strategy_config_version,
@@ -360,6 +387,10 @@ class PaperStrategyOperationsRunner:
                 account=account,
                 signal_date=signal_date,
                 history_days=history_days,
+                allow_frozen_account=self._d34_scoped_frozen_account_authorized(
+                    sleeve,
+                    context,
+                ),
             )
 
     def generate_due_signals_once(
@@ -432,9 +463,14 @@ class PaperStrategyOperationsRunner:
             sleeve = self.sleeve_storage.load_sleeve(sleeve_id)
             signal = self._load_signal(sleeve_id, signal_id)
             plan_metadata = dict(metadata or {})
+            allow_frozen_account = False
             if str(sleeve.metadata.get("automation_source", "d33")) == "d34":
                 context = self.paper_execution_context_provider(sleeve)
                 plan_metadata["paper_execution_policy_context"] = dict(context)
+                allow_frozen_account = self._d34_scoped_frozen_account_authorized(
+                    sleeve,
+                    context,
+                )
             return sleeve_service.create_execution_plan(
                 account,
                 sleeve=sleeve,
@@ -442,6 +478,7 @@ class PaperStrategyOperationsRunner:
                 execution_window=execution_window,
                 target_date=self._target_date(target_date),
                 metadata=plan_metadata,
+                allow_frozen_account=allow_frozen_account,
             )
 
     def process_pending_executions_once(
@@ -483,11 +520,21 @@ class PaperStrategyOperationsRunner:
                     processed.append(plan)
                     blocked_count += 1
                     continue
+                allow_frozen_account = False
+                if (
+                    account.kill_switch
+                    and str(sleeve.metadata.get("automation_source", "")) == "d34"
+                ):
+                    allow_frozen_account = self._d34_scoped_frozen_account_authorized(
+                        sleeve,
+                        self.paper_execution_context_provider(sleeve),
+                    )
                 try:
                     execution = execution_service.execute_plan(
                         account,
                         sleeve=sleeve,
                         plan=plan,
+                        allow_frozen_account=allow_frozen_account,
                     )
                 except PaperStrategyExecutionError:
                     execution = plan
