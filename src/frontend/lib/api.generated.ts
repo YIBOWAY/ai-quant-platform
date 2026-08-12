@@ -4732,6 +4732,21 @@ export interface components {
             /** New Canaries Today */
             new_canaries_today: number;
         };
+        /** D34ResearchRoutingSafety */
+        D34ResearchRoutingSafety: {
+            /** D33 Maintenance Enabled */
+            d33_maintenance_enabled: boolean;
+            /** D33 New Intake Enabled */
+            d33_new_intake_enabled: boolean;
+            /** Default Research Entry */
+            default_research_entry: string;
+            /** Final Acceptance Digest */
+            final_acceptance_digest?: string | null;
+            /** Reason Codes */
+            reason_codes: string[];
+            /** Requested Default */
+            requested_default: string;
+        };
         /** D34RiskSafety */
         D34RiskSafety: {
             /** Max Daily Loss */
@@ -4763,6 +4778,8 @@ export interface components {
             canary_ids: string[];
             /** Contract */
             contract: string;
+            /** Default Research Entry */
+            default_research_entry: string;
             /** Jobs Cancelled */
             jobs_cancelled: number;
             /** Mandate Id */
@@ -4912,6 +4929,7 @@ export interface components {
             research_blockers: string[];
             /** Research Execution Enabled */
             research_execution_enabled: boolean;
+            research_routing: components["schemas"]["D34ResearchRoutingSafety"];
             risk: components["schemas"]["D34RiskSafety"];
             soak: components["schemas"]["D34SoakSafety"];
             /** Workspace Id */
@@ -14181,6 +14199,201 @@ export interface operations {
         };
     };
 }
+
+export type AccountPositionResponse = components["schemas"]["AccountPositionResponse"];
+export type AgentCandidateDetailResponse = components["schemas"]["AgentCandidateDetailResponse"];
+export type AgentCandidatesResponse = components["schemas"]["AgentCandidatesResponse"];
+export type AgentLLMConfigResponse = components["schemas"]["AgentLLMConfigResponse"];
+export type AgentReviewResponse = components["schemas"]["AgentReviewResponse"];
+export type AgentTaskResponse = components["schemas"]["AgentTaskResponse"];
+export type AiHotDailiesResponse = components["schemas"]["AiHotDailiesResponse"];
+export type AiHotDailyIndexResponse = components["schemas"]["AiHotDailyIndexResponse"];
+export type AiHotDailyResponse = components["schemas"]["AiHotDailyResponse"];
+export type AiHotItemResponse = components["schemas"]["AiHotItemResponse"];
+export type AiHotItemsResponse = components["schemas"]["AiHotItemsResponse"];
+export type AsiaRadarHistoryPointResponse = components["schemas"]["AsiaRadarHistoryPointResponse"];
+export type AsiaRadarKShapePointResponse = components["schemas"]["AsiaRadarKShapePointResponse"];
+export type AsiaRadarKShapeResponse = components["schemas"]["AsiaRadarKShapeResponse"];
+export type AsiaRadarLocalIndexPointResponse = components["schemas"]["AsiaRadarLocalIndexPointResponse"];
+export type AsiaRadarLocalIndexResponse = components["schemas"]["AsiaRadarLocalIndexResponse"];
+export type AsiaRadarMarketResponse = components["schemas"]["AsiaRadarMarketResponse"];
+export type AsiaRadarMarketSummaryResponse = components["schemas"]["AsiaRadarMarketSummaryResponse"];
+export type AsiaRadarMetaResponse = components["schemas"]["AsiaRadarMetaResponse"];
+export type AsiaRadarOverviewResponse = components["schemas"]["AsiaRadarOverviewResponse"];
+export type AsiaRadarReturnsResponse = components["schemas"]["AsiaRadarReturnsResponse"];
+export type AsiaRadarSummaryResponse = components["schemas"]["AsiaRadarSummaryResponse"];
+export type BacktestDetailResponse = components["schemas"]["BacktestDetailResponse"];
+export type BacktestJobStateResponse = components["schemas"]["BacktestJobStateResponse"];
+export type BacktestPerformanceMetricsResponse = components["schemas"]["BacktestPerformanceMetricsResponse"];
+export type BacktestRunBenchmarkResponse = components["schemas"]["BacktestRunBenchmarkResponse"];
+export type BacktestRunMetricsResponse = components["schemas"]["BacktestRunMetricsResponse"];
+export type BacktestRunPathsResponse = components["schemas"]["BacktestRunPathsResponse"];
+export type BacktestRunRequestEchoResponse = components["schemas"]["BacktestRunRequestEchoResponse"];
+export type BacktestRunResponse = components["schemas"]["BacktestRunResponse"];
+export type BacktestRunTimingsResponse = components["schemas"]["BacktestRunTimingsResponse"];
+export type BacktestsResponse = components["schemas"]["BacktestsResponse"];
+export type BenchmarkResponse = components["schemas"]["BenchmarkResponse"];
+export type BriefIssueEnvelopeResponse = components["schemas"]["BriefIssueEnvelopeResponse"];
+export type BriefIssueListResponse = components["schemas"]["BriefIssueListResponse"];
+export type BriefIssueResponse = components["schemas"]["BriefIssueResponse"];
+export type BriefSnapshotResponse = components["schemas"]["BriefSnapshotResponse"];
+export type BuySideAssistantResponse = components["schemas"]["BuySideAssistantResponse"];
+export type CanaryGrantResponse = components["schemas"]["CanaryGrantResponse"];
+export type CompositeTurnReceiptResponse = components["schemas"]["CompositeTurnReceiptResponse"];
+export type D34ArtifactComparisonResponse = components["schemas"]["D34ArtifactComparisonResponse"];
+export type D34ArtifactListResponse = components["schemas"]["D34ArtifactListResponse"];
+export type D34ArtifactResponse = components["schemas"]["D34ArtifactResponse"];
+export type D34CanaryListResponse = components["schemas"]["D34CanaryListResponse"];
+export type D34CanaryResponse = components["schemas"]["D34CanaryResponse"];
+export type D34ExperimentJobListResponse = components["schemas"]["D34ExperimentJobListResponse"];
+export type D34ExperimentJobResponse = components["schemas"]["D34ExperimentJobResponse"];
+export type D34MandateListResponse = components["schemas"]["D34MandateListResponse"];
+export type D34MandateResponse = components["schemas"]["D34MandateResponse"];
+export type D34RollbackResponse = components["schemas"]["D34RollbackResponse"];
+export type DualVerticalAcceptanceResponse = components["schemas"]["DualVerticalAcceptanceResponse"];
+export type DurablePublicCutoverResponse = components["schemas"]["DurablePublicCutoverResponse"];
+export type EffectiveD34SafetyResponse = components["schemas"]["EffectiveD34SafetyResponse"];
+export type EffectivePaperSafetyResponse = components["schemas"]["EffectivePaperSafetyResponse"];
+export type ExperimentDetailResponse = components["schemas"]["ExperimentDetailResponse"];
+export type ExperimentRunPathsResponse = components["schemas"]["ExperimentRunPathsResponse"];
+export type ExperimentRunResponse = components["schemas"]["ExperimentRunResponse"];
+export type ExperimentsResponse = components["schemas"]["ExperimentsResponse"];
+export type FactorCatalogResponse = components["schemas"]["FactorCatalogResponse"];
+export type FactorLabCacheKeyResponse = components["schemas"]["FactorLabCacheKeyResponse"];
+export type FactorLabCacheResponse = components["schemas"]["FactorLabCacheResponse"];
+export type FactorLabGuardrailsResponse = components["schemas"]["FactorLabGuardrailsResponse"];
+export type FactorLabLeakageAuditResponse = components["schemas"]["FactorLabLeakageAuditResponse"];
+export type FactorLabResponse = components["schemas"]["FactorLabResponse"];
+export type FactorLabWalkForwardResponse = components["schemas"]["FactorLabWalkForwardResponse"];
+export type FactorRunDetailResponse = components["schemas"]["FactorRunDetailResponse"];
+export type FactorRunPathsResponse = components["schemas"]["FactorRunPathsResponse"];
+export type FactorRunRequestEchoResponse = components["schemas"]["FactorRunRequestEchoResponse"];
+export type FactorRunResponse = components["schemas"]["FactorRunResponse"];
+export type FactorRunsResponse = components["schemas"]["FactorRunsResponse"];
+export type Gate1SourceEvidenceResponse = components["schemas"]["Gate1SourceEvidenceResponse"];
+export type GateProjectionResponse = components["schemas"]["GateProjectionResponse"];
+export type HealthResponse = components["schemas"]["HealthResponse"];
+export type HermesArtifactFeedResponse = components["schemas"]["HermesArtifactFeedResponse"];
+export type HermesArtifactItemResponse = components["schemas"]["HermesArtifactItemResponse"];
+export type HermesArtifactSourceResponse = components["schemas"]["HermesArtifactSourceResponse"];
+export type HermesArtifactWarningResponse = components["schemas"]["HermesArtifactWarningResponse"];
+export type HermesExternalSessionForkContextResponse = components["schemas"]["HermesExternalSessionForkContextResponse"];
+export type HermesGatewayStatusResponse = components["schemas"]["HermesGatewayStatusResponse"];
+export type HermesGatewayWarningResponse = components["schemas"]["HermesGatewayWarningResponse"];
+export type HermesMessageResponse = components["schemas"]["HermesMessageResponse"];
+export type HermesResultDetailResponse = components["schemas"]["HermesResultDetailResponse"];
+export type HermesResultsResponse = components["schemas"]["HermesResultsResponse"];
+export type HermesSessionDetailResponse = components["schemas"]["HermesSessionDetailResponse"];
+export type HermesSessionMessagesResponse = components["schemas"]["HermesSessionMessagesResponse"];
+export type HermesSessionSummaryResponse = components["schemas"]["HermesSessionSummaryResponse"];
+export type HermesSessionsResponse = components["schemas"]["HermesSessionsResponse"];
+export type LedgerEntryResponse = components["schemas"]["LedgerEntryResponse"];
+export type ManagedSessionProjectionResponse = components["schemas"]["ManagedSessionProjectionResponse"];
+export type MarketCrossSectionBasketLabelResponse = components["schemas"]["MarketCrossSectionBasketLabelResponse"];
+export type MarketCrossSectionHistoryPointResponse = components["schemas"]["MarketCrossSectionHistoryPointResponse"];
+export type MarketCrossSectionMetaResponse = components["schemas"]["MarketCrossSectionMetaResponse"];
+export type MarketCrossSectionResponse = components["schemas"]["MarketCrossSectionResponse"];
+export type MarketCrossSectionReturnsResponse = components["schemas"]["MarketCrossSectionReturnsResponse"];
+export type MarketCrossSectionRowResponse = components["schemas"]["MarketCrossSectionRowResponse"];
+export type MarketDataHistoryResponse = components["schemas"]["MarketDataHistoryResponse"];
+export type NewsStatusResponse = components["schemas"]["NewsStatusResponse"];
+export type OHLCVResponse = components["schemas"]["OHLCVResponse"];
+export type OptionsAlertsEvaluationResponse = components["schemas"]["OptionsAlertsEvaluationResponse"];
+export type OptionsBullPutSignalResponse = components["schemas"]["OptionsBullPutSignalResponse"];
+export type OptionsChainResponse = components["schemas"]["OptionsChainResponse"];
+export type OptionsContractScoreResponse = components["schemas"]["OptionsContractScoreResponse"];
+export type OptionsDailyScanDatesResponse = components["schemas"]["OptionsDailyScanDatesResponse"];
+export type OptionsDailyScanResponse = components["schemas"]["OptionsDailyScanResponse"];
+export type OptionsDailyScanRunResponse = components["schemas"]["OptionsDailyScanRunResponse"];
+export type OptionsDailyScanStatusResponse = components["schemas"]["OptionsDailyScanStatusResponse"];
+export type OptionsDailyScanSymbolResponse = components["schemas"]["OptionsDailyScanSymbolResponse"];
+export type OptionsEarningsCrushResponse = components["schemas"]["OptionsEarningsCrushResponse"];
+export type OptionsExpirationsResponse = components["schemas"]["OptionsExpirationsResponse"];
+export type OptionsFearScoreResponse = components["schemas"]["OptionsFearScoreResponse"];
+export type OptionsGreeksResponse = components["schemas"]["OptionsGreeksResponse"];
+export type OptionsHedgeAdvisorResponse = components["schemas"]["OptionsHedgeAdvisorResponse"];
+export type OptionsImpliedVolatilityResponse = components["schemas"]["OptionsImpliedVolatilityResponse"];
+export type OptionsIvRankResponse = components["schemas"]["OptionsIvRankResponse"];
+export type OptionsMarketSentimentResponse = components["schemas"]["OptionsMarketSentimentResponse"];
+export type OptionsRadarCandidateResponse = components["schemas"]["OptionsRadarCandidateResponse"];
+export type OptionsRefreshResponse = components["schemas"]["OptionsRefreshResponse"];
+export type OptionsRequestResponse = components["schemas"]["OptionsRequestResponse"];
+export type OptionsResearchHealthCheckResponse = components["schemas"]["OptionsResearchHealthCheckResponse"];
+export type OptionsSimulationResponse = components["schemas"]["OptionsSimulationResponse"];
+export type OptionsSnapshotResponse = components["schemas"]["OptionsSnapshotResponse"];
+export type OptionsStrategyBuildResponse = components["schemas"]["OptionsStrategyBuildResponse"];
+export type OptionsStrategyRankResponse = components["schemas"]["OptionsStrategyRankResponse"];
+export type OptionsStrategyTemplatesResponse = components["schemas"]["OptionsStrategyTemplatesResponse"];
+export type OptionsUnusualActivityResponse = components["schemas"]["OptionsUnusualActivityResponse"];
+export type OptionsVolSmileResponse = components["schemas"]["OptionsVolSmileResponse"];
+export type OptionsVolSurfaceResponse = components["schemas"]["OptionsVolSurfaceResponse"];
+export type OptionsWatchlistResponse = components["schemas"]["OptionsWatchlistResponse"];
+export type OwnerBootstrapResponse = components["schemas"]["OwnerBootstrapResponse"];
+export type OwnerLogoutResponse = components["schemas"]["OwnerLogoutResponse"];
+export type OwnerSessionStatusResponse = components["schemas"]["OwnerSessionStatusResponse"];
+export type PaperAccountActivityResponse = components["schemas"]["PaperAccountActivityResponse"];
+export type PaperAccountBalanceHistoryRowResponse = components["schemas"]["PaperAccountBalanceHistoryRowResponse"];
+export type PaperAccountEquityCurvePointResponse = components["schemas"]["PaperAccountEquityCurvePointResponse"];
+export type PaperAccountEquityCurveResponse = components["schemas"]["PaperAccountEquityCurveResponse"];
+export type PaperAccountOrderHistoryRowResponse = components["schemas"]["PaperAccountOrderHistoryRowResponse"];
+export type PaperAccountOrderOutcomeResponse = components["schemas"]["PaperAccountOrderOutcomeResponse"];
+export type PaperAccountOrderResponse = components["schemas"]["PaperAccountOrderResponse"];
+export type PaperAccountOrdersProcessResponse = components["schemas"]["PaperAccountOrdersProcessResponse"];
+export type PaperAccountPerformancePointResponse = components["schemas"]["PaperAccountPerformancePointResponse"];
+export type PaperAccountPerformanceResponse = components["schemas"]["PaperAccountPerformanceResponse"];
+export type PaperAccountPerformanceSeriesResponse = components["schemas"]["PaperAccountPerformanceSeriesResponse"];
+export type PaperAccountPriceSourceResponse = components["schemas"]["PaperAccountPriceSourceResponse"];
+export type PaperAccountRebalanceResponse = components["schemas"]["PaperAccountRebalanceResponse"];
+export type PaperAccountRebalanceSummaryResponse = components["schemas"]["PaperAccountRebalanceSummaryResponse"];
+export type PaperAccountReconciliationDifferenceResponse = components["schemas"]["PaperAccountReconciliationDifferenceResponse"];
+export type PaperAccountReconciliationResponse = components["schemas"]["PaperAccountReconciliationResponse"];
+export type PaperAccountResponse = components["schemas"]["PaperAccountResponse"];
+export type PaperAccountSnapshotResponse = components["schemas"]["PaperAccountSnapshotResponse"];
+export type PaperLedgerResponse = components["schemas"]["PaperLedgerResponse"];
+export type PaperRunDetailResponse = components["schemas"]["PaperRunDetailResponse"];
+export type PaperRunPathsResponse = components["schemas"]["PaperRunPathsResponse"];
+export type PaperRunRequestEchoResponse = components["schemas"]["PaperRunRequestEchoResponse"];
+export type PaperRunResponse = components["schemas"]["PaperRunResponse"];
+export type PaperRunsResponse = components["schemas"]["PaperRunsResponse"];
+export type PendingAccountOrderResponse = components["schemas"]["PendingAccountOrderResponse"];
+export type PredictionMarketBacktestResultResponse = components["schemas"]["PredictionMarketBacktestResultResponse"];
+export type PredictionMarketBacktestRunResponse = components["schemas"]["PredictionMarketBacktestRunResponse"];
+export type PredictionMarketCandidateResponse = components["schemas"]["PredictionMarketCandidateResponse"];
+export type PredictionMarketCollectResponse = components["schemas"]["PredictionMarketCollectResponse"];
+export type PredictionMarketDryArbitrageResponse = components["schemas"]["PredictionMarketDryArbitrageResponse"];
+export type PredictionMarketMarketsResponse = components["schemas"]["PredictionMarketMarketsResponse"];
+export type PredictionMarketScanResponse = components["schemas"]["PredictionMarketScanResponse"];
+export type PredictionMarketTimeseriesBacktestResultResponse = components["schemas"]["PredictionMarketTimeseriesBacktestResultResponse"];
+export type PredictionMarketTimeseriesBacktestRunResponse = components["schemas"]["PredictionMarketTimeseriesBacktestRunResponse"];
+export type PublicCutoverResponse = components["schemas"]["PublicCutoverResponse"];
+export type RecentRunsResponse = components["schemas"]["RecentRunsResponse"];
+export type ReversalMomentumReplicationDetailResponse = components["schemas"]["ReversalMomentumReplicationDetailResponse"];
+export type ReversalMomentumReplicationRunResponse = components["schemas"]["ReversalMomentumReplicationRunResponse"];
+export type SettingsResponse = components["schemas"]["SettingsResponse"];
+export type SleeveLotResponse = components["schemas"]["SleeveLotResponse"];
+export type StrategyCatalogResponse = components["schemas"]["StrategyCatalogResponse"];
+export type StrategyConfigMutationResponse = components["schemas"]["StrategyConfigMutationResponse"];
+export type StrategyConfigResponse = components["schemas"]["StrategyConfigResponse"];
+export type StrategyConfigsResponse = components["schemas"]["StrategyConfigsResponse"];
+export type StrategyExecutionFillResponse = components["schemas"]["StrategyExecutionFillResponse"];
+export type StrategyExecutionMutationResponse = components["schemas"]["StrategyExecutionMutationResponse"];
+export type StrategyExecutionOrderResponse = components["schemas"]["StrategyExecutionOrderResponse"];
+export type StrategyExecutionPlanResponse = components["schemas"]["StrategyExecutionPlanResponse"];
+export type StrategyExecutionProcessResponse = components["schemas"]["StrategyExecutionProcessResponse"];
+export type StrategyOpsStatusResponse = components["schemas"]["StrategyOpsStatusResponse"];
+export type StrategySignalMutationResponse = components["schemas"]["StrategySignalMutationResponse"];
+export type StrategySignalResponse = components["schemas"]["StrategySignalResponse"];
+export type StrategySleeveDetailResponse = components["schemas"]["StrategySleeveDetailResponse"];
+export type StrategySleeveMutationResponse = components["schemas"]["StrategySleeveMutationResponse"];
+export type StrategySleeveResponse = components["schemas"]["StrategySleeveResponse"];
+export type StrategySleevesResponse = components["schemas"]["StrategySleevesResponse"];
+export type SymbolsResponse = components["schemas"]["SymbolsResponse"];
+export type UniverseCatalogResponse = components["schemas"]["UniverseCatalogResponse"];
+export type WorkspaceActionReceiptResponse = components["schemas"]["WorkspaceActionReceiptResponse"];
+export type WorkspaceAuthoritiesResponse = components["schemas"]["WorkspaceAuthoritiesResponse"];
+export type WorkspaceFollowResponse = components["schemas"]["WorkspaceFollowResponse"];
+export type WorkspaceRefResponse = components["schemas"]["WorkspaceRefResponse"];
+export type WorkspaceSnapshotResponse = components["schemas"]["WorkspaceSnapshotResponse"];
 
 export type AccountPositionResponse = components["schemas"]["AccountPositionResponse"];
 export type AgentCandidateDetailResponse = components["schemas"]["AgentCandidateDetailResponse"];

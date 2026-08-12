@@ -82,6 +82,15 @@ class D34RiskSafety(BaseModel):
     max_drawdown: float = Field(ge=0, le=1)
 
 
+class D34ResearchRoutingSafety(BaseModel):
+    requested_default: str = Field(pattern=r"^d3[34]$")
+    default_research_entry: str = Field(pattern=r"^d3[34]$")
+    final_acceptance_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    d33_new_intake_enabled: bool
+    d33_maintenance_enabled: bool
+    reason_codes: list[str]
+
+
 class EffectiveD34SafetyResponse(BaseModel):
     contract: str = Field(pattern=r"^hqa\.effective_paper_safety/v2$")
     workspace_id: str
@@ -97,6 +106,7 @@ class EffectiveD34SafetyResponse(BaseModel):
     quota: D34QuotaSafety
     canaries: D34CanarySafety
     soak: D34SoakSafety
+    research_routing: D34ResearchRoutingSafety
     risk: D34RiskSafety
     live_execution_enabled: bool
 

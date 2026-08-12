@@ -1,9 +1,12 @@
 # D-34 本机自主 Paper 运维
 
-## 状态边界
+## 当前状态与边界
 
-D-34 source 可以在不改正式数据库和 runtime 的情况下完成构建、测试与一次性 PostgreSQL
-验收。以下三件事彼此独立：
+2026-08-12 的本机 runtime 已经一次性应用 030–032、启用 D-34 worker，并完成冷启动与首个
+正式自动周期；当前 soak 为 `1/10` 个完整周期、`1/5` 个 canary 观察日。030–032 不得重放，
+普通启动仍保持 `QS_DATABASE_AUTO_MIGRATE=false`。
+
+对新的安装，以下三件事仍彼此独立：
 
 1. purpose worktree 完成验收并 fast-forward 合入 `main`；
 2. migration 030–032 经单独授权 apply 到正式库；
@@ -133,7 +136,8 @@ Mandate 未创建/暂停/过期、预算耗尽或 emergency stop 时，它保留
 
 ## 日常检查
 
-- `/api/safety/effective/v2`：Mandate、research/paper blockers、预算、配额、风险、emergency stop。
+- `/api/safety/effective/v2`：Mandate、research/paper blockers、预算、配额、风险、emergency
+  stop，以及当前 `research_routing`（D-33/D-34 默认入口和 D-33 旧 sleeve 维护状态）。
 - `/api/hermes/research/jobs`：lease、attempt、heartbeat、terminal/outcome unknown。
 - `/api/hermes/d34/artifacts`：双引擎与 policy 血缘，并返回 correlation、NAV/weight 差异。
 - `/api/hermes/canaries`：allocated cash、P&L、drawdown、status/version；持仓与现金仍以
@@ -149,12 +153,39 @@ held positions 仍继续估值。新 canary 在 Registry 写成功前保持 `pau
 D-34 实际执行前的 accepted/rejected order-batch 决策会追加写入 `d34_policy_decisions`；审计
 写入失败时订单保持 blocked，不能出现“成交成功但没有确定性 policy 记录”的状态。
 
+## Soak 达标后的默认入口切换
+
+`10` 个完整 `job → paper_only Artifact → canary` 周期与 `5` 个上海时区真实观察日只是时间门，
+不会自行关闭 D-33。达标后先运行一次只读最终验收：
+
+```bash
+quant-system d34 final-acceptance
+```
+
+命令盘点 jobs/Artifacts/canaries/policy decisions/budget consumption 的重复 identity、D-34
+signal/execution、pending/corrupt journal、预算、paper exposure、paper-only 血缘、emergency stop 和
+`live_execution_enabled=false`，并写入 owner-only
+`data/d34/acceptance/latest.json`。只有 `accepted=true` 时，才使用该输出中的精确 digest：
+
+```bash
+quant-system d34 research-cutover \
+  --final-acceptance-digest <receipt_digest> \
+  --reason '10 cycles, 5 days, zero duplicates and no live eligibility'
+```
+
+cutover 只写本机 `data/d34/research-routing.json`，不 push、不 apply migration、不触碰 live。
+此后 D-33 `enqueue` 会拒绝新候选，但五分钟维护仍继续处理旧 sleeve；已排队请求原样保留。
+`/zh/hermes` 会显示当前默认研究入口和 D-33 维护状态。当前时间门未达标，因此 routing receipt
+不存在，默认入口仍为 D-33。
+
 ## 停止与回滚
 
 紧急事件使用工作台 emergency stop；它停止新研究和新 paper 订单，但不自动平仓。普通
 停用把 `QS_D34_WORKER_ENABLED=false` 后重新运行 stack。D-34 rollback 会暂停当前 Mandate、
 取消 queued job 并释放对应预算预留，再把 active canary 收敛到 hold；默认不 flatten。
 D-33 的既有 sleeve 继续由原路径监控。
+同一次 rollback 还会把默认研究入口 receipt 恢复为 D-33；恢复不需要编辑 env 或重启，之后
+D-33 新 intake 重新可用。若以后重新通过最终验收，可再次执行显式 cutover。
 
 卸载 job：
 

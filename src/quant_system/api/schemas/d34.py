@@ -183,5 +183,6 @@ class D34RollbackResponse(BaseModel):
     mandate_id: str | None = None
     mandate_status: str | None = Field(default=None, pattern=r"^paused$")
     jobs_cancelled: int = Field(ge=0)
+    default_research_entry: str = Field(pattern=r"^d33$")
     transitioned: int = Field(ge=0)
     canary_ids: list[str]

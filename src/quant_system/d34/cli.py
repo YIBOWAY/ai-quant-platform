@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import stat
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 
@@ -13,9 +13,18 @@ import typer
 
 from quant_system.config.settings import load_settings
 from quant_system.d34.docker_runtime import D34DockerConfig, D34DockerRuntime
+from quant_system.d34.final_acceptance import (
+    D34FinalAcceptanceAuditor,
+    verify_final_acceptance_receipt,
+)
 from quant_system.d34.paper_cycle import run_d34_paper_cycle
 from quant_system.d34.platform_replay import run_platform_replay
 from quant_system.d34.preflight import run_d34_preflight
+from quant_system.d34.research_routing import (
+    ROUTING_CONTRACT,
+    D34ResearchRoutingAuthority,
+    project_research_routing,
+)
 from quant_system.d34.worker import D34CycleWorker, D34WorkerConfig
 from quant_system.data.provider_factory import build_ohlcv_provider
 from quant_system.execution.account_repository_factory import (
@@ -51,6 +60,45 @@ class D34EnvConfigError(RuntimeError):
         super().__init__(code)
 
 
+def _routing_authority(settings) -> D34ResearchRoutingAuthority:
+    return D34ResearchRoutingAuthority(settings.data.data_dir / "d34" / "research-routing.json")
+
+
+def _routing_failure(exc: Exception) -> None:
+    typer.echo(
+        json.dumps(
+            {
+                "contract": ROUTING_CONTRACT,
+                "state": "failed",
+                "code": str(getattr(exc, "code", type(exc).__name__)),
+                "message": str(exc),
+            },
+            sort_keys=True,
+        )
+    )
+
+
+def _verified_final_acceptance(
+    settings,
+    *,
+    expected_digest: str,
+    workspace_id: str,
+) -> dict[str, object]:
+    path = settings.data.data_dir / "d34" / "acceptance" / "latest.json"
+    try:
+        receipt = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError("d34_final_acceptance_receipt_invalid") from exc
+    if not isinstance(receipt, dict):
+        raise ValueError("d34_final_acceptance_receipt_invalid")
+    verify_final_acceptance_receipt(
+        receipt,
+        expected_digest=expected_digest,
+        workspace_id=workspace_id,
+    )
+    return receipt
+
+
 def _existing_env_file(repo: Path) -> Path:
     configured = os.environ.get("QS_D34_ENV_FILE", "").strip()
     candidate = Path(configured).expanduser() if configured else repo / "docker/d34/.env"
@@ -82,8 +130,7 @@ def _existing_env_file(repo: Path) -> Path:
     if configured_models != required_models:
         raise D34EnvConfigError("d34_env_models_required")
     if any(
-        name.startswith("LITELLM_")
-        and name.endswith(("_KEY", "_TOKEN", "_SECRET", "_PASSWORD"))
+        name.startswith("LITELLM_") and name.endswith(("_KEY", "_TOKEN", "_SECRET", "_PASSWORD"))
         for name in configured_names
     ):
         raise D34EnvConfigError("d34_env_logged_secret_forbidden")
@@ -215,6 +262,92 @@ def build_local_worker(
     )
 
 
+@d34_app.command("research-routing")
+def research_routing(
+    workspace_id: Annotated[str, typer.Option("--workspace-id")] = "default",
+) -> None:
+    """Project the qualified D-34 entry and reversible D-33 intake fallback."""
+    try:
+        settings = load_settings()
+        safety = D34SafetyAuthority(settings).observe(workspace_id=workspace_id)
+        state = _routing_authority(settings).observe()
+        routing = project_research_routing(safety, state)
+    except Exception as exc:  # noqa: BLE001 - CLI boundary
+        _routing_failure(exc)
+        raise typer.Exit(code=1) from exc
+    typer.echo(json.dumps(routing, sort_keys=True))
+
+
+@d34_app.command("research-cutover")
+def research_cutover(
+    final_acceptance_digest: Annotated[
+        str,
+        typer.Option("--final-acceptance-digest"),
+    ],
+    reason: Annotated[str, typer.Option("--reason")],
+    workspace_id: Annotated[str, typer.Option("--workspace-id")] = "default",
+) -> None:
+    """Persist D-34 as default only after the final acceptance receipt exists."""
+    try:
+        settings = load_settings()
+        safety = D34SafetyAuthority(settings).observe(workspace_id=workspace_id)
+        candidate = {
+            "contract": "hqa.d34_research_routing_state/v1",
+            "requested_default": "d34",
+            "final_acceptance_digest": final_acceptance_digest,
+            "reason": reason,
+            "updated_at": datetime.now(UTC).isoformat(),
+        }
+        if project_research_routing(safety, candidate)["default_research_entry"] != "d34":
+            raise ValueError("d34_research_cutover_not_qualified")
+        _verified_final_acceptance(
+            settings,
+            expected_digest=final_acceptance_digest,
+            workspace_id=workspace_id,
+        )
+        authority = _routing_authority(settings)
+        state = authority.activate_d34(
+            safety=safety,
+            final_acceptance_digest=final_acceptance_digest,
+            reason=reason,
+        )
+        routing = project_research_routing(safety, state)
+    except Exception as exc:  # noqa: BLE001 - CLI boundary
+        _routing_failure(exc)
+        raise typer.Exit(code=1) from exc
+    typer.echo(json.dumps(routing, sort_keys=True))
+
+
+@d34_app.command("final-acceptance")
+def final_acceptance(
+    workspace_id: Annotated[str, typer.Option("--workspace-id")] = "default",
+) -> None:
+    """Write one digest-bound read-only acceptance receipt for the cutover."""
+    try:
+        auditor = D34FinalAcceptanceAuditor(
+            load_settings(),
+            now=lambda: datetime.now(UTC),
+        )
+        receipt = auditor.audit(workspace_id=workspace_id)
+        auditor.write(receipt)
+    except Exception as exc:  # noqa: BLE001 - CLI boundary
+        typer.echo(
+            json.dumps(
+                {
+                    "contract": "hqa.d34_final_acceptance/v1",
+                    "accepted": False,
+                    "blockers": [str(getattr(exc, "code", type(exc).__name__))],
+                    "message": str(exc),
+                },
+                sort_keys=True,
+            )
+        )
+        raise typer.Exit(code=1) from exc
+    typer.echo(json.dumps(receipt, sort_keys=True, default=str))
+    if receipt.get("accepted") is not True:
+        raise typer.Exit(code=1)
+
+
 @d34_app.command("preflight")
 def preflight(
     platform_root: Annotated[
@@ -259,9 +392,7 @@ def preflight(
         receipt = run_d34_preflight(
             workspace_root=workspace,
             docker_runtime=runtime,
-            safety_observer=lambda: D34SafetyAuthority(settings).observe(
-                workspace_id=workspace_id
-            ),
+            safety_observer=lambda: D34SafetyAuthority(settings).observe(workspace_id=workspace_id),
         )
     except Exception as exc:  # noqa: BLE001 - CLI boundary
         typer.echo(

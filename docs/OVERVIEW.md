@@ -7,9 +7,10 @@ Phase、Wave 与 Workbench 文档是历史交付证据，不是当前开发或�
 会话仍只读，继续上下文必须显式 fork。`chat_write_ready` 是本地状态，public standing
 继续 OFF。
 
-当前本地 `main` 含 D-34 与 migration source 016–032；030–032 只通过隔离 PostgreSQL
-验证，尚未获授权 apply 到正式 `quantplatform`，worker 也默认关闭。旧现场 migration
-快照是历史证据，不应覆盖当前 source/runtime 的分别状态。当前进度先看
+当前本地 `main` 含 D-34 与 migration source 016–032；030–032 已在本机正式库一次性
+apply，D-34 worker 已常驻，当前 soak 为 `1/10` 周期与 `1/5` 观察日。默认研究入口仍为
+D-33；D-34 需 `10/5` 时间门和最终零重复/no-live receipt 后才显式 cutover。旧现场
+migration 快照是历史证据，不应覆盖当前 source/runtime 的分别状态。当前进度先看
 [INDEX.md](INDEX.md)，运维只看
 [Agent v0.2 local-stack runbook](runbooks/agent-v0-2-local-stack.md)，不要从旧
 phase 标题或 checkbox 推断。

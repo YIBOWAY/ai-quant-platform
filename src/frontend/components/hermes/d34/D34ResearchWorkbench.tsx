@@ -306,7 +306,7 @@ export function D34ResearchWorkbench({ locale }: { locale: Locale }) {
                     : "TIME GATE PENDING"}
               </span>
             </div>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <div className="mt-3 grid gap-3 sm:grid-cols-3">
               <p className="rounded-[var(--radius-card)] bg-bg-base p-3 text-sm text-text-primary">
                 {isZh ? "完整自动周期" : "Complete automatic cycles"}{" "}
                 <span className="font-data-mono">
@@ -319,7 +319,33 @@ export function D34ResearchWorkbench({ locale }: { locale: Locale }) {
                   {snapshot.safety.soak.canary_observation_days} / {snapshot.safety.soak.required_canary_observation_days}
                 </span>
               </p>
+              <p
+                className="rounded-[var(--radius-card)] bg-bg-base p-3 text-sm text-text-primary"
+                data-testid="d34-research-routing"
+              >
+                {isZh ? "当前研究入口" : "Current research entry"}{" "}
+                <span className="font-data-mono">
+                  {snapshot.safety.research_routing.default_research_entry.toUpperCase()}
+                </span>
+                <span className="mt-1 block text-xs text-text-secondary">
+                  {snapshot.safety.research_routing.d33_maintenance_enabled
+                    ? isZh
+                      ? "D-33 旧 sleeve 维护运行中"
+                      : "D-33 legacy sleeve maintenance stays active"
+                    : isZh
+                      ? "D-33 维护未启用"
+                      : "D-33 maintenance is disabled"}
+                </span>
+              </p>
             </div>
+            {snapshot.safety.soak.time_gate_ready &&
+            snapshot.safety.research_routing.requested_default === "d33" ? (
+              <p className="mt-3 text-xs text-warning">
+                {isZh
+                  ? "时间门已达标，等待最终零重复 / 零 live eligibility 验收 receipt。"
+                  : "Time gate is ready; final zero-duplicate / zero-live-eligibility receipt is still pending."}
+              </p>
+            ) : null}
           </div>
 
           <div className={card}>

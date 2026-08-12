@@ -97,3 +97,10 @@ operator 才能显式启用；启用后的安装/重载还必须通过上述完�
 
 D-33 继续监控已有 sleeve。D-34 rollback 会暂停当前 Mandate、取消仍 queued 的 job、释放其
 预算预留，并把 D-34 canary 变为 hold；不会删除 Artifact/receipt，也不会声称已经平仓。
+
+默认研究入口是独立的本机 durable routing receipt，而不是由 `10/5` 时间门直接推导。时间门
+达标后，`d34 final-acceptance` 还必须证明零重复 identity、零 pending/corrupt execution journal、
+预算/暴露合规、全量 paper-only 且 `live_execution_enabled=false`；精确 receipt digest 通过
+`d34 research-cutover` 后才请求 D-34 为默认入口。HQA D-33 driver 每轮先维护旧 sleeve，再读取
+该只读 projection：D-34 为默认时拒绝新 enqueue/暂停已有 queue 消费，但维护不停。D-34
+rollback 在同一 owner 操作中把 routing receipt 恢复为 D-33，因此是一键回退且无需重启。

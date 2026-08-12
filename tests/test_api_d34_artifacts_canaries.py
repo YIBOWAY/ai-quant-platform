@@ -103,6 +103,15 @@ class _Controller:
         return {"transitioned": 1, "canary_ids": ["canary-test-1"]}
 
 
+class _Routing:
+    def __init__(self) -> None:
+        self.calls = []
+
+    def restore_d33(self, *, reason):
+        self.calls.append(reason)
+        return {"requested_default": "d33"}
+
+
 class _Mandates:
     def __init__(self) -> None:
         self.calls = []
@@ -185,9 +194,11 @@ def test_owner_pauses_demotes_and_rolls_back_d34_canaries(tmp_path: Path) -> Non
     controller = _Controller()
     mandates = _Mandates()
     jobs = _Jobs()
+    routing = _Routing()
     app.state.services["d34_canary_controller"] = controller
     app.state.services["d34_mandate_authority"] = mandates
     app.state.services["d34_job_authority"] = jobs
+    app.state.services["d34_research_routing_authority"] = routing
     client = TestClient(app)
     bootstrap = client.post(
         "/api/auth/owner/bootstrap",
@@ -227,6 +238,7 @@ def test_owner_pauses_demotes_and_rolls_back_d34_canaries(tmp_path: Path) -> Non
         "mandate_id": "mandate-test-1",
         "mandate_status": "paused",
         "jobs_cancelled": 2,
+        "default_research_entry": "d33",
         "transitioned": 1,
         "canary_ids": ["canary-test-1"],
     }
@@ -234,6 +246,7 @@ def test_owner_pauses_demotes_and_rolls_back_d34_canaries(tmp_path: Path) -> Non
         ("mandate-test-1", "pause", 4, "return to D-33")
     ]
     assert jobs.calls == [("default", "return to D-33")]
+    assert routing.calls == ["return to D-33"]
     assert controller.calls == [
         ("canary-test-1", "pause", 1, "owner pause"),
         ("canary-test-1", "demote", 2, "quality degraded"),

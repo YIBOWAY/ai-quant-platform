@@ -94,6 +94,14 @@ async function installD34OwnerFixture(page: Page) {
           "d34_canary_observation_days_below_5",
         ],
       },
+      research_routing: {
+        requested_default: "d33",
+        default_research_entry: "d33",
+        final_acceptance_digest: null,
+        d33_new_intake_enabled: true,
+        d33_maintenance_enabled: true,
+        reason_codes: ["d34_time_gate_pending"],
+      },
       risk: {
         max_sleeve_cash: "10000.00",
         max_sleeve_nav_fraction: 0.01,
@@ -260,6 +268,8 @@ test("D-34 workbench shows the durable paper-only cycle and renews its Mandate",
   await expect(page.getByText("完整自动周期 4 / 10", { exact: false })).toBeVisible();
   await expect(page.getByText("Canary 观察日 2 / 5", { exact: false })).toBeVisible();
   await expect(page.getByText("运行时间门未达标", { exact: true })).toBeVisible();
+  await expect(page.getByText("当前研究入口 D33", { exact: false })).toBeVisible();
+  await expect(page.getByText("D-33 旧 sleeve 维护运行中", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "立即停止" })).toBeVisible();
   await expect(page.getByRole("button", { name: /live/i })).toHaveCount(0);
 

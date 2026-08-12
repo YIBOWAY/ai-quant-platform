@@ -119,6 +119,14 @@ def test_owner_reads_v2_safety_and_persists_emergency_stop(tmp_path: Path) -> No
     assert before.json()["paper_execution_enabled"] is True
     assert before.json()["research_execution_enabled"] is True
     assert before.json()["live_execution_enabled"] is False
+    assert before.json()["research_routing"] == {
+        "requested_default": "d33",
+        "default_research_entry": "d33",
+        "final_acceptance_digest": None,
+        "d33_new_intake_enabled": True,
+        "d33_maintenance_enabled": True,
+        "reason_codes": ["d34_time_gate_pending"],
+    }
     assert before.json()["soak"] == {
         "completed_cycles": 4,
         "required_completed_cycles": 10,
@@ -134,3 +142,8 @@ def test_owner_reads_v2_safety_and_persists_emergency_stop(tmp_path: Path) -> No
     assert stopped.json()["emergency_stop"]["active"] is True
     assert stopped.json()["blockers"] == ["emergency_stop_active"]
     assert stopped.json()["research_blockers"] == ["emergency_stop_active"]
+    assert stopped.json()["research_routing"]["d33_new_intake_enabled"] is False
+    assert stopped.json()["research_routing"]["reason_codes"] == [
+        "d34_time_gate_pending",
+        "emergency_stop_active",
+    ]

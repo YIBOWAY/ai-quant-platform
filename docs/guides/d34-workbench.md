@@ -14,7 +14,10 @@ fast-forward 合入 `main`、migration 030–032 正式 apply、runtime fast-for
 4. 在 Research 区观察 job 的 queue、lease、heartbeat、attempt、预算和失败码。
 5. 在 Artifact 区检查 snapshot/code/Qlib/Platform/comparison/policy 的 digest 血缘。
 6. policy 通过后，Paper 区出现低额度 D-34 canary；继续观察持仓、P&L、回撤与状态。
-7. 异常时使用 pause、demote 或 D-34 rollback。三者默认保留持仓并继续估值，不自动平仓。
+7. “运行验收进度”同时显示当前默认研究入口。时间门达标后仍须有最终零重复/零 live
+   eligibility receipt，才会从 D-33 切为 D-34；D-33 旧 sleeve 维护不会停止。
+8. 异常时使用 pause、demote 或 D-34 rollback。三者默认保留持仓并继续估值，不自动平仓；
+   rollback 还会一键恢复 D-33 新 intake。
 
 ## Owner API 观察
 
@@ -43,6 +46,9 @@ API，必须同时携带现有 owner session 与 CSRF header，且 body 中提�
 - `paused/awaiting_registry`：sleeve 已落库但 Registry 尚未确认；重试完成登记后才允许恢复。
 - `paused`：停止新订单，持仓保留并继续估值。
 - `demoted/rolled_back`：不再参与新增 D-34 执行，held positions 仍可观察。
+- `research_routing.default_research_entry`：当前新研究入口；`d33` 表示尚未切换或已经回退，
+  `d34` 表示时间门与最终验收 receipt 均已通过。`d33_maintenance_enabled=true` 表示旧 D-33
+  sleeve 仍在五分钟维护周期内。
 
 ## 常见 blocker
 

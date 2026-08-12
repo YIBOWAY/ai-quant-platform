@@ -26,6 +26,7 @@ from quant_system.api.schemas.d34 import (
     D34RollbackRequest,
     D34RollbackResponse,
 )
+from quant_system.d34.research_routing import D34ResearchRoutingAuthority
 from quant_system.execution.d34_canary_control import (
     D34CanaryControlError,
     D34CanaryController,
@@ -64,6 +65,23 @@ def _authority(request: Request, settings: SettingsDep) -> MandateAuthorityPort:
     if injected is not None:
         return injected
     return PostgresMandateAuthority(settings)
+
+
+def _research_routing_authority(
+    request: Request,
+    settings: SettingsDep,
+) -> D34ResearchRoutingAuthority:
+    services = getattr(request.app.state, "services", None)
+    injected = (
+        services.get("d34_research_routing_authority")
+        if isinstance(services, dict)
+        else None
+    )
+    if injected is not None:
+        return injected
+    return D34ResearchRoutingAuthority(
+        settings.data.data_dir / "d34" / "research-routing.json"
+    )
 
 
 def _public(value: Mandate | dict[str, object]) -> dict[str, object]:
@@ -522,16 +540,25 @@ def rollback_d34(
         result = _canary_controller(request, settings, api_runs_dir).rollback_all(
             workspace_id=body.workspace_id, reason=body.reason
         )
+        routing = _research_routing_authority(request, settings).restore_d33(
+            reason=body.reason
+        )
     except MandateAuthorityError as exc:
         raise _http_error(exc) from exc
     except JobAuthorityError as exc:
         raise _job_http_error(exc) from exc
     except (D34CanaryControlError, RegistryAuthorityError) as exc:
         raise _canary_http_error(exc) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": str(exc), "message": str(exc)},
+        ) from exc
     return {
         "contract": "hqa.d34_rollback/v1",
         "mandate_id": mandate_id,
         "mandate_status": mandate_status,
         "jobs_cancelled": jobs_cancelled,
+        "default_research_entry": routing["requested_default"],
         **result,
     }
