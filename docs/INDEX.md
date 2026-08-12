@@ -3,7 +3,7 @@
 这是整个仓库的主地图。先用下面的“当前工作”确定执行入口，再按需查架构、操作
 指南和历史交付。不要从旧 phase、audit 或未勾选 checkbox 推断当前进度。
 
-## 当前工作（2026-08-11）
+## 当前工作（2026-08-12）
 
 | 层级 | 权威入口 | 状态 |
 |---|---|---|
@@ -331,7 +331,7 @@ rows；操作只看 [local-stack runbook](runbooks/agent-v0-2-local-stack.md)。
 | `/data-explorer` | 股票数据查看器。 |
 | `/brief` | 当日动态晨报预览；归档入口读取 PostgreSQL 中不可变 brief snapshot。 |
 | `/brief/[publicId]` | 已归档晨报的只读快照页。 |
-| `/hermes` | 默认研究工作台：Today + managed-session conversation + shared follow spine + Tasks/Approvals/Results，并在 D-34 source 中提供 Mandate/job/Artifact/paper canary 控制面。Composer 只在 exact local candidate/release window 且全部本地门禁通过时开放；external/history session 只读，public standing OFF，不提交真实交易。 |
+| `/hermes` | 默认研究工作台：Today + managed-session conversation + shared follow spine + Tasks/Approvals/Results，并提供已部署 D-34 的 Mandate/job/Artifact/paper canary 控制面。Composer 只在 exact local candidate/release window 且全部本地门禁通过时开放；external/history session 只读，public standing OFF，不提交真实交易。 |
 | `/factor-lab` | 现有只读因子健康度与单标的择时仪表盘；HQA 工作台落地后应从一级入口降级为 run/detail 分析面。 |
 | `/factor-lab/[runId]` | 因子运行详情。 |
 | `/backtest` | 策略、universe 与因子权重回测运行。 |

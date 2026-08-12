@@ -164,7 +164,9 @@ quant-system d34 final-acceptance
 
 命令盘点 jobs/Artifacts/canaries/policy decisions/budget consumption 的重复 identity、D-34
 signal/execution、pending/corrupt journal、预算、paper exposure、paper-only 血缘、emergency stop 和
-`live_execution_enabled=false`，并写入 owner-only
+`live_execution_enabled=false`。它还逐字段核对不可变 Artifact 文档、Artifact/Policy 精确
+lineage、PostgreSQL canary 与本地 sleeve 的 exact link、D-34 factor 与 live registry 零交集，
+并保证同一 `(sleeve_id, signal_id)` 不会产生多个 execution/order batch。receipt 写入 owner-only
 `data/d34/acceptance/latest.json`。只有 `accepted=true` 时，才使用该输出中的精确 digest：
 
 ```bash

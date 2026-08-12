@@ -1,8 +1,9 @@
 # D-34 Mandate 与 Paper Canary 使用指南
 
-这份指南面向本机唯一 owner。purpose worktree 可测试完整界面与 API；只有 source 验收后
-fast-forward 合入 `main`、migration 030–032 正式 apply、runtime fast-forward、完整 preflight
-通过且 `QS_D34_WORKER_ENABLED=true` 后，才是常驻运行态。
+这份指南面向本机唯一 owner。2026-08-12 的本地 runtime 已完成 source/main/runtime 对齐、
+migration 030–032 一次性 apply、完整 preflight 和常驻 worker 启用；首个完整周期与 canary
+已运行。当前自然验收为 `1/10` 周期、`1/5` 观察日，默认研究入口仍为 D-33。新的安装仍须
+依次完成 source 验收、migration 授权、runtime fast-forward、preflight 与显式 worker 启用。
 
 ## 一次完整使用流程
 

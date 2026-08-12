@@ -100,7 +100,11 @@ D-33 继续监控已有 sleeve。D-34 rollback 会暂停当前 Mandate、取消�
 
 默认研究入口是独立的本机 durable routing receipt，而不是由 `10/5` 时间门直接推导。时间门
 达标后，`d34 final-acceptance` 还必须证明零重复 identity、零 pending/corrupt execution journal、
-预算/暴露合规、全量 paper-only 且 `live_execution_enabled=false`；精确 receipt digest 通过
+预算/暴露合规、全量 paper-only 且 `live_execution_enabled=false`。验收逐字段核对不可变
+`hqa.d34_artifact/v1` 文档与 Artifact authority、Artifact/Policy 的 owner/workspace/Mandate/
+subject/outcome/digest 血缘、PostgreSQL canary 与本地 sleeve 的 `(sleeve_id, artifact_id)` 链接、
+D-34 factor 与实际 live registry 的零交集，以及每个 `(sleeve_id, signal_id)` 最多一个
+execution/order batch；精确 receipt digest 通过
 `d34 research-cutover` 后才请求 D-34 为默认入口。HQA D-33 driver 每轮先维护旧 sleeve，再读取
 该只读 projection：D-34 为默认时拒绝新 enqueue/暂停已有 queue 消费，但维护不停。D-34
 rollback 在同一 owner 操作中把 routing receipt 恢复为 D-33，因此是一键回退且无需重启。

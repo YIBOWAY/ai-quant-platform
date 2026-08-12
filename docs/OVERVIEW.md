@@ -49,8 +49,8 @@ Hermes 与 AI 研究工作流：
 
 - Hermes 会话负责生成研究源码/产物；平台负责确定性摄入、候选池、人工审批、
   一次性研究回测和 promote diff。
-- `/brief` 提供动态晨报和不可变归档；`/hermes` 通过只读
-  `GET /api/hermes/artifacts` 展示风险、预测、推演、周报、机会与自动化状态。
+- `/brief` 提供动态晨报和不可变归档；`/hermes` 展示风险、预测、推演、周报、机会与
+  自动化状态，并通过本地 owner/CSRF 门提供 D-34 Mandate 与 paper-canary 操作面。
 - `/hermes/sessions` 通过平台 API/BFF 读取 official Hermes API Server 上已保存的
   本机会话；session list/detail/messages 均为 server-side GET-only。Hermes Bearer key
   留在 owner-only 文件中，不进入浏览器。health、capabilities 和 session reads 不执行
@@ -81,8 +81,9 @@ Hermes 与 AI 研究工作流：
 - D-34 是独立的 Mandate 路径：Futu Parquet snapshot 进入 RD-Agent/Qlib，Platform 只消费
   同一 target weights 做成交/费用/NAV 重放；确定性 comparison/policy 通过后注册
   `paper_only` Artifact 并创建低额度 canary。030–032 提供 Mandate/job/receipt/Artifact/
-  canary 权威，`GET /api/safety/effective/v2` 暴露 research/paper blocker。source 已实现，
-  正式 migration、runtime worker 与 10 周期/5 交易日切换门尚未执行。
+  canary 权威，`GET /api/safety/effective/v2` 暴露 research/paper blocker。正式 migration
+  与 runtime worker 已部署，首个完整周期/canary 已运行；自然 `10` 周期/`5` 观察日门仍为
+  `1/10`、`1/5`，所以默认入口继续是 D-33。
 - 新 managed Session 的 composer 只有在 local flags、owner/CSRF、migration 028
   readiness、effective paper safety、Keychain、candidate/release 与 connector
   liveness 全通过时打开。External/history session 不原地写入。

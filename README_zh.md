@@ -14,9 +14,10 @@ transcript/follow、approval/stop/result 与 candidate/release authority。历�
 `public_chat_write_ready`、`public_write_authorized` 与
 `release_authorized` 继续 OFF。
 
-当前本地 `main` 包含 D-34 与有序 migration source 016–032；030–032 已通过隔离
-PostgreSQL 验收，但未获授权 apply 到正式 `quantplatform`。默认
-`QS_D34_WORKER_ENABLED=false`，因此 source 测试通过不等于 runtime 已部署或常驻。
+当前本地 `main` 包含 D-34 与有序 migration source 016–032；030–032 已在正式
+`quantplatform` 一次性 apply，D-34 worker 与 Hermes xAI OAuth proxy 已常驻。首个真实
+完整周期和低额度 canary 已运行，当前自然验收为 `1/10` 完整周期、`1/5` canary
+观察日；在精确的零重复/no-live 最终 receipt 通过前，默认新研究入口仍为 D-33。
 migration、readiness、restart、E2E 与 restore 的唯一权威是
 [Agent v0.2 local-stack runbook](docs/runbooks/agent-v0-2-local-stack.md)。
 
@@ -45,6 +46,21 @@ D-34 用 30 天 Mandate 驱动 Futu Parquet → RD-Agent/Qlib → Platform 独�
 本项目**不包含**实盘交易、券商下单、钱包连接、签名、富途账户解锁或真实订单提交。
 
 ## 快速开始
+
+### 正常 macOS 启动（推荐）
+
+在已提交的 runtime checkout 中使用项目自带的常驻栈：
+
+```bash
+bash scripts/local_mac_stack.sh start
+bash scripts/local_mac_stack.sh status
+```
+
+它负责 Docker PostgreSQL、production frontend build 与项目 LaunchAgent；关闭终端或切换
+Codex/Claude 后服务仍继续运行。`restart`、`build`、`logs`、`stop` 也是受支持的子命令。
+下面的 Python/npm 命令只用于前台调试。
+
+### 前台开发环境
 
 创建并激活 uv 管理的 `ai-quant` 虚拟环境，然后安装 Python 依赖：
 
@@ -128,7 +144,7 @@ HQA Keychain `probe` 不创建 key；普通 encrypt/put/bind 与 connector check
 
 | 页面 | 用途 |
 |---|---|
-| `/hermes` | 可回滚 COO 工作台，展示 Today、managed-session 对话、任务、审批、Unified Results 预览，以及 D-34 source 的 Mandate/job/Artifact/paper canary 操作面。Composer 只在 exact local candidate/release window 且全部本地门禁通过时打开；public standing 继续 OFF。 |
+| `/hermes` | 可回滚 COO 工作台，展示 Today、managed-session 对话、任务、审批、Unified Results 预览，以及已部署 D-34 的 Mandate/job/Artifact/paper canary 操作面。Composer 只在 exact local candidate/release window 且全部本地门禁通过时打开；public standing 继续 OFF。 |
 | `/hermes/sessions` | 服务端 official API adapter GET-only 读取本机 Hermes 已保存会话；key 不下发浏览器，也不消耗 provider 额度。历史/外部 transcript 保持只读，继续上下文需显式 fork 到新 managed Session。 |
 | `/hermes/results` | 汇总平台运行、实验、候选、HQA 产物及 exact run-link 的只读目录/详情；预览可见但 `unifiedResultsCutoverAccepted=false`。 |
 | `/data-explorer` | 美股历史数据查看器。 |
