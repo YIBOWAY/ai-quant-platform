@@ -64,6 +64,15 @@ class D34CanarySafety(BaseModel):
     allocated_cash: str
 
 
+class D34SoakSafety(BaseModel):
+    completed_cycles: int = Field(ge=0)
+    required_completed_cycles: int = Field(ge=1)
+    canary_observation_days: int = Field(ge=0)
+    required_canary_observation_days: int = Field(ge=1)
+    time_gate_ready: bool
+    blockers: list[str]
+
+
 class D34RiskSafety(BaseModel):
     max_sleeve_cash: str
     max_sleeve_nav_fraction: float = Field(ge=0, le=1)
@@ -87,6 +96,7 @@ class EffectiveD34SafetyResponse(BaseModel):
     budget: D34BudgetSafety
     quota: D34QuotaSafety
     canaries: D34CanarySafety
+    soak: D34SoakSafety
     risk: D34RiskSafety
     live_execution_enabled: bool
 

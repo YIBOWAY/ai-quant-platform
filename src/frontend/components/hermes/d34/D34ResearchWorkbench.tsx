@@ -278,6 +278,50 @@ export function D34ResearchWorkbench({ locale }: { locale: Locale }) {
             </div>
           </div>
 
+          <div className={card} data-testid="d34-soak-progress">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="font-headline-sm text-text-primary">
+                  {isZh ? "运行验收进度" : "Runtime acceptance progress"}
+                </h3>
+                <p className="mt-1 text-sm text-text-secondary">
+                  {isZh
+                    ? "只统计完整 job→Artifact→canary 周期和上海时区真实观察日；临时探针不计入。"
+                    : "Counts only complete job→Artifact→canary cycles and durable Shanghai observation days; temporary probes do not count."}
+                </p>
+              </div>
+              <span
+                className={`rounded-full px-2 py-1 font-data-mono text-[11px] ${
+                  snapshot.safety.soak.time_gate_ready
+                    ? "bg-success/10 text-success"
+                    : "bg-warning/10 text-warning"
+                }`}
+              >
+                {snapshot.safety.soak.time_gate_ready
+                  ? isZh
+                    ? "时间门已达标"
+                    : "TIME GATE READY"
+                  : isZh
+                    ? "运行时间门未达标"
+                    : "TIME GATE PENDING"}
+              </span>
+            </div>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <p className="rounded-[var(--radius-card)] bg-bg-base p-3 text-sm text-text-primary">
+                {isZh ? "完整自动周期" : "Complete automatic cycles"}{" "}
+                <span className="font-data-mono">
+                  {snapshot.safety.soak.completed_cycles} / {snapshot.safety.soak.required_completed_cycles}
+                </span>
+              </p>
+              <p className="rounded-[var(--radius-card)] bg-bg-base p-3 text-sm text-text-primary">
+                {isZh ? "Canary 观察日" : "Canary observation days"}{" "}
+                <span className="font-data-mono">
+                  {snapshot.safety.soak.canary_observation_days} / {snapshot.safety.soak.required_canary_observation_days}
+                </span>
+              </p>
+            </div>
+          </div>
+
           <div className={card}>
             <h3 className="font-headline-sm text-text-primary">
               {isZh ? "Paper 风险限额" : "Paper risk limits"}

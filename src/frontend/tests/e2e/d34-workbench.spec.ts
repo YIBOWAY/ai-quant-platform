@@ -83,6 +83,17 @@ async function installD34OwnerFixture(page: Page) {
       },
       quota: { max_new_canaries_per_day: 1, new_canaries_today: 1 },
       canaries: { active_count: 1, allocated_cash: "10000.00" },
+      soak: {
+        completed_cycles: 4,
+        required_completed_cycles: 10,
+        canary_observation_days: 2,
+        required_canary_observation_days: 5,
+        time_gate_ready: false,
+        blockers: [
+          "d34_completed_cycles_below_10",
+          "d34_canary_observation_days_below_5",
+        ],
+      },
       risk: {
         max_sleeve_cash: "10000.00",
         max_sleeve_nav_fraction: 0.01,
@@ -246,6 +257,9 @@ test("D-34 workbench shows the durable paper-only cycle and renews its Mandate",
   await expect(page.getByText("SPY · 2 @ $470.00", { exact: false })).toBeVisible();
   await expect(page.getByText("单 sleeve 1.00%", { exact: false })).toBeVisible();
   await expect(page.getByText("单标的合计 5.00%", { exact: false })).toBeVisible();
+  await expect(page.getByText("完整自动周期 4 / 10", { exact: false })).toBeVisible();
+  await expect(page.getByText("Canary 观察日 2 / 5", { exact: false })).toBeVisible();
+  await expect(page.getByText("运行时间门未达标", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "立即停止" })).toBeVisible();
   await expect(page.getByRole("button", { name: /live/i })).toHaveCount(0);
 

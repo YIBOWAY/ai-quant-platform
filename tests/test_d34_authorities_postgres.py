@@ -329,6 +329,30 @@ def test_030_032_runtime_authorities_complete_idempotent_artifact_canary_flow() 
             )
             == observed
         )
+        next_day_observation = {
+            **observation,
+            "observed_at": "2026-08-12T12:00:00+08:00",
+        }
+        assert (
+            registry.record_canary_observation(
+                canary_id=canary.canary_id,
+                expected_version=2,
+                daily_pnl=Decimal("-30.00"),
+                drawdown_fraction=Decimal("0.030000000"),
+                observation=next_day_observation,
+            )
+            == observed
+        )
+        assert (
+            registry.record_canary_observation(
+                canary_id=canary.canary_id,
+                expected_version=2,
+                daily_pnl=Decimal("-30.00"),
+                drawdown_fraction=Decimal("0.030000000"),
+                observation=next_day_observation,
+            )
+            == observed
+        )
         paused = registry.transition_canary(
             canary_id=canary.canary_id,
             action="pause",
@@ -415,6 +439,19 @@ def test_030_032_runtime_authorities_complete_idempotent_artifact_canary_flow() 
                 (queued_for_rollback.job_id,),
             ).fetchone()
         assert released == (Decimal("2.000000"), "return to D-33")
+
+        soak = safety.observe(workspace_id="default")["soak"]
+        assert soak == {
+            "completed_cycles": 1,
+            "required_completed_cycles": 10,
+            "canary_observation_days": 2,
+            "required_canary_observation_days": 5,
+            "time_gate_ready": False,
+            "blockers": [
+                "d34_completed_cycles_below_10",
+                "d34_canary_observation_days_below_5",
+            ],
+        }
 
         stopped = safety.set_emergency_stop(
             workspace_id="default", enabled=True, reason="owner stop"

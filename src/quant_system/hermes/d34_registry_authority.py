@@ -8,6 +8,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Protocol
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 import psycopg
 from psycopg.types.json import Jsonb
@@ -21,6 +22,7 @@ _WORKSPACE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 _COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 _IMAGE_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+_LOCAL_TIMEZONE = ZoneInfo("Asia/Shanghai")
 
 
 class RegistryAuthorityError(RuntimeError):
@@ -801,6 +803,10 @@ class PostgresRegistryAuthority:
     ) -> D34Canary:
         try:
             peak_equity = Decimal(str(observation.get("peak_equity")))
+            observed_at = datetime.fromisoformat(str(observation.get("observed_at")))
+            if observed_at.tzinfo is None or observed_at.utcoffset() is None:
+                raise ValueError("observed_at must include an offset")
+            observation_day = observed_at.astimezone(_LOCAL_TIMEZONE).date().isoformat()
         except Exception as exc:  # noqa: BLE001 - Decimal validation boundary
             raise RegistryAuthorityError(
                 "d34_registry_validation", "canary observation is invalid"
@@ -841,40 +847,51 @@ class PostgresRegistryAuthority:
                     ).fetchone()
                     if row is None:  # pragma: no cover - locked row cannot disappear
                         raise RegistryAuthorityError("d34_registry_conflict", "canary disappeared")
-                    return _canary(row)
-                row = conn.execute(
-                    f"""
-                    UPDATE {SCHEMA}.d34_canaries
-                    SET daily_pnl = %s, drawdown_fraction = %s, peak_equity = %s,
-                        updated_at = clock_timestamp(), version = version + 1
-                    WHERE canary_id = %s AND owner_user_id = %s AND version = %s
-                    RETURNING {_CANARY_COLUMNS}
-                    """,
-                    (
-                        daily_pnl,
-                        drawdown_fraction,
-                        peak_equity,
-                        canary_id,
-                        ROOT_USER_ID,
-                        expected_version,
-                    ),
-                ).fetchone()
-                if row is None:
-                    raise RegistryAuthorityError(
-                        "d34_registry_conflict", "canary status or version changed"
-                    )
+                else:
+                    row = conn.execute(
+                        f"""
+                        UPDATE {SCHEMA}.d34_canaries
+                        SET daily_pnl = %s, drawdown_fraction = %s, peak_equity = %s,
+                            updated_at = clock_timestamp(), version = version + 1
+                        WHERE canary_id = %s AND owner_user_id = %s AND version = %s
+                        RETURNING {_CANARY_COLUMNS}
+                        """,
+                        (
+                            daily_pnl,
+                            drawdown_fraction,
+                            peak_equity,
+                            canary_id,
+                            ROOT_USER_ID,
+                            expected_version,
+                        ),
+                    ).fetchone()
+                    if row is None:
+                        raise RegistryAuthorityError(
+                            "d34_registry_conflict", "canary status or version changed"
+                        )
                 canary = _canary(row)
                 conn.execute(
                     f"""
                     INSERT INTO {SCHEMA}.d34_canary_events
                     (event_id, canary_id, event_type, canary_version, event_data)
-                    VALUES (%s, %s, 'observed', %s, %s)
+                    SELECT %s, %s, 'observed', %s, %s
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM {SCHEMA}.d34_canary_events existing
+                        WHERE existing.canary_id = %s
+                          AND existing.event_type = 'observed'
+                          AND ((
+                              existing.event_data->>'observed_at'
+                          )::timestamptz AT TIME ZONE 'Asia/Shanghai')::date = %s::date
+                    )
+                    ON CONFLICT (event_id) DO NOTHING
                     """,
                     (
-                        f"canary-event-{uuid4()}",
+                        f"canary-event-observed-{canary_id}-{observation_day}",
                         canary_id,
                         canary.version,
                         Jsonb(observation),
+                        canary_id,
+                        observation_day,
                     ),
                 )
         except RegistryAuthorityError:

@@ -4772,6 +4772,21 @@ export interface components {
             /** Transitioned */
             transitioned: number;
         };
+        /** D34SoakSafety */
+        D34SoakSafety: {
+            /** Blockers */
+            blockers: string[];
+            /** Canary Observation Days */
+            canary_observation_days: number;
+            /** Completed Cycles */
+            completed_cycles: number;
+            /** Required Canary Observation Days */
+            required_canary_observation_days: number;
+            /** Required Completed Cycles */
+            required_completed_cycles: number;
+            /** Time Gate Ready */
+            time_gate_ready: boolean;
+        };
         /** DualVerticalAcceptanceResponse */
         DualVerticalAcceptanceResponse: {
             /** Acceptance Id */
@@ -4898,6 +4913,7 @@ export interface components {
             /** Research Execution Enabled */
             research_execution_enabled: boolean;
             risk: components["schemas"]["D34RiskSafety"];
+            soak: components["schemas"]["D34SoakSafety"];
             /** Workspace Id */
             workspace_id: string;
         };

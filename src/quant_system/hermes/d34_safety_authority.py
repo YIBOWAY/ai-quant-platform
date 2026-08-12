@@ -16,6 +16,8 @@ from quant_system.hermes.paper_safety_authority import PaperSafetyAuthority
 from quant_system.storage.database import SCHEMA, DatabaseUnavailable, get_database
 
 _WORKSPACE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+_REQUIRED_COMPLETED_CYCLES = 10
+_REQUIRED_CANARY_OBSERVATION_DAYS = 5
 
 
 class D34SafetyAuthorityError(RuntimeError):
@@ -47,6 +49,7 @@ class D34SafetyAuthority:
         emergency = {"active": False, "reason": None, "created_at": None}
         job_counts = {"queued": 0, "running": 0}
         active_canaries, allocated_cash, new_today = 0, Decimal("0"), 0
+        completed_cycles, canary_observation_days = 0, 0
         budget = {
             "limit_usd": None,
             "spent_usd": None,
@@ -148,6 +151,52 @@ class D34SafetyAuthority:
                     active_canaries = int(canary_row[0])
                     allocated_cash = Decimal(str(canary_row[1]))
                     new_today = int(canary_row[2])
+                soak_row = conn.execute(
+                    f"""
+                    SELECT
+                        (
+                            SELECT count(*)
+                            FROM {SCHEMA}.d34_experiment_jobs jobs
+                            JOIN {SCHEMA}.d34_artifacts artifacts
+                              ON artifacts.job_id = jobs.job_id
+                            JOIN {SCHEMA}.d34_canaries canaries
+                              ON canaries.artifact_id = artifacts.artifact_id
+                            WHERE jobs.owner_user_id = %s
+                              AND jobs.workspace_id = %s
+                              AND jobs.mandate_id = %s
+                              AND jobs.state = 'succeeded'
+                              AND artifacts.qualification_scope = 'paper_only'
+                        ),
+                        (
+                            SELECT count(DISTINCT (
+                                (events.event_data->>'observed_at')::timestamptz
+                                AT TIME ZONE 'Asia/Shanghai'
+                            )::date)
+                            FROM {SCHEMA}.d34_canary_events events
+                            JOIN {SCHEMA}.d34_canaries canaries
+                              ON canaries.canary_id = events.canary_id
+                            WHERE canaries.owner_user_id = %s
+                              AND canaries.workspace_id = %s
+                              AND canaries.mandate_id = %s
+                              AND events.event_type = 'observed'
+                              AND EXTRACT(ISODOW FROM (
+                                  (events.event_data->>'observed_at')::timestamptz
+                                  AT TIME ZONE 'Asia/Shanghai'
+                              )) BETWEEN 2 AND 6
+                        )
+                    """,
+                    (
+                        ROOT_USER_ID,
+                        workspace_id,
+                        mandate[0] if mandate is not None else None,
+                        ROOT_USER_ID,
+                        workspace_id,
+                        mandate[0] if mandate is not None else None,
+                    ),
+                ).fetchone()
+                if soak_row is not None:
+                    completed_cycles = int(soak_row[0])
+                    canary_observation_days = int(soak_row[1])
         except D34SafetyAuthorityError:
             raise
         except (DatabaseUnavailable, psycopg.Error):
@@ -177,6 +226,11 @@ class D34SafetyAuthority:
         ):
             research_blockers.append("d34_llm_budget_exhausted")
         research_ordered = tuple(dict.fromkeys(research_blockers))
+        soak_blockers: list[str] = []
+        if completed_cycles < _REQUIRED_COMPLETED_CYCLES:
+            soak_blockers.append("d34_completed_cycles_below_10")
+        if canary_observation_days < _REQUIRED_CANARY_OBSERVATION_DAYS:
+            soak_blockers.append("d34_canary_observation_days_below_5")
         limits = PaperExecutionLimits()
         return {
             "contract": "hqa.effective_paper_safety/v2",
@@ -207,6 +261,14 @@ class D34SafetyAuthority:
             "canaries": {
                 "active_count": active_canaries,
                 "allocated_cash": f"{allocated_cash:.2f}",
+            },
+            "soak": {
+                "completed_cycles": completed_cycles,
+                "required_completed_cycles": _REQUIRED_COMPLETED_CYCLES,
+                "canary_observation_days": canary_observation_days,
+                "required_canary_observation_days": _REQUIRED_CANARY_OBSERVATION_DAYS,
+                "time_gate_ready": not soak_blockers,
+                "blockers": soak_blockers,
             },
             "risk": {
                 "max_sleeve_cash": f"{limits.max_sleeve_cash:.2f}",

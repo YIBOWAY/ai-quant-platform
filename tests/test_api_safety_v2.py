@@ -56,6 +56,17 @@ class _Safety:
             },
             "quota": {"new_canaries_today": 1, "max_new_canaries_per_day": 1},
             "canaries": {"active_count": 1, "allocated_cash": "1000.00"},
+            "soak": {
+                "completed_cycles": 4,
+                "required_completed_cycles": 10,
+                "canary_observation_days": 2,
+                "required_canary_observation_days": 5,
+                "time_gate_ready": False,
+                "blockers": [
+                    "d34_completed_cycles_below_10",
+                    "d34_canary_observation_days_below_5",
+                ],
+            },
             "risk": {
                 "max_sleeve_cash": "10000.00",
                 "max_sleeve_nav_fraction": 0.01,
@@ -108,6 +119,17 @@ def test_owner_reads_v2_safety_and_persists_emergency_stop(tmp_path: Path) -> No
     assert before.json()["paper_execution_enabled"] is True
     assert before.json()["research_execution_enabled"] is True
     assert before.json()["live_execution_enabled"] is False
+    assert before.json()["soak"] == {
+        "completed_cycles": 4,
+        "required_completed_cycles": 10,
+        "canary_observation_days": 2,
+        "required_canary_observation_days": 5,
+        "time_gate_ready": False,
+        "blockers": [
+            "d34_completed_cycles_below_10",
+            "d34_canary_observation_days_below_5",
+        ],
+    }
     assert stopped.status_code == 200, stopped.text
     assert stopped.json()["emergency_stop"]["active"] is True
     assert stopped.json()["blockers"] == ["emergency_stop_active"]
