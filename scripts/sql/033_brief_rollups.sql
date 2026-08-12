@@ -29,3 +29,10 @@ CREATE TABLE IF NOT EXISTS quant_system.brief_rollup_snapshots (
     created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (rollup_id, version)
 );
+
+-- Runtime/read-only roles mirror the 010 default-privilege set for brief
+-- tables (the runtime role writes snapshots; the read-only role reads).
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE quant_system.brief_rollup_issues TO quant_runtime;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE quant_system.brief_rollup_snapshots TO quant_runtime;
+GRANT SELECT ON TABLE quant_system.brief_rollup_issues TO quant_readonly;
+GRANT SELECT ON TABLE quant_system.brief_rollup_snapshots TO quant_readonly;

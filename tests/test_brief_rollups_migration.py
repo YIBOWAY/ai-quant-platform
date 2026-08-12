@@ -37,13 +37,29 @@ def test_033_creates_only_the_two_rollup_tables() -> None:
         "INSERT INTO",
         "CREATE INDEX",
         "CREATE SCHEMA",
-        "GRANT",
         "REVOKE",
         "TRIGGER",
         "BEGIN;",
         "COMMIT;",
     ):
         assert forbidden not in compact
+
+
+def test_033_grants_mirror_brief_runtime_roles() -> None:
+    compact = " ".join(MIGRATION.read_text(encoding="utf-8").split())
+
+    expected_grants = tuple(
+        f"GRANT {privileges} ON TABLE quant_system.{table} TO {role};"
+        for table, privileges, role in (
+            ("brief_rollup_issues", "SELECT, INSERT, UPDATE, DELETE", "quant_runtime"),
+            ("brief_rollup_snapshots", "SELECT, INSERT, UPDATE, DELETE", "quant_runtime"),
+            ("brief_rollup_issues", "SELECT", "quant_readonly"),
+            ("brief_rollup_snapshots", "SELECT", "quant_readonly"),
+        )
+    )
+    for statement in expected_grants:
+        assert statement in compact
+    assert compact.count("GRANT ") == len(expected_grants)
 
 
 def test_033_defines_rollup_issue_and_snapshot_columns() -> None:
