@@ -98,6 +98,18 @@ def evaluate_final_acceptance(
             raise ValueError("d34_final_acceptance_input_invalid")
         if count:
             blockers.append(code)
+    database_links = database_facts.get("canary_sleeve_links")
+    paper_links = paper_facts.get("sleeve_artifact_links")
+    for links in (database_links, paper_links):
+        if not isinstance(links, list) or any(
+            not isinstance(link, Mapping)
+            or set(link) != {"sleeve_id", "artifact_id"}
+            or any(not isinstance(link[field], str) or not link[field] for field in link)
+            for link in links
+        ):
+            raise ValueError("d34_final_acceptance_input_invalid")
+    if database_links != paper_links:
+        blockers.append("d34_canary_sleeve_link_mismatch")
     for field, code in (
         ("duplicate_signal_ids", "duplicate_d34_signal_id"),
         ("duplicate_execution_ids", "duplicate_d34_execution_id"),
@@ -296,11 +308,24 @@ class D34FinalAcceptanceAuditor:
                     ).fetchone()[0]
                 )
             )
+            canary_sleeve_links = [
+                {"sleeve_id": str(row[0]), "artifact_id": str(row[1])}
+                for row in conn.execute(
+                    f"""
+                    SELECT sleeve_id, artifact_id
+                    FROM {SCHEMA}.d34_canaries
+                    WHERE owner_user_id = %s AND workspace_id = %s
+                    ORDER BY sleeve_id, artifact_id
+                    """,
+                    params,
+                ).fetchall()
+            ]
         return {
             **counts,
             "active_canary_nav_fraction": f"{nav_fraction:.9f}",
             "non_paper_artifacts": non_paper,
             "artifact_policy_lineage_mismatches": policy_mismatches,
+            "canary_sleeve_links": canary_sleeve_links,
             "duplicate_groups": duplicates,
         }
 
@@ -315,6 +340,7 @@ class D34FinalAcceptanceAuditor:
         execution_ids: list[str] = []
         execution_signal_links: list[tuple[str, str]] = []
         factor_ids: set[str] = set()
+        sleeve_artifact_links: list[dict[str, str]] = []
         pending, corrupt, non_paper, missing_factor_ids = 0, 0, 0, 0
         for sleeve in sleeves:
             factor_id = sleeve.metadata.get("factor_id")
@@ -322,6 +348,11 @@ class D34FinalAcceptanceAuditor:
                 factor_ids.add(factor_id)
             else:
                 missing_factor_ids += 1
+            artifact_id = sleeve.metadata.get("artifact_id")
+            if isinstance(artifact_id, str) and artifact_id:
+                sleeve_artifact_links.append(
+                    {"sleeve_id": sleeve.sleeve_id, "artifact_id": artifact_id}
+                )
             signal_ids.extend(signal.signal_id for signal in storage.load_signals(sleeve.sleeve_id))
             executions = storage.load_executions(sleeve.sleeve_id)
             execution_ids.extend(execution.execution_id for execution in executions)
@@ -345,6 +376,10 @@ class D34FinalAcceptanceAuditor:
             - len(set(execution_signal_links)),
             "live_registry_factor_matches": len(factor_ids & live_factor_ids),
             "missing_factor_ids": missing_factor_ids,
+            "sleeve_artifact_links": sorted(
+                sleeve_artifact_links,
+                key=lambda link: (link["sleeve_id"], link["artifact_id"]),
+            ),
             "pending_execution_journals": pending,
             "corrupt_execution_journals": corrupt,
             "non_paper_only_sleeves": non_paper,

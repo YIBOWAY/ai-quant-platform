@@ -45,6 +45,9 @@ def test_final_acceptance_binds_time_gate_zero_duplicates_and_no_live() -> None:
             "active_canary_nav_fraction": "0.040000000",
             "non_paper_artifacts": 0,
             "artifact_policy_lineage_mismatches": 0,
+            "canary_sleeve_links": [
+                {"sleeve_id": "sleeve-d34-a", "artifact_id": "artifact-d34-a"}
+            ],
             "duplicate_groups": {
                 "jobs_job_key": 0,
                 "artifact_job": 0,
@@ -63,6 +66,9 @@ def test_final_acceptance_binds_time_gate_zero_duplicates_and_no_live() -> None:
             "duplicate_order_batches": 0,
             "live_registry_factor_matches": 0,
             "missing_factor_ids": 0,
+            "sleeve_artifact_links": [
+                {"sleeve_id": "sleeve-d34-a", "artifact_id": "artifact-d34-a"}
+            ],
             "pending_execution_journals": 0,
             "corrupt_execution_journals": 0,
             "non_paper_only_sleeves": 0,
@@ -98,6 +104,9 @@ def test_final_acceptance_rejects_duplicate_execution_and_live_eligibility() -> 
             "active_canary_nav_fraction": "0.040000000",
             "non_paper_artifacts": 0,
             "artifact_policy_lineage_mismatches": 0,
+            "canary_sleeve_links": [
+                {"sleeve_id": "sleeve-d34-a", "artifact_id": "artifact-d34-a"}
+            ],
             "duplicate_groups": {
                 "jobs_job_key": 0,
                 "artifact_job": 0,
@@ -116,6 +125,9 @@ def test_final_acceptance_rejects_duplicate_execution_and_live_eligibility() -> 
             "duplicate_order_batches": 1,
             "live_registry_factor_matches": 1,
             "missing_factor_ids": 1,
+            "sleeve_artifact_links": [
+                {"sleeve_id": "sleeve-d34-a", "artifact_id": "artifact-d34-other"}
+            ],
             "pending_execution_journals": 0,
             "corrupt_execution_journals": 0,
             "non_paper_only_sleeves": 0,
@@ -125,6 +137,7 @@ def test_final_acceptance_rejects_duplicate_execution_and_live_eligibility() -> 
     assert receipt["accepted"] is False
     assert receipt["blockers"] == [
         "live_execution_not_disabled",
+        "d34_canary_sleeve_link_mismatch",
         "duplicate_d34_execution_id",
         "duplicate_d34_order_batch",
         "d34_factor_present_in_live_registry",
