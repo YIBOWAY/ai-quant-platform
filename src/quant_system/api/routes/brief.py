@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -14,6 +14,11 @@ from quant_system.api.schemas.brief import (
     BriefIssueEnvelopeResponse,
     BriefIssueListResponse,
     BriefIssueResponse,
+    BriefRollupEnvelopeResponse,
+    BriefRollupIssueResponse,
+    BriefRollupListItemResponse,
+    BriefRollupListResponse,
+    BriefRollupSnapshotResponse,
     BriefSnapshotResponse,
 )
 from quant_system.brief.archive import BriefArchiveGroup
@@ -23,6 +28,7 @@ from quant_system.brief.repository import (
     BriefNotFound,
     BriefRepository,
 )
+from quant_system.brief.rollup_service import BriefRollupService
 from quant_system.brief.service import BriefService, BriefSnapshotMismatch
 
 router = APIRouter()
@@ -155,6 +161,91 @@ def get_brief_issue(
     return _to_response(envelope)
 
 
+@router.get(
+    "/brief/rollups",
+    response_model=BriefRollupListResponse,
+)
+def list_brief_rollups(
+    settings: SettingsDep,
+    kind: Annotated[Literal["weekly", "monthly"], Query()] = "weekly",
+    locale: Annotated[str, Query()] = "zh",
+    limit: Annotated[int, Query(ge=0, le=100)] = 30,
+) -> BriefRollupListResponse:
+    # Lazy import: the rollup archive module is delivered independently and
+    # must not decide whether this router imports at all.
+    from quant_system.brief.rollup_repository import (
+        BriefRollupDatabaseUnavailable,
+        BriefRollupRepository,
+    )
+
+    service = BriefRollupService(BriefRepository(settings), BriefRollupRepository(settings))
+    try:
+        items = service.list_rollups(kind=kind, locale=locale, limit=limit)
+    except BriefRollupDatabaseUnavailable as exc:
+        raise _rollup_unavailable_503() from exc
+    return BriefRollupListResponse(
+        items=[
+            BriefRollupListItemResponse(
+                public_id=item.public_id,
+                kind=item.kind,
+                period_key=item.period_key,
+                period_start=item.period_start,
+                period_end=item.period_end,
+                locale=item.locale,
+                status=item.status,
+                title=item.title,
+                snippet=item.snippet,
+            )
+            for item in items
+        ],
+        total=len(items),
+        kind=kind,
+        locale=locale.strip() or "zh",
+    )
+
+
+@router.get(
+    "/brief/rollups/{public_id}",
+    response_model=BriefRollupEnvelopeResponse,
+)
+def get_brief_rollup(
+    public_id: str,
+    settings: SettingsDep,
+) -> BriefRollupEnvelopeResponse:
+    from quant_system.brief.rollup_repository import (
+        BriefRollupDatabaseUnavailable,
+        BriefRollupNotFound,
+        BriefRollupRepository,
+    )
+
+    service = BriefRollupService(BriefRepository(settings), BriefRollupRepository(settings))
+    try:
+        envelope = service.get_rollup(public_id)
+    except BriefRollupDatabaseUnavailable as exc:
+        raise _rollup_unavailable_503() from exc
+    except BriefRollupNotFound as exc:
+        raise _rollup_not_found_404(public_id) from exc
+    return BriefRollupEnvelopeResponse(
+        issue=BriefRollupIssueResponse(
+            rollup_id=envelope.issue.rollup_id,
+            public_id=envelope.issue.public_id,
+            kind=envelope.issue.kind,
+            period_key=envelope.issue.period_key,
+            period_start=envelope.issue.period_start,
+            period_end=envelope.issue.period_end,
+            locale=envelope.issue.locale,
+            status=envelope.issue.status,
+        ),
+        snapshot=BriefRollupSnapshotResponse(
+            snapshot_id=envelope.snapshot.snapshot_id,
+            version=envelope.snapshot.version,
+            payload=envelope.snapshot.payload,
+            source_watermark=envelope.snapshot.source_watermark,
+        ),
+        warnings=envelope.warnings,
+    )
+
+
 def _to_group_responses(
     groups: tuple[BriefArchiveGroup, ...],
 ) -> list[BriefArchiveGroupResponse]:
@@ -224,5 +315,26 @@ def _latest_not_found_404() -> HTTPException:
         detail={
             "code": "brief_not_found",
             "message": "No brief archive issue was found for the requested locale.",
+        },
+    )
+
+
+def _rollup_unavailable_503() -> HTTPException:
+    return HTTPException(
+        status_code=503,
+        detail={
+            "code": "brief_rollup_unavailable",
+            "message": "Brief rollup archive database is unavailable.",
+        },
+    )
+
+
+def _rollup_not_found_404(public_id: str) -> HTTPException:
+    return HTTPException(
+        status_code=404,
+        detail={
+            "code": "brief_rollup_not_found",
+            "public_id": public_id,
+            "message": f"Brief rollup {public_id!r} was not found.",
         },
     )

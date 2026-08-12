@@ -29,10 +29,10 @@ dirty work. Historical plans and audits are evidence, not an executable queue.
 - Local trust bypasses only the single-owner candidate identity ceremony. It
   does not relax owner/CSRF checks, paper limits, migration authority, the kill
   switch, live qualification, or public release.
-- Migrations 006–032 are present in the inspected formal database. Migration 028,
-  029, and D-34 migrations 030–032 were each applied once after their recorded
-  backup/isolated-restore windows. Do not replay them. Backend and LaunchAgent
-  startup keep `QS_DATABASE_AUTO_MIGRATE=false`.
+- Migrations 006–033 are present in the inspected formal database. Migration 028,
+  029, D-34 migrations 030–032, and brief-rollup migration 033 were each applied
+  once after their recorded backup/isolated-restore windows. Do not replay them.
+  Backend and LaunchAgent startup keep `QS_DATABASE_AUTO_MIGRATE=false`.
 - D-33 is a dual-Flag automatic `paper_only` exception. It may machine-review,
   locally ff-land, allocate and maintain bounded paper sleeves; it never grants
   live eligibility or automatically pushes GitHub.

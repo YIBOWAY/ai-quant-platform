@@ -8,6 +8,13 @@ import {
   type BriefIssueEnvelope,
   type BriefSnapshot,
 } from "./briefArchive";
+import type {
+  BriefRollupEnvelope,
+  BriefRollupIssue,
+  BriefRollupListItem,
+  BriefRollupListResponse as BriefRollupListResult,
+  BriefRollupSnapshot,
+} from "./briefRollup";
 import type { components as GeneratedApiComponents } from "./api.generated";
 import {
   normalizeCandidateDetailResponse,
@@ -88,6 +95,12 @@ export type BriefIssueListResponse = {
   offset: number;
   apiError?: string;
 };
+
+export type BriefRollupListItemResponse = BriefRollupListItem;
+export type BriefRollupListResponse = BriefRollupListResult;
+export type BriefRollupIssueResponse = BriefRollupIssue;
+export type BriefRollupSnapshotResponse = BriefRollupSnapshot;
+export type BriefRollupEnvelopeResponse = BriefRollupEnvelope;
 
 function buildBriefIssueListPath(locale: string, limit: number, offset: number) {
   const params = new URLSearchParams();

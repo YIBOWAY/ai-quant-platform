@@ -27,8 +27,6 @@ describe("/brief route contract", () => {
       "getOptionsDailyScanStatus",
       "getCachedBriefMarketDataHistory",
       "getServerLocale",
-      "getLatestBriefIssue",
-      "BriefArchiveControl",
       "BriefPerformanceChart",
       "BriefPerformanceRangeSelector",
     ]) {
@@ -69,7 +67,6 @@ describe("/brief route contract", () => {
     expect(source).toContain("getCachedAsiaRadarSummary");
     expect(source).toContain("buildAsiaRadarNote");
     expect(source).toContain("@/lib/briefAsiaRadarNote");
-    expect(source).toContain("asia_radar_note");
   });
 
   it("reuses dashboard formatting, run-link, and locale helpers", () => {
@@ -82,7 +79,6 @@ describe("/brief route contract", () => {
       "dashboardRunKindLabel",
       "dashboardRunSummary",
       "localizePath",
-      "resolveBriefArchiveBlockedReason",
     ]) {
       expect(source).toContain(helper);
     }
@@ -100,7 +96,6 @@ describe("/brief route contract", () => {
     expect(source).toContain("PAPER VS SPY · QQQ");
     expect(source).toContain("Futu QFQ daily closes");
     expect(source).toContain("account ledger");
-    expect(source).toContain("buildBriefPerformanceSnapshot");
     expect(source).toContain("selectedRange");
     expect(source).toContain("平台市场手记");
     expect(source).toContain("Platform recorded backtest");
@@ -111,9 +106,15 @@ describe("/brief route contract", () => {
     expect(source).toContain("Compiled from platform facts");
     expect(source).toContain("live trading");
     expect(source).toContain("never implied active");
-    expect(source).toContain("payload={archivePayload}");
-    expect(source).toContain("sourceWatermark={sourceWatermark}");
-    expect(source).toContain("archiveBlockedReason");
+
+    // Manual archive control is gone: archiving is automated and the sidebar
+    // owns archive navigation, so the page must not rebuild the save surface.
+    expect(source).not.toContain("BriefArchiveControl");
+    expect(source).not.toContain("getLatestBriefIssue");
+    expect(source).not.toContain("getBriefIssueList");
+    expect(source).not.toContain("archivePayload");
+    expect(source).not.toContain("sourceWatermark");
+    expect(source).not.toContain("stripTitle");
 
     expect(source).not.toContain("Hermes completed backtest");
     expect(source).not.toContain("lede prepared by Hermes");

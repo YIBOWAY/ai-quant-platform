@@ -4085,6 +4085,187 @@ def brief_auto_archive(
     )
 
 
+@brief_app.command("rollup")
+def brief_rollup(
+    kind: Annotated[
+        str,
+        typer.Option(
+            "--kind",
+            help="Rollup kind: weekly or monthly.",
+        ),
+    ] = "weekly",
+    period: Annotated[
+        str | None,
+        typer.Option(
+            "--period",
+            help=(
+                "Explicit period key: 2026-W33 (weekly) or 2026-08 (monthly). "
+                "Defaults to the current ISO week / previous calendar month."
+            ),
+        ),
+    ] = None,
+    locale: Annotated[
+        str,
+        typer.Option(
+            "--locale",
+            help="Brief locale to roll up (zh or en).",
+        ),
+    ] = "zh",
+    timeout_seconds: Annotated[
+        float,
+        typer.Option(
+            "--timeout-seconds",
+            help="Rollup LLM request timeout in seconds.",
+        ),
+    ] = 120.0,
+) -> None:
+    """Roll a period of archived daily briefs into a weekly/monthly issue.
+
+    Reads daily snapshots straight from the archive database (no HTTP), runs
+    the two-pass local-LLM draft + critique pipeline, and writes the validated
+    rollup as a new snapshot. Fail-closed: an empty period, a rejected draft,
+    an unreachable LLM proxy, or a down database all exit non-zero without
+    writing anything.
+    """
+    from quant_system.brief.auto_archive import BRIEF_TIME_ZONE
+    from quant_system.brief.repository import (
+        BriefDatabaseUnavailable,
+        BriefRepository,
+    )
+    from quant_system.brief.rollup import (
+        RollupEmpty,
+        RollupRejected,
+        default_period,
+        parse_period,
+    )
+    from quant_system.brief.rollup_llm import RollupLlmClient, RollupLlmUnavailable
+    from quant_system.brief.rollup_repository import (
+        BriefRollupDatabaseUnavailable,
+        BriefRollupRepository,
+    )
+    from quant_system.brief.rollup_service import BriefRollupService
+
+    normalized_kind = kind.strip().lower()
+    if normalized_kind not in {"weekly", "monthly"}:
+        _emit_json(
+            {
+                "ok": False,
+                "error": {
+                    "code": "brief_rollup_invalid_kind",
+                    "message": f"unsupported kind {kind!r}; expected weekly or monthly",
+                },
+            }
+        )
+        raise typer.Exit(code=2)
+
+    normalized_locale = locale.strip().lower()
+    if normalized_locale not in {"zh", "en"}:
+        _emit_json(
+            {
+                "ok": False,
+                "error": {
+                    "code": "brief_rollup_invalid_locale",
+                    "message": f"unsupported locale {locale!r}; expected zh or en",
+                },
+            }
+        )
+        raise typer.Exit(code=2)
+
+    if period is not None and period.strip():
+        try:
+            period_key, period_start, period_end = parse_period(normalized_kind, period)
+        except ValueError as exc:
+            _emit_json(
+                {
+                    "ok": False,
+                    "error": {
+                        "code": "brief_rollup_invalid_period",
+                        "message": str(exc),
+                    },
+                }
+            )
+            raise typer.Exit(code=2) from exc
+    else:
+        today = datetime.now(tz=BRIEF_TIME_ZONE).date()
+        period_key, period_start, period_end = default_period(normalized_kind, today)
+
+    try:
+        settings = load_settings()
+    except Exception as exc:
+        _emit_json(
+            {
+                "ok": False,
+                "error": {
+                    "code": "brief_rollup_configuration_error",
+                    "message": "platform settings are invalid for brief rollup",
+                    "provider_code": type(exc).__name__,
+                },
+            }
+        )
+        raise typer.Exit(code=1) from exc
+
+    llm = RollupLlmClient(timeout_seconds=timeout_seconds)
+    service = BriefRollupService(
+        BriefRepository(settings),
+        BriefRollupRepository(settings),
+        llm,
+    )
+    try:
+        envelope = service.generate_rollup(
+            kind=normalized_kind,
+            period_key=period_key,
+            period_start=period_start,
+            period_end=period_end,
+            locale=normalized_locale,
+        )
+    except RollupEmpty as exc:
+        _emit_json(
+            {
+                "ok": False,
+                "error": {"code": "brief_rollup_empty", "message": str(exc)},
+            }
+        )
+        raise typer.Exit(code=1) from exc
+    except RollupRejected as exc:
+        _emit_json(
+            {
+                "ok": False,
+                "error": {"code": "brief_rollup_rejected", "message": str(exc)},
+            }
+        )
+        raise typer.Exit(code=1) from exc
+    except RollupLlmUnavailable as exc:
+        _emit_json(
+            {
+                "ok": False,
+                "error": {"code": "brief_rollup_llm_unavailable", "message": str(exc)},
+            }
+        )
+        raise typer.Exit(code=1) from exc
+    except (BriefDatabaseUnavailable, BriefRollupDatabaseUnavailable) as exc:
+        _emit_json(
+            {
+                "ok": False,
+                "error": {
+                    "code": "brief_database_unavailable",
+                    "message": f"brief archive database is unavailable: {exc}",
+                },
+            }
+        )
+        raise typer.Exit(code=1) from exc
+
+    _emit_json(
+        {
+            "ok": True,
+            "public_id": envelope.issue.public_id,
+            "kind": envelope.issue.kind,
+            "period_key": envelope.issue.period_key,
+            "snapshot_version": envelope.snapshot.version,
+            "warnings": envelope.warnings,
+        }
+    )
+
+
 @news_app.command("horizon-ingest")
 def news_horizon_ingest(
     inbox: Annotated[str | None, typer.Option("--inbox")] = None,

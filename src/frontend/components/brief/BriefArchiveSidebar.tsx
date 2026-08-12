@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { API_BASE_URL } from "@/lib/apiClient";
 import {
   buildBriefArchivePath,
@@ -10,25 +10,40 @@ import {
   type BriefArchiveGroup,
   type BriefArchiveViewResponse,
 } from "@/lib/briefArchive";
+import {
+  buildBriefRollupListPath,
+  buildBriefRollupSidebarGroups,
+  type BriefRollupKind,
+  type BriefRollupListResponse,
+} from "@/lib/briefRollup";
 import { localizePath } from "@/lib/locale";
 
 const ARCHIVE_MONTHS = 6;
+const ROLLUP_LIMIT = 30;
 
 const copy = {
   en: {
-    heading: "Archive",
+    heading: "History",
     tabs: { daily: "Daily", weekly: "Weekly", monthly: "Monthly" } as const,
     loading: "Loading archive…",
     unavailable:
       "Archive unavailable (database offline). The live brief is unaffected.",
-    empty: "No archived issues yet.",
+    empty: {
+      daily: "No archived issues yet.",
+      weekly: "No AI weekly briefs yet.",
+      monthly: "No AI monthly briefs yet.",
+    } as const,
   },
   zh: {
-    heading: "归档",
+    heading: "历史",
     tabs: { daily: "日报", weekly: "周报", monthly: "月报" } as const,
     loading: "归档加载中…",
     unavailable: "归档暂不可用（数据库未连接），当前晨报不受影响。",
-    empty: "暂无归档期号。",
+    empty: {
+      daily: "暂无归档期号。",
+      weekly: "暂无 AI 周报。",
+      monthly: "暂无 AI 月报。",
+    } as const,
   },
 } as const;
 
@@ -79,6 +94,11 @@ function entryMarker(entry: BriefArchiveEntry, kind: BriefArchiveEntryKind, loca
   return new Intl.DateTimeFormat("en-US", { month: "short" }).format(
     new Date(Date.UTC(2000, month - 1, 1)),
   );
+}
+
+function entryHref(entry: BriefArchiveEntry, kind: BriefArchiveEntryKind, locale: SidebarLocale) {
+  const base = kind === "daily" ? "/brief" : "/brief/rollup";
+  return localizePath(`${base}/${entry.public_id}`, locale);
 }
 
 /** Pure presentational sidebar: fully determined by props, SSR-renderable. */
@@ -148,7 +168,7 @@ export function BriefArchiveSidebarView({
         ) : null}
         {status === "ready" && groups.length === 0 ? (
           <p className="px-2 py-6 text-center font-data-mono text-xs text-ink-secondary">
-            {text.empty}
+            {text.empty[activeKind]}
           </p>
         ) : null}
         {status === "ready"
@@ -180,7 +200,7 @@ export function BriefArchiveSidebarView({
                               className={`flex items-baseline gap-2 px-2 py-1.5 transition-colors hover:bg-paper-surface-muted ${
                                 active ? "bg-paper-surface-muted" : ""
                               }`}
-                              href={localizePath(`/brief/${entry.public_id}`, locale)}
+                              href={entryHref(entry, activeKind, locale)}
                             >
                               <span className="w-8 shrink-0 text-right font-data-mono text-xs text-editorial-accent">
                                 {entryMarker(entry, activeKind, locale)}
@@ -219,10 +239,22 @@ type SidebarProps = {
   locale: SidebarLocale;
 };
 
+type FetchStatus = "loading" | "error" | "ready";
+
+type RollupTabState = {
+  groups: BriefArchiveGroup[];
+  status: FetchStatus;
+};
+
 export function BriefArchiveSidebar({ activePublicId = null, locale }: SidebarProps) {
   const [activeKind, setActiveKind] = useState<BriefArchiveEntryKind>("daily");
   const [view, setView] = useState<BriefArchiveViewResponse | null>(null);
-  const [status, setStatus] = useState<"loading" | "error" | "ready">("loading");
+  const [status, setStatus] = useState<FetchStatus>("loading");
+  // Rollup tabs are cached per `${locale}:${kind}` so switching locales never
+  // shows the other locale's entries. Each key is fetched at most once per
+  // mount; a failed tab shows the honest error state instead of retry-looping.
+  const [rollups, setRollups] = useState<Record<string, RollupTabState>>({});
+  const rollupAttemptsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -255,18 +287,70 @@ export function BriefArchiveSidebar({ activePublicId = null, locale }: SidebarPr
     };
   }, [locale]);
 
-  const groups = useMemo(() => view?.[activeKind] ?? [], [view, activeKind]);
+  useEffect(() => {
+    if (activeKind === "daily") {
+      return;
+    }
+    const kind: BriefRollupKind = activeKind;
+    const tabKey = `${locale}:${kind}`;
+    const attempts = rollupAttemptsRef.current;
+    if (attempts.has(tabKey)) {
+      return;
+    }
+    attempts.add(tabKey);
+    let cancelled = false;
+    const controller = new AbortController();
+    setRollups((current) => ({ ...current, [tabKey]: { groups: [], status: "loading" } }));
+    fetch(`${API_BASE_URL}${buildBriefRollupListPath(kind, locale, ROLLUP_LIMIT)}`, {
+      headers: { accept: "application/json" },
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`rollups HTTP ${response.status}`);
+        }
+        return (await response.json()) as BriefRollupListResponse;
+      })
+      .then((data) => {
+        if (!cancelled) {
+          setRollups((current) => ({
+            ...current,
+            [tabKey]: {
+              groups: buildBriefRollupSidebarGroups(data.items ?? [], kind),
+              status: "ready",
+            },
+          }));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setRollups((current) => ({ ...current, [tabKey]: { groups: [], status: "error" } }));
+        }
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+      // An aborted fetch (tab/locale switch mid-flight) may be retried later.
+      attempts.delete(tabKey);
+    };
+  }, [activeKind, locale]);
+
   const text = copy[locale];
+  const dailyGroups = useMemo(() => view?.daily ?? [], [view]);
+  const isRollupTab = activeKind !== "daily";
+  const rollupState = isRollupTab ? rollups[`${locale}:${activeKind}`] : undefined;
+  const viewStatus: FetchStatus = isRollupTab ? rollupState?.status ?? "loading" : status;
+  const groups = isRollupTab ? rollupState?.groups ?? [] : dailyGroups;
 
   return (
     <BriefArchiveSidebarView
       activeKind={activeKind}
       activePublicId={activePublicId}
-      error={status === "error" ? text.unavailable : null}
+      error={viewStatus === "error" ? text.unavailable : null}
       groups={groups}
       locale={locale}
       onSelectKind={setActiveKind}
-      status={status}
+      status={viewStatus}
     />
   );
 }

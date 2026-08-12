@@ -54,4 +54,21 @@ esac
 
 export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 cd "$ROOT"
-exec "$VENV_PY" -m quant_system.cli brief auto-archive
+
+archive_rc=0
+"$VENV_PY" -m quant_system.cli brief auto-archive || archive_rc=$?
+if [[ "$archive_rc" -ne 0 ]]; then
+  exit "$archive_rc"
+fi
+
+# AI rollups after a successful daily archive: weekly every Sunday (ISO week
+# ending today, includes today's issue), monthly on the 1st (previous month).
+# Rollup failure is reported via the exit code but never blocks the archive.
+rollup_rc=0
+if [[ "$(date +%u)" == "7" ]]; then
+  "$VENV_PY" -m quant_system.cli brief rollup --kind weekly || rollup_rc=$?
+fi
+if [[ "$(date +%d)" == "01" ]]; then
+  "$VENV_PY" -m quant_system.cli brief rollup --kind monthly || rollup_rc=$?
+fi
+exit "$rollup_rc"

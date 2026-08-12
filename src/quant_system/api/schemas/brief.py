@@ -88,3 +88,46 @@ class BriefArchiveViewResponse(BaseModel):
     daily: list[BriefArchiveGroupResponse] = Field(default_factory=list)
     weekly: list[BriefArchiveGroupResponse] = Field(default_factory=list)
     monthly: list[BriefArchiveGroupResponse] = Field(default_factory=list)
+
+
+class BriefRollupListItemResponse(BaseModel):
+    public_id: str
+    kind: str
+    period_key: str
+    period_start: date
+    period_end: date
+    locale: str
+    status: str
+    title: str
+    snippet: str = ""
+
+
+class BriefRollupListResponse(BaseModel):
+    items: list[BriefRollupListItemResponse] = Field(default_factory=list)
+    total: int = 0
+    kind: str
+    locale: str
+
+
+class BriefRollupIssueResponse(BaseModel):
+    rollup_id: str
+    public_id: str
+    kind: str
+    period_key: str
+    period_start: date
+    period_end: date
+    locale: str
+    status: str = "published"
+
+
+class BriefRollupSnapshotResponse(BaseModel):
+    snapshot_id: str
+    version: int
+    payload: dict[str, Any] = Field(default_factory=dict)
+    source_watermark: dict[str, Any] = Field(default_factory=dict)
+
+
+class BriefRollupEnvelopeResponse(BaseModel):
+    issue: BriefRollupIssueResponse
+    snapshot: BriefRollupSnapshotResponse
+    warnings: list[str] = Field(default_factory=list)

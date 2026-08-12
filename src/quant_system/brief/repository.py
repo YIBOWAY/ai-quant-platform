@@ -311,6 +311,45 @@ class BriefRepository:
             for row in rows
         ]
 
+    def list_issue_payloads(
+        self,
+        *,
+        locale: str,
+        start: date,
+        end: date,
+    ) -> list[tuple[str, date, dict[str, Any]]]:
+        """(public_id, issue_date, payload) of latest snapshots inside [start, end].
+
+        Read-only rollup input: joins each issue to its latest snapshot and
+        returns rows in ascending issue_date order so period facts keep their
+        chronological shape.
+        """
+        database = self._require_database()
+        try:
+            with database.connect() as conn:
+                rows = conn.execute(
+                    f"""
+                    SELECT i.public_id,
+                           i.issue_date,
+                           s.payload
+                    FROM {SCHEMA}.brief_issues AS i
+                    JOIN {SCHEMA}.brief_snapshots AS s
+                      ON s.issue_id = i.issue_id
+                     AND s.snapshot_id = i.latest_snapshot_id
+                    WHERE i.owner_user_id = %s
+                      AND i.locale = %s
+                      AND i.issue_date >= %s
+                      AND i.issue_date <= %s
+                    ORDER BY i.issue_date ASC, i.updated_at ASC, i.issue_id ASC
+                    """,
+                    (ROOT_USER_ID, locale, start, end),
+                ).fetchall()
+        except DatabaseUnavailable as exc:
+            raise BriefDatabaseUnavailable(str(exc)) from exc
+        except psycopg.Error as exc:
+            raise BriefDatabaseUnavailable(str(exc)) from exc
+        return [(str(row[0]), row[1], dict(row[2])) for row in rows]
+
     def _require_database(self) -> Database:
         database = get_database(self._settings)
         if database is None:
