@@ -14,6 +14,7 @@ from quant_system.config.settings import Settings
 from quant_system.execution.paper_strategy_sleeve_storage import (
     PaperStrategySleeveStorage,
 )
+from quant_system.factors.registry import build_factor_registry
 from quant_system.hermes.command_ledger import ROOT_USER_ID
 from quant_system.hermes.d34_safety_authority import D34SafetyAuthority
 from quant_system.storage.database import SCHEMA, get_database
@@ -101,6 +102,8 @@ def evaluate_final_acceptance(
         ("duplicate_signal_ids", "duplicate_d34_signal_id"),
         ("duplicate_execution_ids", "duplicate_d34_execution_id"),
         ("duplicate_order_batches", "duplicate_d34_order_batch"),
+        ("live_registry_factor_matches", "d34_factor_present_in_live_registry"),
+        ("missing_factor_ids", "d34_sleeve_factor_identity_missing"),
         ("pending_execution_journals", "d34_pending_execution_journal"),
         ("corrupt_execution_journals", "d34_corrupt_execution_journal"),
         ("non_paper_only_sleeves", "d34_non_paper_only_sleeve"),
@@ -311,8 +314,14 @@ class D34FinalAcceptanceAuditor:
         signal_ids: list[str] = []
         execution_ids: list[str] = []
         execution_signal_links: list[tuple[str, str]] = []
-        pending, corrupt, non_paper = 0, 0, 0
+        factor_ids: set[str] = set()
+        pending, corrupt, non_paper, missing_factor_ids = 0, 0, 0, 0
         for sleeve in sleeves:
+            factor_id = sleeve.metadata.get("factor_id")
+            if isinstance(factor_id, str) and factor_id:
+                factor_ids.add(factor_id)
+            else:
+                missing_factor_ids += 1
             signal_ids.extend(signal.signal_id for signal in storage.load_signals(sleeve.sleeve_id))
             executions = storage.load_executions(sleeve.sleeve_id)
             execution_ids.extend(execution.execution_id for execution in executions)
@@ -325,6 +334,7 @@ class D34FinalAcceptanceAuditor:
                 corrupt += sum(1 for path in journal_dir.glob("*.corrupt-*.json") if path.is_file())
             if sleeve.metadata.get("promotion_scope") != "paper_only":
                 non_paper += 1
+        live_factor_ids = set(build_factor_registry(purpose="live").factor_ids())
         return {
             "d34_sleeves": len(sleeves),
             "signals": len(signal_ids),
@@ -333,6 +343,8 @@ class D34FinalAcceptanceAuditor:
             "duplicate_execution_ids": len(execution_ids) - len(set(execution_ids)),
             "duplicate_order_batches": len(execution_signal_links)
             - len(set(execution_signal_links)),
+            "live_registry_factor_matches": len(factor_ids & live_factor_ids),
+            "missing_factor_ids": missing_factor_ids,
             "pending_execution_journals": pending,
             "corrupt_execution_journals": corrupt,
             "non_paper_only_sleeves": non_paper,

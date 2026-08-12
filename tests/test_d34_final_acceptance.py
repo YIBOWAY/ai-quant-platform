@@ -61,6 +61,8 @@ def test_final_acceptance_binds_time_gate_zero_duplicates_and_no_live() -> None:
             "duplicate_signal_ids": 0,
             "duplicate_execution_ids": 0,
             "duplicate_order_batches": 0,
+            "live_registry_factor_matches": 0,
+            "missing_factor_ids": 0,
             "pending_execution_journals": 0,
             "corrupt_execution_journals": 0,
             "non_paper_only_sleeves": 0,
@@ -112,6 +114,8 @@ def test_final_acceptance_rejects_duplicate_execution_and_live_eligibility() -> 
             "duplicate_signal_ids": 0,
             "duplicate_execution_ids": 1,
             "duplicate_order_batches": 1,
+            "live_registry_factor_matches": 1,
+            "missing_factor_ids": 1,
             "pending_execution_journals": 0,
             "corrupt_execution_journals": 0,
             "non_paper_only_sleeves": 0,
@@ -123,6 +127,8 @@ def test_final_acceptance_rejects_duplicate_execution_and_live_eligibility() -> 
         "live_execution_not_disabled",
         "duplicate_d34_execution_id",
         "duplicate_d34_order_batch",
+        "d34_factor_present_in_live_registry",
+        "d34_sleeve_factor_identity_missing",
     ]
 
 
