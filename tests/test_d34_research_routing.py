@@ -206,6 +206,13 @@ def test_final_acceptance_cutover_persists_d34_as_default(tmp_path, monkeypatch)
         lambda: SimpleNamespace(data=SimpleNamespace(data_dir=tmp_path)),
     )
     digest = _write_accepted_receipt(tmp_path)
+    receipt = json.loads((tmp_path / "d34/acceptance/latest.json").read_text())
+    monkeypatch.setattr(
+        "quant_system.d34.cli.D34FinalAcceptanceAuditor",
+        lambda _settings, now: SimpleNamespace(
+            audit=lambda workspace_id: receipt,
+        ),
+    )
 
     cutover = runner.invoke(
         app,

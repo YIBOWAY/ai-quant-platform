@@ -15,6 +15,7 @@ from quant_system.config.settings import load_settings
 from quant_system.d34.docker_runtime import D34DockerConfig, D34DockerRuntime
 from quant_system.d34.final_acceptance import (
     D34FinalAcceptanceAuditor,
+    verify_current_acceptance,
     verify_final_acceptance_receipt,
 )
 from quant_system.d34.paper_cycle import run_d34_paper_cycle
@@ -300,11 +301,16 @@ def research_cutover(
         }
         if project_research_routing(safety, candidate)["default_research_entry"] != "d34":
             raise ValueError("d34_research_cutover_not_qualified")
-        _verified_final_acceptance(
+        receipt = _verified_final_acceptance(
             settings,
             expected_digest=final_acceptance_digest,
             workspace_id=workspace_id,
         )
+        current = D34FinalAcceptanceAuditor(
+            settings,
+            now=lambda: datetime.now(UTC),
+        ).audit(workspace_id=workspace_id)
+        verify_current_acceptance(receipt, current)
         authority = _routing_authority(settings)
         state = authority.activate_d34(
             safety=safety,

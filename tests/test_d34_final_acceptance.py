@@ -7,7 +7,10 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from quant_system.cli import app
-from quant_system.d34.final_acceptance import evaluate_final_acceptance
+from quant_system.d34.final_acceptance import (
+    evaluate_final_acceptance,
+    verify_current_acceptance,
+)
 
 runner = CliRunner()
 
@@ -152,3 +155,27 @@ def test_final_acceptance_cli_writes_and_emits_one_digest_bound_receipt(
     assert result.exit_code == 1
     assert json.loads(result.output) == receipt
     assert calls[1:] == ["default", receipt]
+
+
+def test_cutover_rejects_a_previously_accepted_receipt_after_facts_drift() -> None:
+    prior = {
+        "accepted": True,
+        "blockers": [],
+        "live_execution_enabled": False,
+        "soak": {"time_gate_ready": True, "completed_cycles": 10},
+        "budget": {"spent_usd": "40.000000"},
+        "risk": {"max_total_nav_fraction": 0.1},
+        "database_facts": {"jobs": 10, "duplicate_groups": {"jobs_job_key": 0}},
+        "paper_facts": {"executions": 10, "duplicate_execution_ids": 0},
+    }
+    current = {
+        **prior,
+        "database_facts": {"jobs": 11, "duplicate_groups": {"jobs_job_key": 0}},
+    }
+
+    try:
+        verify_current_acceptance(prior, current)
+    except ValueError as exc:
+        assert str(exc) == "d34_final_acceptance_facts_changed"
+    else:
+        raise AssertionError("cutover must reject a stale final acceptance receipt")

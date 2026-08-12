@@ -364,9 +364,34 @@ def verify_final_acceptance_receipt(
         raise ValueError("d34_final_acceptance_receipt_invalid")
 
 
+def verify_current_acceptance(
+    receipt: Mapping[str, object],
+    current: Mapping[str, object],
+) -> None:
+    """Reject a cutover when any accepted fact changed after receipt creation."""
+    if (
+        receipt.get("accepted") is not True
+        or current.get("accepted") is not True
+        or receipt.get("blockers") != []
+        or current.get("blockers") != []
+    ):
+        raise ValueError("d34_final_acceptance_not_current")
+    for field in (
+        "live_execution_enabled",
+        "soak",
+        "budget",
+        "risk",
+        "database_facts",
+        "paper_facts",
+    ):
+        if receipt.get(field) != current.get(field):
+            raise ValueError("d34_final_acceptance_facts_changed")
+
+
 __all__ = [
     "D34FinalAcceptanceAuditor",
     "FINAL_ACCEPTANCE_CONTRACT",
     "evaluate_final_acceptance",
+    "verify_current_acceptance",
     "verify_final_acceptance_receipt",
 ]
