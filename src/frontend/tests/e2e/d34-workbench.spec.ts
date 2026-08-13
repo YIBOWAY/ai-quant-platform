@@ -22,6 +22,7 @@ async function installD34OwnerFixture(page: Page) {
 
   let mandateVersion = 1;
   let renewal: unknown = null;
+  let asked: unknown = null;
   const mandate = () => ({
     contract: "hqa.mandate/v1",
     mandate_id: "mandate-browser-fixture-0001",
@@ -120,14 +121,15 @@ async function installD34OwnerFixture(page: Page) {
     mandateVersion = 2;
     await fulfill(route, mandate());
   });
-  await page.route("**/api/hermes/research/requests", (route) =>
-    fulfill(route, {
+  await page.route("**/api/hermes/research/requests", async (route) => {
+    asked = route.request().postDataJSON();
+    await fulfill(route, {
       contract: "hqa.d34_research_request/v1",
       status: "queued",
       code: "d34_research_requested",
       job_key: "request:2026-08-13:fixture",
-    }),
-  );
+    });
+  });
   await page.route("**/api/hermes/research/jobs?**", (route) =>
     fulfill(route, {
       contract: "hqa.d34_experiment_job_list/v1",
@@ -252,7 +254,7 @@ async function installD34OwnerFixture(page: Page) {
     }),
   );
 
-  return { renewal: () => renewal };
+  return { asked: () => asked, renewal: () => renewal };
 }
 
 test("D-34 workbench shows the durable paper-only cycle and renews its Mandate", async ({
@@ -263,6 +265,13 @@ test("D-34 workbench shows the durable paper-only cycle and renews its Mandate",
 
   await expect(page.getByRole("heading", { name: "按需双引擎纸面研究" })).toBeVisible();
   await expect(page.getByRole("button", { name: "提出研究" })).toBeVisible();
+  await page.getByLabel("研究需求（你不提就不跑）").fill("找一个二十日反转并说明为什么更好");
+  await page.getByRole("button", { name: "提出研究" }).click();
+  await expect.poll(fixture.asked).toEqual({
+    workspace_id: "default",
+    objective: "找一个二十日反转并说明为什么更好",
+  });
+  await expect(page.getByText("request:2026-08-13:fixture", { exact: false })).toBeVisible();
   await expect(page.getByText("就绪", { exact: true })).toBeVisible();
   await expect(page.getByText("实盘 = false", { exact: true })).toBeVisible();
   await page.getByText("展开操作台", { exact: false }).click();

@@ -105,6 +105,12 @@ export function D34ResearchWorkbench({ locale }: { locale: Locale }) {
   const [universe, setUniverse] = useState("SPY, QQQ, IWM, DIA");
   const [budget, setBudget] = useState("100.00");
   const [objective, setObjective] = useState("");
+  const [consoleOpen, setConsoleOpen] = useState<boolean | undefined>(undefined);
+  const [lastAsk, setLastAsk] = useState<{
+    job_key?: string | null;
+    status?: string;
+    code?: string;
+  } | null>(null);
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -189,6 +195,13 @@ export function D34ResearchWorkbench({ locale }: { locale: Locale }) {
     () => snapshot?.mandates.find((item) => item.status === "active" || item.status === "paused"),
     [snapshot],
   );
+  const askReady =
+    activeMandate?.status === "active" &&
+    activeMandate.paper_execution_allowed === true &&
+    Number.isFinite(Date.parse(activeMandate.expires_at)) &&
+    Date.parse(activeMandate.expires_at) > Date.now();
+  const trimmedObjective = objective.trim();
+  const askAllowed = askReady && trimmedObjective.length >= 8 && trimmedObjective.length <= 4000;
   const exceptions = useMemo(
     () =>
       snapshot?.jobs.filter((job) =>
@@ -231,7 +244,7 @@ export function D34ResearchWorkbench({ locale }: { locale: Locale }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="font-label-caps text-text-secondary">
-            {isZh ? "D-34 · 双引擎纸面研究" : "D-34 · autonomous paper research"}
+            {isZh ? "D-34 · 双引擎纸面研究" : "D-34 · on-demand paper research"}
           </p>
           <h2 className="mt-1 font-headline-lg text-text-primary" id="d34-workbench-title">
             {isZh ? "按需双引擎纸面研究" : "On-demand dual-engine paper research"}
@@ -396,38 +409,124 @@ export function D34ResearchWorkbench({ locale }: { locale: Locale }) {
                   ? "Mandate 只是预算和标的信封。五分钟 worker 不会自己开周期。"
                   : "The Mandate is only a budget and universe envelope. The five-minute worker never invents a cycle."}
               </p>
-              <form
-                className="mt-3 space-y-2"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void mutate("ask-research", "/api/hermes/research/requests", {
-                    workspace_id: "default",
-                    objective,
-                  });
-                }}
-              >
+              {askReady ? (
+                <form
+                  className="mt-3 space-y-2"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    if (!askAllowed) return;
+                    void (async () => {
+                      setBusy("ask-research");
+                      setError(null);
+                      try {
+                        const result = await ownerPostJson<{
+                          job_key?: string | null;
+                          status?: string;
+                          code?: string;
+                        }>("/api/hermes/research/requests", {
+                          workspace_id: "default",
+                          objective: trimmedObjective,
+                        });
+                        setLastAsk({
+                          job_key: result.job_key,
+                          status: result.status,
+                          code: result.code,
+                        });
+                        setObjective("");
+                        await refresh();
+                      } catch (cause) {
+                        setError(
+                          cause instanceof WorkspaceClientError
+                            ? `${cause.code ? `[${cause.code}] ` : ""}${cause.message}`
+                            : cause instanceof Error
+                              ? cause.message
+                              : "D-34 mutation failed",
+                        );
+                      } finally {
+                        setBusy(null);
+                      }
+                    })();
+                  }}
+                >
+                  <label className="block text-sm text-text-secondary">
+                    {isZh ? "研究需求（你不提就不跑）" : "Research ask (nothing runs until you ask)"}
+                    <textarea
+                      className="app-touch-target mt-1 min-h-20 w-full rounded-[var(--radius-card)] border border-border-subtle bg-bg-base px-3 py-2 text-text-primary"
+                      maxLength={4000}
+                      minLength={8}
+                      name="objective"
+                      onChange={(event) => setObjective(event.target.value)}
+                      placeholder={
+                        isZh
+                          ? "例如：找一个二十日反转，并说明为什么比上次好"
+                          : "e.g. Find a 20-day reversal and say why it beats the last receipt"
+                      }
+                      required
+                      value={objective}
+                    />
+                  </label>
+                  <button className={button} disabled={busy !== null || !askAllowed} type="submit">
+                    {isZh ? "提出研究" : "Ask for research"}
+                  </button>
+                </form>
+              ) : (
+                <p className="mt-3 text-sm text-warning">
+                  {isZh
+                    ? "先恢复或续期进行中的 Mandate，才能提出研究。"
+                    : "Resume or renew the active Mandate before asking for research."}
+                </p>
+              )}
+              {lastAsk?.job_key ? (
+                <p className="mt-3 font-data-mono text-xs text-text-secondary">
+                  {lastAsk.status ?? "queued"} · {lastAsk.code ?? "d34_research_requested"} ·{" "}
+                  {lastAsk.job_key}
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <div className={card}>
+              <h3 className="font-headline-sm text-text-primary">
+                {isZh ? "先建研究信封" : "Create the research envelope"}
+              </h3>
+              <p className="mt-1 text-sm text-text-secondary">
+                {isZh
+                  ? "没有 Mandate 就不会入队。先建 30 天纸面信封，再提出研究。"
+                  : "Nothing queues without a Mandate. Create the 30-day paper envelope, then ask."}
+              </p>
+              <form className="mt-3 space-y-3" onSubmit={createMandate}>
                 <label className="block text-sm text-text-secondary">
-                  {isZh ? "研究需求（你不提就不跑）" : "Research ask (nothing runs until you ask)"}
-                  <textarea
-                    className="app-touch-target mt-1 min-h-20 w-full rounded-[var(--radius-card)] border border-border-subtle bg-bg-base px-3 py-2 text-text-primary"
-                    onChange={(event) => setObjective(event.target.value)}
-                    placeholder={
-                      isZh
-                        ? "例如：找一个二十日反转，并说明为什么比上次好"
-                        : "e.g. Find a 20-day reversal and say why it beats the last receipt"
-                    }
+                  Universe
+                  <input
+                    className="app-touch-target mt-1 w-full rounded-[var(--radius-card)] border border-border-subtle bg-bg-base px-3 py-2 text-text-primary"
+                    onChange={(event) => setUniverse(event.target.value)}
                     required
-                    value={objective}
+                    value={universe}
+                  />
+                </label>
+                <label className="block text-sm text-text-secondary">
+                  {isZh ? "LLM 预算（美元）" : "LLM budget (USD)"}
+                  <input
+                    className="app-touch-target mt-1 w-full rounded-[var(--radius-card)] border border-border-subtle bg-bg-base px-3 py-2 text-text-primary"
+                    min="1"
+                    onChange={(event) => setBudget(event.target.value)}
+                    required
+                    step="0.01"
+                    type="number"
+                    value={budget}
                   />
                 </label>
                 <button className={button} disabled={busy !== null} type="submit">
-                  {isZh ? "提出研究" : "Ask for research"}
+                  {isZh ? "创建 30 天 Mandate 并允许 paper" : "Create 30-day paper Mandate"}
                 </button>
               </form>
             </div>
-          ) : null}
+          )}
 
-          <details className="group rounded-[var(--radius-card)] border border-border-subtle bg-bg-surface" open={exceptions.length > 0}>
+          <details
+            className="group rounded-[var(--radius-card)] border border-border-subtle bg-bg-surface"
+            onToggle={(event) => setConsoleOpen(event.currentTarget.open)}
+            open={consoleOpen ?? exceptions.length > 0}
+          >
             <summary className="app-touch-target cursor-pointer list-none px-4 py-3 font-body-sm text-text-primary marker:hidden">
               {isZh
                 ? exceptions.length
@@ -583,32 +682,11 @@ export function D34ResearchWorkbench({ locale }: { locale: Locale }) {
                   </div>
                 </div>
               ) : (
-                <form className="mt-3 space-y-3" onSubmit={createMandate}>
-                  <label className="block text-sm text-text-secondary">
-                    Universe
-                    <input
-                      className="app-touch-target mt-1 w-full rounded-[var(--radius-card)] border border-border-subtle bg-bg-base px-3 py-2 text-text-primary"
-                      onChange={(event) => setUniverse(event.target.value)}
-                      required
-                      value={universe}
-                    />
-                  </label>
-                  <label className="block text-sm text-text-secondary">
-                    {isZh ? "LLM 预算（美元）" : "LLM budget (USD)"}
-                    <input
-                      className="app-touch-target mt-1 w-full rounded-[var(--radius-card)] border border-border-subtle bg-bg-base px-3 py-2 text-text-primary"
-                      min="1"
-                      onChange={(event) => setBudget(event.target.value)}
-                      required
-                      step="0.01"
-                      type="number"
-                      value={budget}
-                    />
-                  </label>
-                  <button className={button} disabled={busy !== null} type="submit">
-                    {isZh ? "创建 30 天 Mandate 并允许 paper" : "Create 30-day paper Mandate"}
-                  </button>
-                </form>
+                <p className="mt-3 text-sm text-text-secondary">
+                  {isZh
+                    ? "创建 Mandate 的入口在上方，不藏在操作台里。"
+                    : "Create the Mandate in the card above, not inside this console."}
+                </p>
               )}
             </div>
 

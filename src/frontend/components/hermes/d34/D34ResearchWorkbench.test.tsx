@@ -20,6 +20,8 @@ describe("D34ResearchWorkbench", () => {
     const html = renderToStaticMarkup(<D34ResearchWorkbench locale="en" />);
 
     expect(html).toContain("On-demand dual-engine paper research");
+    expect(html).toContain("on-demand paper research");
+    expect(html).not.toContain("autonomous paper research");
     expect(html).toContain("low-allocation paper canaries only");
     expect(html).toContain("live stays off");
   });
