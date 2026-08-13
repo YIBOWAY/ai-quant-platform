@@ -1,6 +1,9 @@
-"""Seed the isolated coo-unify preview with one hung paper sleeve fill.
+"""Seed one hung paper sleeve fill for the isolated coo-unify preview.
 
 Writes only under QS_DATA_DIR. Does not touch live api_runs or quantplatform.
+
+The fill uses a fake 179 print (price_kind=preview_seed) on 2024-03-21.
+Later Futu mark-to-market is not strategy P&L and is not daily observation.
 """
 
 from __future__ import annotations

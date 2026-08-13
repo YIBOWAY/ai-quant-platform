@@ -43,7 +43,10 @@ dirty work. Historical plans and audits are evidence, not an executable queue.
 - `live_trading_enabled=false`. `kill_switch` freezes live danger, not hung
   paper observation. `emergency_stop` still freezes paper fills. Isolation
   preview: `bash scripts/coo_unify_preview.sh start` on `:8876`/`:3002` with
-  database `quantplatform_coo` only. Do not replay 006–033 on live
+  database `quantplatform_coo` only. The preview frontend must keep
+  `NEXT_PUBLIC_QUANT_API_BASE_URL` on `:3002` (same-origin `/api`); Next
+  rewrites to `:8876`. A preview seed fill is not daily observation and
+  its mark-to-market is not strategy P&L. Do not replay 006–033 on live
   `quantplatform`. No paper factor, Artifact, Mandate, trial sleeve or
   routing receipt has a live-upgrade operation. Do not fabricate observations.
 - Agent v0.2 has a gated local managed-session write path. Historical/external

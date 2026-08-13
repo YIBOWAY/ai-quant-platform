@@ -62,7 +62,9 @@ start_frontend() {
   fi
   (
     cd "$ROOT/src/frontend"
-    export NEXT_PUBLIC_QUANT_API_BASE_URL="http://127.0.0.1:${BACKEND_PORT}"
+    # Browser fetches must stay same-origin on :3002. Next rewrites /api to
+    # :8876. Pointing NEXT_PUBLIC_* at the backend makes client fetches CORS.
+    export NEXT_PUBLIC_QUANT_API_BASE_URL="http://127.0.0.1:${FRONTEND_PORT}"
     export QUANT_API_REWRITE_ORIGIN="http://127.0.0.1:${BACKEND_PORT}"
     exec "$NEXT_BIN" dev -H 127.0.0.1 -p "$FRONTEND_PORT"
   ) >"$LOG_DIR/frontend.log" 2>&1 &
@@ -112,7 +114,13 @@ case "$cmd" in
     echo "preview_backend=http://127.0.0.1:${BACKEND_PORT}"
     echo "preview_frontend=http://127.0.0.1:${FRONTEND_PORT}/zh/paper-trading"
     echo "live_untouched=http://127.0.0.1:3001"
+    echo "preview_seed_is_not_daily_observation=true"
     echo "logs=$LOG_DIR"
+    ;;
+  restart-frontend)
+    stop_pid frontend
+    start_frontend
+    echo "preview_frontend=http://127.0.0.1:${FRONTEND_PORT}/zh/paper-trading"
     ;;
   stop)
     stop_pid frontend
@@ -120,6 +128,6 @@ case "$cmd" in
     echo "preview_stopped=true"
     ;;
   *)
-    fail "usage_start_stop_or_seed"
+    fail "usage_start_stop_restart-frontend_or_seed"
     ;;
 esac
