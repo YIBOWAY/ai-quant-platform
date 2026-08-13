@@ -8,6 +8,7 @@ import stat
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
+from zoneinfo import ZoneInfo
 
 import typer
 
@@ -26,6 +27,7 @@ from quant_system.d34.research_routing import (
     D34ResearchRoutingAuthority,
     project_research_routing,
 )
+from quant_system.d34.research_request import enqueue_owner_research_request
 from quant_system.d34.worker import D34CycleWorker, D34WorkerConfig
 from quant_system.data.provider_factory import build_ohlcv_provider
 from quant_system.execution.account_repository_factory import (
@@ -422,43 +424,25 @@ def request_research(
         str,
         typer.Option("--objective", help="Owner research ask. Nothing is queued without this."),
     ],
-    platform_root: Annotated[
-        Path,
-        typer.Option("--platform-root", help="Read-only Platform source checkout mount."),
-    ] = _DEFAULT_PLATFORM_ROOT,
-    hqa_root: Annotated[
-        Path,
-        typer.Option("--hqa-root", help="Read-only HQA source checkout mount."),
-    ] = _DEFAULT_HQA_ROOT,
-    workspace_root: Annotated[
-        Path | None,
-        typer.Option("--workspace-root", help="Durable D-34 data and receipt root."),
-    ] = None,
-    cache_root: Annotated[
-        Path | None,
-        typer.Option("--cache-root", help="Durable RD-Agent/Qlib cache root."),
-    ] = None,
-    image_ref: Annotated[
-        str,
-        typer.Option("--image-ref", help="Pinned local D-34 image reference."),
-    ] = os.environ.get("D34_IMAGE_REF", "hqa-d34-rdagent-qlib:0.1.0"),
     workspace_id: Annotated[str, typer.Option("--workspace-id")] = "default",
-    worker_id: Annotated[str, typer.Option("--worker-id")] = "hqa-d34-launchagent",
 ) -> None:
     settings = load_settings()
-    workspace = (workspace_root or settings.data.data_dir / "d34").resolve()
-    cache = (cache_root or workspace / "cache").resolve()
     try:
-        worker = build_local_worker(
-            platform_root=platform_root,
-            hqa_root=hqa_root,
-            workspace_root=workspace,
-            cache_root=cache,
-            image_ref=image_ref,
+        mandate = PostgresMandateAuthority(settings).get_active(workspace_id=workspace_id)
+        if (
+            mandate is None
+            or mandate.status != "active"
+            or mandate.expires_at <= datetime.now(UTC)
+            or mandate.paper_execution_allowed is not True
+        ):
+            raise ValueError("no_active_mandate")
+        job_key = enqueue_owner_research_request(
+            jobs=PostgresJobAuthority(settings),
+            mandate=mandate,
             workspace_id=workspace_id,
-            worker_id=worker_id,
+            objective=objective,
+            cycle_date=datetime.now(ZoneInfo("Asia/Shanghai")).date(),
         )
-        result = worker.request_research(objective=objective)
     except Exception as exc:  # noqa: BLE001 - CLI boundary
         typer.echo(
             json.dumps(
@@ -476,16 +460,14 @@ def request_research(
         json.dumps(
             {
                 "contract": "hqa.d34_worker_result/v1",
-                "status": result.status,
-                "code": result.code,
-                "job_id": result.job_id,
+                "status": "queued",
+                "code": "d34_research_requested",
+                "job_key": job_key,
             },
             default=str,
             sort_keys=True,
         )
     )
-    if result.status != "queued":
-        raise typer.Exit(code=1)
 
 
 @d34_app.command("worker-once")

@@ -22,7 +22,11 @@ from quant_system.d34.engine_comparison import (
     compare_engine_receipts,
 )
 from quant_system.d34.market_data_snapshot import create_market_data_snapshot
-from quant_system.d34.research_request import enqueue_owner_research_request
+from quant_system.d34.research_request import (
+    JOB_INPUT_CONTRACT,
+    OWNER_REQUEST_TRIGGER,
+    enqueue_owner_research_request,
+)
 from quant_system.hermes.d34_registry_authority import RegisterArtifactCommand
 
 QLIB_COMMIT = "da920b7f954f48ab1bb64117c976710de198373e"
@@ -518,6 +522,12 @@ class D34CycleWorker:
             if _digest(document) != durable.input_digest:
                 raise _D34WorkerValidationError("d34_job_input_digest_mismatch")
             if (
+                document.get("contract") != JOB_INPUT_CONTRACT
+                or document.get("trigger") != OWNER_REQUEST_TRIGGER
+                or len(str(document.get("objective", "")).strip()) < 8
+            ):
+                raise _D34WorkerValidationError("d34_job_not_owner_requested")
+            if (
                 document.get("mandate_id") != mandate.mandate_id
                 or document.get("mandate_policy_digest") != mandate.policy_digest
                 or document.get("paper_execution_allowed") is not True
@@ -567,10 +577,7 @@ class D34CycleWorker:
                 "top_k": int(document["top_k"]),
                 "initial_cash": 100_000,
                 "budget_reservation_usd": float(lease.job.budget_reserved_usd),
-                "objective": str(
-                    document.get("objective")
-                    or "Find a robust cross-sectional daily paper factor."
-                ),
+                "objective": str(document["objective"]).strip(),
             }
             request_path = job_root / "research_request.json"
             _write_json(request_path, research_request)

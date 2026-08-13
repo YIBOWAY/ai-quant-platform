@@ -536,6 +536,80 @@ def test_cycle_records_futu_unavailable_when_processing_owner_request(tmp_path: 
     assert docker.commands == []
 
 
+def test_cycle_rejects_queued_jobs_that_were_not_owner_requested(tmp_path: Path) -> None:
+    roots = [tmp_path / name for name in ("workspace", "platform", "hqa", "cache")]
+    for path in roots:
+        path.mkdir()
+    mandate = SimpleNamespace(
+        mandate_id="mandate-cycle-12345678",
+        workspace_id="default",
+        status="active",
+        universe=("SPY", "QQQ", "IWM", "DIA"),
+        hypotheses_per_cycle=1,
+        max_iterations=2,
+        max_experiments_per_iteration=2,
+        max_concurrent_jobs=1,
+        llm_budget_usd=Decimal("100"),
+        paper_execution_allowed=True,
+        policy_digest="5" * 64,
+        expires_at=datetime(2026, 9, 1, tzinfo=UTC),
+    )
+    document = {
+        "contract": "hqa.d34_job_input/v1",
+        "cycle_date": "2026-08-11",
+        "hypothesis_number": 1,
+        "trigger": "schedule",
+        "mandate_id": mandate.mandate_id,
+        "mandate_policy_digest": mandate.policy_digest,
+        "universe": list(mandate.universe),
+        "max_iterations": 2,
+        "experiments_per_iteration": 2,
+        "top_k": 1,
+        "paper_execution_allowed": True,
+    }
+    jobs = Jobs()
+    jobs.items.append(
+        SimpleNamespace(
+            job_id="job-cycle-12345678",
+            job_key="cycle:2026-08-11:hypothesis:1",
+            state="queued",
+            mandate_id=mandate.mandate_id,
+            budget_reserved_usd=Decimal("10"),
+        )
+    )
+    jobs.input = LeasedJobInput(
+        job_id="job-cycle-12345678",
+        input_digest=_digest(document),
+        input_document=document,
+    )
+    docker = Docker(roots[0])
+    worker = D34CycleWorker(
+        config=D34WorkerConfig(
+            workspace_root=roots[0],
+            platform_root=roots[1],
+            hqa_root=roots[2],
+            cache_root=roots[3],
+        ),
+        mandates=SimpleNamespace(get_active=lambda **_kwargs: mandate),
+        jobs=jobs,
+        registry=Registry(),
+        docker_runtime=docker,
+        futu_provider=Futu(),
+        platform_replay=lambda **_kwargs: pytest.fail("legacy job replayed"),
+        canary_activator=lambda **_kwargs: pytest.fail("legacy job activated canary"),
+        safety_observer=lambda: _open_safety(mandate),
+        today=lambda: date(2026, 8, 11),
+        now=lambda: datetime(2026, 8, 11, tzinfo=UTC),
+    )
+
+    result = worker.run_once()
+
+    assert result.status == "failed"
+    assert result.code == "d34_job_not_owner_requested"
+    assert jobs.finished[0]["state"] == "rejected"
+    assert docker.commands == []
+
+
 def test_cycle_rejects_tampered_durable_job_input_without_leaking_the_lease(
     tmp_path: Path,
 ) -> None:

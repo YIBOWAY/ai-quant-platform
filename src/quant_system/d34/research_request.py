@@ -17,6 +17,8 @@ from quant_system.hermes.d34_job_authority import EnqueueJobCommand
 
 JOB_INPUT_CONTRACT = "hqa.d34_job_input/v1"
 OWNER_REQUEST_TRIGGER = "owner_request"
+DEFAULT_JOB_RESERVATION_USD = Decimal("10")
+_IN_FLIGHT_STATES = frozenset({"queued", "leased", "running"})
 
 
 def _canonical_json(value: object) -> bytes:
@@ -40,8 +42,15 @@ def mandate_field(mandate: Any, name: str) -> Any:
     return getattr(mandate, name)
 
 
-def owner_request_job_key(*, cycle_date: date, objective: str) -> str:
-    return f"request:{cycle_date.isoformat()}:{digest_document(objective)[:12]}"
+def _job_field(job: Any, name: str) -> Any:
+    if isinstance(job, dict):
+        return job.get(name)
+    return getattr(job, name, None)
+
+
+def owner_request_job_key(*, cycle_date: date, objective: str, sequence: int = 1) -> str:
+    base = f"request:{cycle_date.isoformat()}:{digest_document(objective)[:12]}"
+    return base if sequence <= 1 else f"{base}:{sequence}"
 
 
 def build_owner_request_input(
@@ -79,22 +88,34 @@ def enqueue_owner_research_request(
     cleaned = objective.strip()
     if len(cleaned) < 8:
         raise ValueError("d34_research_objective_required")
-    job_key = owner_request_job_key(cycle_date=cycle_date, objective=cleaned)
+    mandate_id = str(mandate_field(mandate, "mandate_id"))
+    base_key = owner_request_job_key(cycle_date=cycle_date, objective=cleaned)
     existing = jobs.list(workspace_id=workspace_id, limit=100, state=None)
-    existing_keys: set[str] = set()
+    used_keys: set[str] = set()
     for job in existing:
-        if isinstance(job, dict):
-            existing_keys.add(str(job.get("job_key", "")))
-        else:
-            existing_keys.add(str(job.job_key))
-    if job_key in existing_keys:
-        return job_key
+        if str(_job_field(job, "mandate_id")) != mandate_id:
+            continue
+        key = str(_job_field(job, "job_key") or "")
+        if key == base_key or key.startswith(f"{base_key}:"):
+            used_keys.add(key)
+            if str(_job_field(job, "state")) in _IN_FLIGHT_STATES:
+                return key
+    sequence = 1
+    job_key = base_key
+    while job_key in used_keys:
+        sequence += 1
+        job_key = owner_request_job_key(
+            cycle_date=cycle_date, objective=cleaned, sequence=sequence
+        )
     input_document = build_owner_request_input(
         mandate=mandate,
         cycle_date=cycle_date,
         objective=cleaned,
     )
-    reservation = min(Decimal("10"), Decimal(str(mandate_field(mandate, "llm_budget_usd"))))
+    reservation = min(
+        DEFAULT_JOB_RESERVATION_USD,
+        Decimal(str(mandate_field(mandate, "llm_budget_usd"))),
+    )
     jobs.enqueue(
         EnqueueJobCommand(
             mandate_id=str(mandate_field(mandate, "mandate_id")),
