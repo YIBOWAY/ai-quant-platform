@@ -120,6 +120,14 @@ async function installD34OwnerFixture(page: Page) {
     mandateVersion = 2;
     await fulfill(route, mandate());
   });
+  await page.route("**/api/hermes/research/requests", (route) =>
+    fulfill(route, {
+      contract: "hqa.d34_research_request/v1",
+      status: "queued",
+      code: "d34_research_requested",
+      job_key: "request:2026-08-13:fixture",
+    }),
+  );
   await page.route("**/api/hermes/research/jobs?**", (route) =>
     fulfill(route, {
       contract: "hqa.d34_experiment_job_list/v1",
@@ -253,9 +261,11 @@ test("D-34 workbench shows the durable paper-only cycle and renews its Mandate",
   const fixture = await installD34OwnerFixture(page);
   await page.goto("/zh/hermes", { waitUntil: "networkidle" });
 
-  await expect(page.getByRole("heading", { name: "Mandate 驱动的双引擎研究" })).toBeVisible();
-  await expect(page.getByText("READY", { exact: true })).toBeVisible();
-  await expect(page.getByText("live = false", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "按需双引擎纸面研究" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "提出研究" })).toBeVisible();
+  await expect(page.getByText("就绪", { exact: true })).toBeVisible();
+  await expect(page.getByText("实盘 = false", { exact: true })).toBeVisible();
+  await page.getByText("展开操作台", { exact: false }).click();
   await expect(page.getByText("artifact-b…xture-0001", { exact: true })).toBeVisible();
   await expect(page.getByText("canary-bro…xture-0001", { exact: false })).toBeVisible();
   await expect(page.getByText("corr 0.9999", { exact: false })).toBeVisible();
@@ -265,7 +275,7 @@ test("D-34 workbench shows the durable paper-only cycle and renews its Mandate",
   await expect(page.getByText("SPY · 2 @ $470.00", { exact: false })).toBeVisible();
   await expect(page.getByText("单 sleeve 1.00%", { exact: false })).toBeVisible();
   await expect(page.getByText("单标的合计 5.00%", { exact: false })).toBeVisible();
-  await expect(page.getByText("完整自动周期 4 / 10", { exact: false })).toBeVisible();
+  await expect(page.getByText("完整研究周期 4 / 10", { exact: false })).toBeVisible();
   await expect(page.getByText("Canary 观察日 2 / 5", { exact: false })).toBeVisible();
   await expect(page.getByText("运行时间门未达标", { exact: true })).toBeVisible();
   await expect(page.getByText("当前研究入口 D33", { exact: false })).toBeVisible();

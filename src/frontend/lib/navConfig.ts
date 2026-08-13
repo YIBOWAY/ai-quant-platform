@@ -116,7 +116,7 @@ const marketsSection: NavSection = {
     { id: "marketCrossSection", href: "/market-cross-section", icon: Grid3X3 },
     { id: "aiNews", href: "/ai-news", icon: Newspaper },
     { id: "orderBook", href: "/polymarket", icon: BookOpen },
-    { id: "agentStudio", href: "/agent-studio", icon: Zap },
+    { id: "agentStudio", href: "/agent-studio", icon: Zap, surfaces: [] },
   ],
 };
 
@@ -125,7 +125,7 @@ const systemSection: NavSection = {
   items: [
     { id: "settings", href: "/settings", icon: Settings },
     { id: "docs", href: "/docs/reversal-momentum", icon: FileText, surfaces: ["mobile"] },
-    { id: "support", href: "/settings", icon: HelpCircle, surfaces: ["mobile"] },
+    { id: "support", href: "/docs/reversal-momentum", icon: HelpCircle, surfaces: [] },
   ],
 };
 

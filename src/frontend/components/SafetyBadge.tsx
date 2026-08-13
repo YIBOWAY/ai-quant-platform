@@ -34,8 +34,8 @@ const copy = {
     live: "实盘交易",
     kill: "全局熔断开关",
     accountFrozen: "模拟账户冻结",
-    paperAuthority: "论文安全权威",
-    epoch: "纪元",
+    paperAuthority: "模拟盘权限",
+    epoch: "权限世代",
     ready: "就绪",
     blocked: "受阻",
     on: "开",
@@ -131,7 +131,11 @@ export async function SafetyBadge() {
       <details className="group">
         <summary
           aria-label={`${badgeLabel} — ${text.details}`}
-          className="app-touch-target flex cursor-pointer list-none items-center gap-2 rounded-lg border border-warning/40 bg-warning/5 px-2.5 font-mono text-[10px] font-bold uppercase tracking-widest text-warning marker:hidden"
+          className={`app-touch-target flex cursor-pointer list-none items-center gap-2 rounded-lg border px-2.5 font-mono text-[10px] font-bold uppercase tracking-widest marker:hidden ${
+            allSafe
+              ? "border-accent-success/40 bg-accent-success/5 text-accent-success"
+              : "border-warning/40 bg-warning/5 text-warning"
+          }`}
         >
           <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${dotClass}`} />
           <ShieldAlert size={13} className="shrink-0" />

@@ -416,6 +416,78 @@ def preflight(
     typer.echo(json.dumps(receipt.to_public_dict(), sort_keys=True))
 
 
+@d34_app.command("request-research")
+def request_research(
+    objective: Annotated[
+        str,
+        typer.Option("--objective", help="Owner research ask. Nothing is queued without this."),
+    ],
+    platform_root: Annotated[
+        Path,
+        typer.Option("--platform-root", help="Read-only Platform source checkout mount."),
+    ] = _DEFAULT_PLATFORM_ROOT,
+    hqa_root: Annotated[
+        Path,
+        typer.Option("--hqa-root", help="Read-only HQA source checkout mount."),
+    ] = _DEFAULT_HQA_ROOT,
+    workspace_root: Annotated[
+        Path | None,
+        typer.Option("--workspace-root", help="Durable D-34 data and receipt root."),
+    ] = None,
+    cache_root: Annotated[
+        Path | None,
+        typer.Option("--cache-root", help="Durable RD-Agent/Qlib cache root."),
+    ] = None,
+    image_ref: Annotated[
+        str,
+        typer.Option("--image-ref", help="Pinned local D-34 image reference."),
+    ] = os.environ.get("D34_IMAGE_REF", "hqa-d34-rdagent-qlib:0.1.0"),
+    workspace_id: Annotated[str, typer.Option("--workspace-id")] = "default",
+    worker_id: Annotated[str, typer.Option("--worker-id")] = "hqa-d34-launchagent",
+) -> None:
+    settings = load_settings()
+    workspace = (workspace_root or settings.data.data_dir / "d34").resolve()
+    cache = (cache_root or workspace / "cache").resolve()
+    try:
+        worker = build_local_worker(
+            platform_root=platform_root,
+            hqa_root=hqa_root,
+            workspace_root=workspace,
+            cache_root=cache,
+            image_ref=image_ref,
+            workspace_id=workspace_id,
+            worker_id=worker_id,
+        )
+        result = worker.request_research(objective=objective)
+    except Exception as exc:  # noqa: BLE001 - CLI boundary
+        typer.echo(
+            json.dumps(
+                {
+                    "contract": "hqa.d34_worker_result/v1",
+                    "status": "failed",
+                    "code": str(getattr(exc, "code", type(exc).__name__)),
+                    "message": str(exc),
+                },
+                sort_keys=True,
+            )
+        )
+        raise typer.Exit(code=1) from exc
+    typer.echo(
+        json.dumps(
+            {
+                "contract": "hqa.d34_worker_result/v1",
+                "status": result.status,
+                "code": result.code,
+                "job_id": result.job_id,
+            },
+            default=str,
+            sort_keys=True,
+        )
+    )
+    if result.status != "queued":
+        raise typer.Exit(code=1)
+
+
 @d34_app.command("worker-once")
 def worker_once(
     platform_root: Annotated[

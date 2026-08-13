@@ -51,21 +51,24 @@ Universe: {', '.join(request.universe)}
 Available daily observations: {len(request.calendar)}
 Prior experiment receipts: {prior}
 
-Required JSON object shape (all six keys are required):
+Required JSON object shape:
 {{
   "title": "short hypothesis name",
-  "thesis": "falsifiable research claim",
-  "operator": "momentum",
-  "short_window": 1,
-  "long_window": 5,
-  "rationale": "why this improves on prior receipts"
+  "thesis": "falsifiable research claim that cites prior receipts when any exist",
+  "operator": "composed",
+  "short_window": 5,
+  "long_window": 20,
+  "qlib_expr": "Rank($close/Ref($close,20)-1,1)",
+  "rationale": "why this expression improves on prior receipts"
 }}
 
-Choose exactly one operator from momentum, mean_reversion, low_volatility,
-volume_surprise, moving_average_spread. Choose integer windows between 1 and
-252; moving_average_spread requires short_window < long_window. Explain a
-testable thesis and why this proposal improves on prior receipts. Do not output Python code,
-Qlib syntax, trading orders, or any live-trading instruction.
+Prefer operator=composed and a whitelist Qlib expression using only
+$close/$open/$high/$low/$volume and Ref, Mean, Std, Sum, Max, Min, Delta,
+EMA, Rank, Abs, Log, Sign, plus + - * /. Windows must be integers 1..252.
+Depth <= 6. If you cannot form a valid composed expression, you may fall
+back to operator in momentum, mean_reversion, low_volatility,
+volume_surprise, moving_average_spread and omit qlib_expr. Explain a
+testable thesis. Do not output Python, trading orders, or live instructions.
 """.strip()
         response = self._backend.build_messages_and_create_chat_completion(
             prompt,

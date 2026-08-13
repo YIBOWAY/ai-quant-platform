@@ -78,9 +78,9 @@ Hermes 与 AI 研究工作流：
   backtest 证据通过机器政策后，只写 `reviewer=auto`、`promotion_scope=paper_only`，本地
   ff-only land，不 auto-push。029 是 append-only promote/demote/日配额权威；live registry
   对这种因子硬拒绝。
-- D-34 是独立的 Mandate 路径：Futu Parquet snapshot 进入 RD-Agent/Qlib，Platform 只消费
+- D-34 是独立的 Mandate 路径：owner 提出研究后，Futu Parquet snapshot 进入 RD-Agent/Qlib，Platform 只消费
   同一 target weights 做成交/费用/NAV 重放；确定性 comparison/policy 通过后注册
-  `paper_only` Artifact 并创建低额度 canary。030–032 提供 Mandate/job/receipt/Artifact/
+  `paper_only` Artifact 并创建低额度 canary。Mandate 自己不会发明每日周期。030–032 提供 Mandate/job/receipt/Artifact/
   canary 权威，`GET /api/safety/effective/v2` 暴露 research/paper blocker。正式 migration
   与 runtime worker 已部署，首个完整周期/canary 已运行；自然 `10` 周期/`5` 观察日门仍为
   `1/10`、`1/5`，所以默认入口继续是 D-33。

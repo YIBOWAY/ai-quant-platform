@@ -73,8 +73,8 @@ const copy = {
     waiting: "等待",
     review: "查看",
     offline: "离线",
-    runningSleeves: "运行袖珍仓",
-    pendingSleeves: "待恢复袖珍仓",
+    runningSleeves: "运行中策略仓",
+    pendingSleeves: "待恢复策略仓",
     pendingPlans: "待执行计划",
     duePlans: "今日待执行",
     blockedPlans: "阻塞",
@@ -86,7 +86,7 @@ const copy = {
     blockedHint: "阻塞执行需要人工查看后再运行。",
     recoveryHint: "待恢复通常表示执行日志曾被中断。",
     pendingSleeveHint:
-      "请运行 paper strategies recover-pending（或另一项显式策略变更）；本视图绝不改写待恢复袖珍仓。",
+      "请运行 paper strategies recover-pending（或另一项显式策略变更）；本视图绝不改写待恢复策略仓。",
     journalHint:
       "本视图不会改写待提交日志；若只需恢复，请运行 paper strategies recover-pending，而不是显式执行处理器。",
     corruptJournalHint: "损坏的恢复日志已保留供人工检查；状态页不会隐藏它。",

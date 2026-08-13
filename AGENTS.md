@@ -36,7 +36,8 @@ dirty work. Historical plans and audits are evidence, not an executable queue.
 - D-33 is a dual-Flag automatic `paper_only` exception. It may machine-review,
   locally ff-land, allocate and maintain bounded paper sleeves; it never grants
   live eligibility or automatically pushes GitHub.
-- D-34 is integrated and deployed locally: an active 30-day Mandate drives strict
+- D-34 is integrated and deployed locally: an owner research ask plus an active
+  30-day Mandate drives strict
   Futu Parquet → pinned RD-Agent/Qlib → Platform replay → Artifact/Policy → real
   paper-canary work. Natural soak is `1/10` complete cycles and `1/5` observation
   days, so D-33 remains the default new-research entry. Never fabricate
@@ -196,6 +197,7 @@ must set `PYTHONPATH="$PWD/src"` so tests import the worktree rather than main.
 | Current route/status | `docs/INDEX.md`, `docs/OVERVIEW.md` |
 | Local stack/migrations | `docs/runbooks/agent-v0-2-local-stack.md` |
 | D-34 | `docs/architecture/d34-autonomous-paper.md`, `docs/guides/d34-workbench.md`, `docs/runbooks/d34-autonomous-paper.md` |
+| COO unify isolation | Worktree `/Users/sunyibo/programs/.worktrees/coo-unify/ai-quant-platform` on `refactor/coo-unify`. Owner-request research only. LLM via Hermes `127.0.0.1:8645` / `grok-4.6`. |
 | Storage/PostgreSQL | `docs/architecture/database_cache_plan.md` |
 | Paper account/sleeves | `docs/guides/paper-trading.md`, `docs/execution/paper_strategy_sleeves.md` |
 | Backtests/strategies | `docs/guides/backtester.md`, `docs/guides/strategy-catalog.md` |

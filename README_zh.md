@@ -21,7 +21,7 @@ transcript/follow、approval/stop/result 与 candidate/release authority。历�
 migration、readiness、restart、E2E 与 restore 的唯一权威是
 [Agent v0.2 local-stack runbook](docs/runbooks/agent-v0-2-local-stack.md)。
 
-D-34 用 30 天 Mandate 驱动 Futu Parquet → RD-Agent/Qlib → Platform 独立执行重放 →
+D-34 在你提出研究需求后，用 30 天 Mandate 当信封跑 Futu Parquet → RD-Agent/Qlib → Platform 独立执行重放 →
 确定性 Policy → `paper_only` Artifact → 低额度 paper canary。它没有 live 升级接口，
 不自动 push GitHub，也不自动 apply migration。参见
 [架构](docs/architecture/d34-autonomous-paper.md)、

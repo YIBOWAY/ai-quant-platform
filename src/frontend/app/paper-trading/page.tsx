@@ -142,7 +142,7 @@ const copy = {
     pageEyebrow: "模拟交易",
     pageTitle: "模拟交易",
     pageSubtitle:
-      "实时账户：手动下单、策略袖珍仓和高级全账户控制。历史回放保持隔离，不触碰账户。",
+      "当前账户：手动下单、策略仓和高级全账户控制。历史回放保持隔离，不触碰账户。",
     finalEquity: "最终权益",
     orders: "订单",
     riskBreaches: "风控触发",
@@ -172,7 +172,7 @@ const copy = {
     historyResultsTitle: "历史回放结果",
     historyResultsDesc: "最近一次研究回放保存的结果，不会改变持续模拟账户。",
     accountTitle: "模拟账户",
-    accountDesc: "单一持续账户，手动现金、策略袖珍仓划拨和高级全账户控制都会在这里对账。",
+    accountDesc: "单一持续账户，手动现金、策略仓划拨和高级全账户控制都会在这里对账。",
     accountUnavailable: "账户接口不可达——在后端恢复前隐藏数值，避免误读。",
     accountValue: "账户净值",
     accountCash: "可用现金",
@@ -181,7 +181,7 @@ const copy = {
     replayTitle: "历史回放（研究）",
     replayDesc:
       "对一段历史日期区间批量回放某个策略。它不会触及上面的账户——本质是穿着交易台外衣的研究回测。",
-    tabLive: "实时账户",
+    tabLive: "当前账户",
     tabReplay: "历史回放",
     researchOnly: "仅研究",
     holdings: "持仓",

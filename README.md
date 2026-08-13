@@ -29,9 +29,11 @@ the inspected owner runtime enabled all four flags on 2026-08-10 after full
 acceptance. See the HQA
 `/Users/sunyibo/programs/Hermes-quant-agent/docs/runbooks/full-automation-paper.md`.
 
-D-34 adds a separate 30-day Mandate path: strict Futu Parquet snapshots feed a
+D-34 adds a separate 30-day Mandate path: after an explicit owner research ask,
+strict Futu Parquet snapshots feed a
 pinned RD-Agent/Qlib research engine, while Platform independently replays the
-same target weights, fees, holdings, and NAV. Deterministic policy may register
+same target weights, fees, holdings, and NAV. The Mandate is only the envelope;
+the worker never invents a daily cycle. Deterministic policy may register
 only `paper_only` Artifacts and low-allocation canaries. In the 2026-08-12 local
 runtime, migrations 030–032 have been applied once, the persistent worker is
 enabled, and the first real cycle and canary are active. Implementation is

@@ -7,17 +7,19 @@ migration 030–032 一次性 apply、完整 preflight 和常驻 worker 启用�
 
 ## 一次完整使用流程
 
-1. 打开 `/zh/hermes`，找到“自主 Paper 研究”区。
+1. 打开 `/zh/hermes`，找到 D-34 纸面研究区。
 2. 创建 Mandate。默认 30 天、`SPY/QQQ/IWM/DIA`、`1 x 3 x 3` 研究量、100 美元 LLM
-   预算，并允许 paper execution；都可在创建时修改。
-3. 在 Safety 区确认 research/paper blocker。emergency stop、过期/暂停 Mandate、预算耗尽或
+   预算，并允许 paper execution；都可在创建时修改。Mandate 只是信封，不会自己开周期。
+3. 在「提出研究」里写清研究需求，再点按钮。没有这条 owner 命令，五分钟 worker 只维护已有
+   纸面试运行仓，不会发明新的 RD-Agent/Qlib 周期。
+4. 在 Safety 区确认 research/paper blocker。emergency stop、过期/暂停 Mandate、预算耗尽或
    paper safety 失败会直接显示原因，不会再弹人工 Gate1/2/3。
-4. 在 Research 区观察 job 的 queue、lease、heartbeat、attempt、预算和失败码。
-5. 在 Artifact 区检查 snapshot/code/Qlib/Platform/comparison/policy 的 digest 血缘。
-6. policy 通过后，Paper 区出现低额度 D-34 canary；继续观察持仓、P&L、回撤与状态。
-7. “运行验收进度”同时显示当前默认研究入口。时间门达标后仍须有最终零重复/零 live
+5. 在 Research 区观察 job 的 queue、lease、heartbeat、attempt、预算和失败码。
+6. 在 Artifact 区检查 snapshot/code/Qlib/Platform/comparison/policy 的 digest 血缘。
+7. policy 通过后，Paper 区出现低额度 D-34 canary；继续观察持仓、P&L、回撤与状态。
+8. “运行验收进度”同时显示当前默认研究入口。时间门达标后仍须有最终零重复/零 live
    eligibility receipt，才会从 D-33 切为 D-34；D-33 旧 sleeve 维护不会停止。
-8. 异常时使用 pause、demote 或 D-34 rollback。三者默认保留持仓并继续估值，不自动平仓；
+9. 异常时使用 pause、demote 或 D-34 rollback。三者默认保留持仓并继续估值，不自动平仓；
    rollback 还会一键恢复 D-33 新 intake。
 
 ## Owner API 观察
@@ -28,6 +30,11 @@ migration 030–032 一次性 apply、完整 preflight 和常驻 worker 启用�
 curl --fail --cookie /absolute/owner-cookie.txt \
   'http://127.0.0.1:8765/api/safety/effective/v2?workspace_id=default'
 curl --fail --cookie /absolute/owner-cookie.txt \
+  -H 'x-qs-aw-csrf: <csrf>' \
+  -H 'content-type: application/json' \
+  -d '{"workspace_id":"default","objective":"Find a twenty-day reversal"}' \
+  'http://127.0.0.1:8765/api/hermes/research/requests'
+curl --fail --cookie /absolute/owner-cookie.txt \
   'http://127.0.0.1:8765/api/hermes/research/jobs?workspace_id=default&limit=20'
 curl --fail --cookie /absolute/owner-cookie.txt \
   'http://127.0.0.1:8765/api/hermes/d34/artifacts?workspace_id=default&limit=20'
@@ -36,7 +43,8 @@ curl --fail --cookie /absolute/owner-cookie.txt \
 ```
 
 不要把 owner cookie、CSRF token 或 LLM key 写进仓库。mutation 应优先从工作台执行；若用
-API，必须同时携带现有 owner session 与 CSRF header，且 body 中提供当前 `expected_version`。
+API，必须同时携带现有 owner session 与 CSRF header。Mandate 续期/暂停需要当前
+`expected_version`；提出研究只需要 `workspace_id` 和不少于 8 个字的 `objective`。
 
 ## 状态怎么理解
 
@@ -57,7 +65,7 @@ API，必须同时携带现有 owner session 与 CSRF header，且 body 中提�
 |---|---|
 | `d34_worker_disabled` | 这是 source/部署默认状态；只在正式 migration 与 runtime 就绪后显式启用。 |
 | `d34_env_file_required` | 创建 owner-only `0600` provider env，并由 `QS_D34_ENV_FILE` 指向它。 |
-| `d34_env_models_required` | 显式设置非空 `LITELLM_CHAT_MODEL`。本地默认经 Hermes xAI OAuth 代理调用 Grok，不需要单独 embedding 服务。 |
+| `d34_env_models_required` | 显式设置非空 `LITELLM_CHAT_MODEL`。本地默认经 Hermes xAI OAuth 代理调用 `grok-4.6`，不需要单独 embedding 服务。 |
 | `d34_env_logged_secret_forbidden` | 将 secret 从会被 RD-Agent 展开的 `LITELLM_*` setting 移到 provider 原生变量。 |
 | `runtime_preflight_failed` | 读取 preflight JSON 错误并修复 DB/live、LLM、Qlib、Futu 或 Docker seam；不得跳过后启用。 |
 | Mandate missing/paused/expired | 在工作台创建、恢复或续期 Mandate。 |

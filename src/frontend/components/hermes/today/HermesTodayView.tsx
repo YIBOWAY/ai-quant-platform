@@ -40,10 +40,6 @@ export function HermesTodayView({ model, artifacts, locale }: HermesTodayViewPro
       <TodayStateNode label={deskStatus} state={model.state} />
       <TodayGreeting locale={locale} model={model} />
 
-      <p className="text-xs text-text-secondary" data-hermes-desk-status>
-        {deskStatus}
-      </p>
-
       <TodayStatusLine locale={locale} model={model} />
 
       <TodayAttention items={model.attention} locale={locale} />

@@ -52,8 +52,8 @@ const notoSerifSC = localFont({
 });
 
 export const metadata: Metadata = {
-  title: 'QUANTUM_CORE',
-  description: 'AI Quant Platform',
+  title: 'Hermes · 本地研究',
+  description: 'Local Hermes research workbench',
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {

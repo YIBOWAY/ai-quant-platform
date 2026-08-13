@@ -22,7 +22,7 @@ from quant_system.d34.engine_comparison import (
     compare_engine_receipts,
 )
 from quant_system.d34.market_data_snapshot import create_market_data_snapshot
-from quant_system.hermes.d34_job_authority import EnqueueJobCommand
+from quant_system.d34.research_request import enqueue_owner_research_request
 from quant_system.hermes.d34_registry_authority import RegisterArtifactCommand
 
 QLIB_COMMIT = "da920b7f954f48ab1bb64117c976710de198373e"
@@ -163,62 +163,89 @@ class D34CycleWorker:
             raise ValueError("d34_container_path_invalid") from exc
         return path
 
-    def _schedule(self, mandate: Any, cycle_date: date) -> None:
-        existing = self.jobs.list(workspace_id=self.config.workspace_id, limit=100, state=None)
-        existing_keys = {str(job.job_key) for job in existing}
-        for hypothesis in range(1, int(mandate.hypotheses_per_cycle) + 1):
-            job_key = f"cycle:{cycle_date.isoformat()}:hypothesis:{hypothesis}"
-            if job_key in existing_keys:
-                continue
-            start = cycle_date - timedelta(days=self.config.lookback_days)
-            snapshot = create_market_data_snapshot(
-                provider=self.futu_provider,
-                symbols=mandate.universe,
-                start=start.isoformat(),
-                end=cycle_date.isoformat(),
-                output_root=self.config.workspace_root / "snapshots",
-                now=self.now,
+    def request_research(self, *, objective: str) -> D34WorkerResult:
+        """Enqueue one paper-research job from an explicit owner request.
+
+        Mandate is only the budget/universe envelope. The five-minute worker
+        never invents a research cycle on its own.
+        """
+
+        cleaned = objective.strip()
+        if len(cleaned) < 8:
+            return D34WorkerResult(status="failed", code="d34_research_objective_required")
+        try:
+            safety = self.safety_observer()
+        except Exception as exc:  # noqa: BLE001 - authority boundary
+            return D34WorkerResult(
+                status="failed",
+                code=str(getattr(exc, "code", "d34_safety_unavailable")),
             )
-            bars = pd.read_parquet(snapshot.parquet_path)
-            latest = pd.to_datetime(bars["timestamp"], utc=True).max()
-            if pd.Timestamp(self.now()) - latest > pd.Timedelta(days=7):
-                raise ValueError("d34_snapshot_stale")
-            input_document = {
-                "contract": "hqa.d34_job_input/v1",
-                "cycle_date": cycle_date.isoformat(),
-                "hypothesis_number": hypothesis,
-                "mandate_id": mandate.mandate_id,
-                "mandate_policy_digest": mandate.policy_digest,
-                "snapshot_id": snapshot.snapshot_id,
-                "snapshot_digest": snapshot.snapshot_digest,
-                "snapshot_parquet": str(
-                    snapshot.parquet_path.relative_to(self.config.workspace_root)
-                ),
-                "provider_receipt_digest": snapshot.provider_receipt_digest,
-                "universe": list(mandate.universe),
-                "max_iterations": int(mandate.max_iterations),
-                "experiments_per_iteration": int(mandate.max_experiments_per_iteration),
-                "top_k": 1,
-                "paper_execution_allowed": bool(mandate.paper_execution_allowed),
-                "objective": (
-                    "Discover and falsify one daily cross-sectional factor for a "
-                    "low-allocation paper canary."
-                ),
+        if safety.get("research_execution_enabled") is not True:
+            raw_blockers = safety.get("research_blockers")
+            blockers = (
+                [str(value) for value in raw_blockers]
+                if isinstance(raw_blockers, (list, tuple))
+                else []
+            )
+            return D34WorkerResult(
+                status="idle",
+                code=blockers[0] if blockers else "d34_research_not_authorized",
+            )
+        mandate = self.mandates.get_active(workspace_id=self.config.workspace_id)
+        if (
+            mandate is None
+            or mandate.status != "active"
+            or mandate.expires_at <= self.now()
+            or mandate.paper_execution_allowed is not True
+        ):
+            return D34WorkerResult(status="idle", code="no_active_mandate")
+        try:
+            job_key = enqueue_owner_research_request(
+                jobs=self.jobs,
+                mandate=mandate,
+                workspace_id=self.config.workspace_id,
+                objective=cleaned,
+                cycle_date=self.today(),
+            )
+        except Exception as exc:  # noqa: BLE001 - enqueue authority boundary
+            return D34WorkerResult(
+                status="failed",
+                code=str(getattr(exc, "code", type(exc).__name__)),
+            )
+        return D34WorkerResult(status="queued", code="d34_research_requested", job_id=job_key)
+
+    def _materialize_snapshot(
+        self, document: Mapping[str, object], mandate: Any
+    ) -> dict[str, object]:
+        if (
+            document.get("snapshot_id")
+            and document.get("snapshot_digest")
+            and document.get("snapshot_parquet")
+        ):
+            return {
+                "snapshot_id": str(document["snapshot_id"]),
+                "snapshot_digest": str(document["snapshot_digest"]),
+                "snapshot_parquet": self.config.workspace_root
+                / str(document["snapshot_parquet"]),
             }
-            input_digest = _digest(input_document)
-            reservation = min(Decimal("10"), Decimal(str(mandate.llm_budget_usd)))
-            self.jobs.enqueue(
-                EnqueueJobCommand(
-                    mandate_id=mandate.mandate_id,
-                    workspace_id=self.config.workspace_id,
-                    job_key=job_key,
-                    input_digest=input_digest,
-                    input_document=input_document,
-                    budget_reserved_usd=reservation,
-                    max_attempts=3,
-                )
-            )
-            existing_keys.add(job_key)
+        cycle_date = date.fromisoformat(str(document["cycle_date"]))
+        snapshot = create_market_data_snapshot(
+            provider=self.futu_provider,
+            symbols=tuple(str(value) for value in document.get("universe", mandate.universe)),
+            start=(cycle_date - timedelta(days=self.config.lookback_days)).isoformat(),
+            end=cycle_date.isoformat(),
+            output_root=self.config.workspace_root / "snapshots",
+            now=self.now,
+        )
+        bars = pd.read_parquet(snapshot.parquet_path)
+        latest = pd.to_datetime(bars["timestamp"], utc=True).max()
+        if pd.Timestamp(self.now()) - latest > pd.Timedelta(days=7):
+            raise ValueError("d34_snapshot_stale")
+        return {
+            "snapshot_id": snapshot.snapshot_id,
+            "snapshot_digest": snapshot.snapshot_digest,
+            "snapshot_parquet": snapshot.parquet_path,
+        }
 
     @staticmethod
     def _engine_receipt(path: Path) -> EngineReceipt:
@@ -499,7 +526,9 @@ class D34CycleWorker:
             phase = "starting"
             self.jobs.mark_running(job_id=job_id, lease_id=lease.lease_id, container_id=None)
             self._heartbeat(lease)
-            snapshot_parquet = self.config.workspace_root / str(document["snapshot_parquet"])
+            phase = "snapshot"
+            snapshot = self._materialize_snapshot(document, mandate)
+            snapshot_parquet = Path(str(snapshot["snapshot_parquet"]))
             phase = "qlib_adapt"
             _write_json(phase_path, {"phase": phase, "job_id": job_id})
             qlib_root = job_root / "qlib"
@@ -508,9 +537,9 @@ class D34CycleWorker:
                 command=(
                     "qlib-adapt",
                     "--snapshot-id",
-                    str(document["snapshot_id"]),
+                    str(snapshot["snapshot_id"]),
                     "--snapshot-digest",
-                    str(document["snapshot_digest"]),
+                    str(snapshot["snapshot_digest"]),
                     "--snapshot-parquet",
                     self._container_path(snapshot_parquet),
                     "--output-root",
@@ -527,8 +556,8 @@ class D34CycleWorker:
                 "contract": "hqa.d34_research_request/v1",
                 "job_id": job_id,
                 "mandate_id": mandate.mandate_id,
-                "snapshot_id": document["snapshot_id"],
-                "snapshot_digest": document["snapshot_digest"],
+                "snapshot_id": snapshot["snapshot_id"],
+                "snapshot_digest": snapshot["snapshot_digest"],
                 "snapshot_source": "futu",
                 "provider_uri": adapter.output["provider_uri"],
                 "universe": list(document["universe"]),
@@ -538,7 +567,10 @@ class D34CycleWorker:
                 "top_k": int(document["top_k"]),
                 "initial_cash": 100_000,
                 "budget_reservation_usd": float(lease.job.budget_reserved_usd),
-                "objective": document["objective"],
+                "objective": str(
+                    document.get("objective")
+                    or "Find a robust cross-sectional daily paper factor."
+                ),
             }
             request_path = job_root / "research_request.json"
             _write_json(request_path, research_request)
@@ -564,8 +596,8 @@ class D34CycleWorker:
             _write_json(phase_path, {"phase": phase, "job_id": job_id})
             replay = self.platform_replay(
                 qlib_receipt=qlib_receipt,
-                snapshot_id=str(document["snapshot_id"]),
-                snapshot_digest=str(document["snapshot_digest"]),
+                snapshot_id=str(snapshot["snapshot_id"]),
+                snapshot_digest=str(snapshot["snapshot_digest"]),
                 snapshot_parquet=snapshot_parquet,
                 target_weights_parquet=target_weights_path,
                 output_root=job_root / "platform-replay",
@@ -588,7 +620,7 @@ class D34CycleWorker:
             )
             outcome_document = {
                 "contract": "hqa.d34_job_outcome/v1",
-                "snapshot_digest": document["snapshot_digest"],
+                "snapshot_digest": snapshot["snapshot_digest"],
                 "candidate_code_digest": research_output["candidate_code_digest"],
                 "qlib_receipt_digest": qlib_receipt.receipt_digest,
                 "platform_receipt_digest": replay.engine_receipt.receipt_digest,
@@ -774,14 +806,6 @@ class D34CycleWorker:
             return D34WorkerResult(
                 status="idle",
                 code="d34_research_window_closed",
-                paper_cycle=paper_cycle,
-            )
-        try:
-            self._schedule(mandate, self.today())
-        except Exception as exc:  # noqa: BLE001 - Futu scheduling boundary
-            return D34WorkerResult(
-                status="failed",
-                code=str(getattr(exc, "code", type(exc).__name__)),
                 paper_cycle=paper_cycle,
             )
         lease = self.jobs.lease_next(

@@ -231,11 +231,11 @@ export function TranscriptCanvas({
         >
           {assistantPhase === "waiting"
             ? isZh
-              ? "等待助手回复（spine 驱动刷新；非 provider token 直通）"
-              : "Waiting for assistant (spine-refetch; not provider-token passthrough)"
+              ? "正在等待 Hermes 回复…"
+              : "Waiting for Hermes…"
             : isZh
-              ? "助手正文增长中（messages BFF 权威；follow 无 body）"
-              : "Assistant text growing (messages BFF authority; no body on follow)"}
+              ? "Hermes 正在回复…"
+              : "Hermes is answering…"}
         </p>
       )}
 

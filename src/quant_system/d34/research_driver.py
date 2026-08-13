@@ -23,6 +23,8 @@ from typing import Literal
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from quant_system.d34.qlib_expr import QlibExprError, compile_qlib_expr
+
 RESEARCH_REQUEST_CONTRACT = "hqa.d34_research_request/v1"
 RESEARCH_RESULT_CONTRACT = "hqa.d34_research_result/v1"
 ENGINE_RECEIPT_CONTRACT = "hqa.d34_engine_receipt/v1"
@@ -130,13 +132,23 @@ class ResearchProposal(BaseModel):
         "low_volatility",
         "volume_surprise",
         "moving_average_spread",
+        "composed",
     ]
     short_window: int = Field(default=1, ge=1, le=252)
     long_window: int = Field(ge=2, le=252)
     rationale: str = Field(min_length=1, max_length=2_000)
+    qlib_expr: str | None = Field(default=None, max_length=400)
 
     @model_validator(mode="after")
     def validate_windows(self) -> ResearchProposal:
+        if self.operator == "composed":
+            if self.qlib_expr is None or not self.qlib_expr.strip():
+                raise ValueError("d34_composed_expr_required")
+            try:
+                compile_qlib_expr(self.qlib_expr)
+            except QlibExprError as exc:
+                raise ValueError(exc.code) from exc
+            return self
         if self.operator == "moving_average_spread" and self.short_window >= self.long_window:
             raise ValueError("d34_factor_window_invalid")
         return self
@@ -182,6 +194,9 @@ CostProvider = Callable[[], float]
 
 
 def qlib_expression(proposal: ResearchProposal) -> str:
+    if proposal.operator == "composed":
+        assert proposal.qlib_expr is not None
+        return compile_qlib_expr(proposal.qlib_expr).qlib
     window = proposal.long_window
     expressions = {
         "momentum": f"$close/Ref($close,{window})-1",
@@ -199,6 +214,27 @@ def render_factor_source(*, proposal: ResearchProposal, factor_id: str) -> tuple
     if _FACTOR_ID_RE.fullmatch(factor_id) is None:
         raise D34ResearchError("d34_factor_id_invalid", "generated factor id is invalid")
     window = proposal.long_window
+    if proposal.operator == "composed":
+        assert proposal.qlib_expr is not None
+        compiled = compile_qlib_expr(proposal.qlib_expr)
+        compute = f"        return {compiled.pandas_body}"
+        source = (
+            "from __future__ import annotations\n\n"
+            "import numpy as np\n"
+            "import pandas as pd\n\n"
+            "from quant_system.factors.base import BaseFactor\n\n\n"
+            "class D34GeneratedFactor(BaseFactor):\n"
+            f"    factor_id = {factor_id!r}\n"
+            f"    factor_name = {proposal.title!r}\n"
+            "    factor_version = \"1.0.0\"\n"
+            f"    default_lookback = {window}\n"
+            "    direction = \"higher_is_better\"\n"
+            f"    description = {proposal.thesis!r}\n\n"
+            "    def _compute_values(self, frame: pd.DataFrame) -> pd.Series:\n"
+            f"{compute}\n\n\n"
+            "D34_FACTOR = D34GeneratedFactor\n"
+        )
+        return source, hashlib.sha256(source.encode("utf-8")).hexdigest()
     compute = {
         "momentum": (
             "        return group[\"close\"].transform(\n"

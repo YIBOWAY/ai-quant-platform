@@ -328,7 +328,8 @@ def test_worker_rejects_secrets_in_rdagent_logged_litellm_settings(
 def test_owner_env_template_uses_pinned_rdagent_litellm_model_names() -> None:
     template = Path("docker/d34/.env.example").read_text(encoding="utf-8")
 
-    assert "LITELLM_CHAT_MODEL=" in template
+    assert "LITELLM_CHAT_MODEL=grok-4.6" in template
+    assert "OPENAI_API_BASE=http://127.0.0.1:8645/v1" in template
     assert "LITELLM_EMBEDDING_MODEL=" not in template
     assert "\nCHAT_MODEL=" not in template
     assert "OPENAI_API_KEY=" in template

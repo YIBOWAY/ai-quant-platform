@@ -106,9 +106,9 @@ const copy = {
     submitting: "提交中...",
     checkPending: "检查挂单",
     checkingPending: "检查中...",
-    rebalanceTitle: "高级：全账户再平衡（非袖珍仓）",
+    rebalanceTitle: "高级：全账户再平衡（非策略仓）",
     rebalanceDesc:
-      "旧的全账户路径。它不是清仓按钮，也不是新建袖珍仓；它会按目标权重直接买卖整个模拟账户。策略袖珍仓请使用独立信号面板。",
+      "旧的全账户路径。它不是清仓按钮，也不是新建策略仓；它会按目标权重直接买卖整个模拟账户。策略仓请使用独立信号面板。",
     strategy: "策略",
     candidates: "候选标的",
     topN: "持仓数 Top N",
