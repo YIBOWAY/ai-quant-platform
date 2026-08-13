@@ -1,5 +1,8 @@
 # D-34 自主 Paper 架构
 
+> **历史模块名。** 现行计划是 HQA
+> `docs/plans/2026-08-13-personal-quant-assistant.md`。`d34_*` 是代码化石。
+
 D-34 是本地单 owner 的研究与模拟执行闭环。Mandate 只是预算/标的信封。owner 提出
 研究需求后，才把一次可恢复的研究 job 入队；再经双引擎证据、`paper_only` Artifact
 和低额度 canary。它没有 live 注册或升级接口，也不会自行发明每日周期。

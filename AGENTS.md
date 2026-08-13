@@ -7,8 +7,10 @@ dirty work. Historical plans and audits are evidence, not an executable queue.
 ## Repository Role and Checkout Boundary
 
 - This repository is the quant-domain backend and frontend for
-  `/Users/sunyibo/programs/Hermes-quant-agent`. Start with `docs/INDEX.md`; the
-  cross-repo roadmap remains in the HQA repository.
+  `/Users/sunyibo/programs/Hermes-quant-agent`. Start with `docs/INDEX.md`.
+  The only current plan is HQA
+  `docs/plans/2026-08-13-personal-quant-assistant.md`.
+  `D-32`/`D-33`/`D-34` are leftover code names, not product lines.
 - Edit, test, commit, and push only from `/Users/sunyibo/programs/ai-quant-platform`
   or a purpose-named source worktree under `/Users/sunyibo/programs/.worktrees/`.
 - The checkout under
@@ -17,8 +19,8 @@ dirty work. Historical plans and audits are evidence, not an executable queue.
   push from it.
 - Normal macOS operation uses `bash scripts/local_mac_stack.sh start`. The stack
   owns Docker readiness, the production frontend build, and the Hermes OAuth
-  proxy, Hermes, backend, frontend, connector, D-33 factor automation, Asia Radar
-  refresh, and D-34 worker LaunchAgents. Service lifetime must not depend on an
+  proxy, Hermes, backend, frontend, connector, paper-research worker, Asia Radar
+  refresh, and registered-strategy paper driver. Service lifetime must not depend on an
   AI-tool terminal.
 - The only full migration/readiness/restart/restore authority is
   `docs/runbooks/agent-v0-2-local-stack.md`. Component runbooks must link there
@@ -33,19 +35,12 @@ dirty work. Historical plans and audits are evidence, not an executable queue.
   029, D-34 migrations 030–032, and brief-rollup migration 033 were each applied
   once after their recorded backup/isolated-restore windows. Do not replay them.
   Backend and LaunchAgent startup keep `QS_DATABASE_AUTO_MIGRATE=false`.
-- D-33 is a dual-Flag automatic `paper_only` exception. It may machine-review,
-  locally ff-land, allocate and maintain bounded paper sleeves; it never grants
-  live eligibility or automatically pushes GitHub.
-- D-34 is integrated and deployed locally: an owner research ask plus an active
-  30-day Mandate drives strict
-  Futu Parquet → pinned RD-Agent/Qlib → Platform replay → Artifact/Policy → real
-  paper-canary work. Natural soak is `1/10` complete cycles and `1/5` observation
-  days, so D-33 remains the default new-research entry. Never fabricate
-  observations or cut over early. Final cutover requires the exact current
-  zero-duplicate/no-live receipt; rollback restores D-33 intake without flattening.
-- `live_trading_enabled=false`, `kill_switch=true`, and manual live qualification
-  remain independent. No D-33/D-34 factor, Artifact, Mandate, canary or routing
-  receipt has a live-upgrade operation.
+- Paper research and the daily paper book are one product. New research is
+  owner-ask or a weekly slot; the five-minute worker must not invent a cycle.
+  Registered strategies may run every day on paper. Nothing here grants live
+  eligibility or automatically pushes GitHub.
+- `live_trading_enabled=false`. No paper factor, Artifact, Mandate, trial sleeve
+  or routing receipt has a live-upgrade operation. Do not fabricate observations.
 - Agent v0.2 has a gated local managed-session write path. Historical/external
   sessions remain Web read-only and require an explicit fork to continue.
   `chat_write_ready` is local readiness; `public_chat_write_ready`,
@@ -197,7 +192,6 @@ must set `PYTHONPATH="$PWD/src"` so tests import the worktree rather than main.
 | Current route/status | `docs/INDEX.md`, `docs/OVERVIEW.md` |
 | Local stack/migrations | `docs/runbooks/agent-v0-2-local-stack.md` |
 | D-34 | `docs/architecture/d34-autonomous-paper.md`, `docs/guides/d34-workbench.md`, `docs/runbooks/d34-autonomous-paper.md` |
-| COO unify isolation | Worktree `/Users/sunyibo/programs/.worktrees/coo-unify/ai-quant-platform` on `refactor/coo-unify`. Owner-request research only. LLM via Hermes `127.0.0.1:8645` / `grok-4.6`. |
 | Storage/PostgreSQL | `docs/architecture/database_cache_plan.md` |
 | Paper account/sleeves | `docs/guides/paper-trading.md`, `docs/execution/paper_strategy_sleeves.md` |
 | Backtests/strategies | `docs/guides/backtester.md`, `docs/guides/strategy-catalog.md` |
