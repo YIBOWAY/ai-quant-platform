@@ -53,7 +53,7 @@ type SleeveAction = "pause" | "resume" | "stop";
 const copy = {
   en: {
     title: "Strategy Sleeves",
-    desc: "Strategy cash and lots stay isolated inside the same paper account. Signals are generated here; fills remain manual for this slice.",
+    desc: "Strategy cash and lots stay isolated inside the same paper account. Hung allocated sleeves can fill and record P&L while live stays off.",
     configs: "Configs",
     sleeves: "Sleeves",
     allocated: "Allocated",
@@ -114,7 +114,7 @@ const copy = {
   },
   zh: {
     title: "策略仓",
-    desc: "策略现金与 lot 在同一个模拟账户内分账隔离。本切片只在这里生成信号，成交仍然不会自动发生。",
+    desc: "策略现金与 lot 在同一个模拟账户内分账隔离。已挂上的划拨仓可以成交并记盈亏；实盘仍关。",
     configs: "配置",
     sleeves: "策略仓",
     allocated: "已划拨",

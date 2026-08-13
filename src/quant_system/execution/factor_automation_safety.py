@@ -177,6 +177,7 @@ def validate_auto_execution_orders(
     paper_execution_enabled: bool = True,
     mandate_active: bool = False,
     mandate_paper_execution_allowed: bool = False,
+    hung_observation: bool = False,
 ) -> PaperExecutionDecision:
     decision = PaperExecutionPolicy(limits or FactorAutomationLimits()).evaluate_batch(
         PaperExecutionBatch(
@@ -192,6 +193,7 @@ def validate_auto_execution_orders(
             paper_execution_enabled=paper_execution_enabled,
             mandate_active=mandate_active,
             mandate_paper_execution_allowed=mandate_paper_execution_allowed,
+            hung_observation=hung_observation,
         )
     )
     if not decision.allowed:

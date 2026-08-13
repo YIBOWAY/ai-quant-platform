@@ -22,7 +22,8 @@ def resolve_d34_execution_policy_context(
             "contract": "hqa.d34_execution_policy_context/v1",
             "workspace_id": workspace_id,
             "paper_execution_enabled": False,
-            "emergency_stop": False,
+            "emergency_stop": None,
+            "authority_available": False,
             "mandate_active": False,
             "mandate_paper_execution_allowed": False,
             "blockers": [str(getattr(exc, "code", "d34_safety_unavailable"))],
@@ -38,6 +39,8 @@ def resolve_d34_execution_policy_context(
         "workspace_id": workspace_id,
         "paper_execution_enabled": safety.get("paper_execution_enabled") is True,
         "emergency_stop": emergency.get("active") is True,
+        "authority_available": "d34_authority_unavailable"
+        not in list(safety.get("blockers", [])),
         "mandate_active": d34.get("mandate_active") is True,
         "mandate_paper_execution_allowed": (
             mandate.get("paper_execution_allowed") is True

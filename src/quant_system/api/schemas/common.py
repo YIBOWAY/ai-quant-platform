@@ -32,6 +32,7 @@ class SafetyFooter(BaseModel):
     paper_trading: bool
     live_trading_enabled: bool
     kill_switch: bool
+    paper_observation_enabled: bool
     bind_address: str
 
 

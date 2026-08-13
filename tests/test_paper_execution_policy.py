@@ -88,6 +88,21 @@ def test_d34_top_one_canary_uses_account_symbol_limit_not_d33_diversification() 
     assert d33.blockers == ("sleeve_symbol_limit",)
 
 
+def test_hung_observation_allows_d34_fill_without_mandate() -> None:
+    decision = PaperExecutionPolicy().evaluate_batch(
+        _batch(
+            source="d34",
+            mandate_active=False,
+            mandate_paper_execution_allowed=False,
+            paper_execution_enabled=False,
+            hung_observation=True,
+        )
+    )
+
+    assert decision.allowed is True
+    assert decision.input_document["hung_observation"] is True
+
+
 def test_emergency_stop_and_paper_switch_fail_closed_for_both_sources() -> None:
     policy = PaperExecutionPolicy()
 

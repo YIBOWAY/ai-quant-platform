@@ -312,6 +312,182 @@ def test_d34_authoritative_policy_executes_on_frozen_shared_paper_account(
     assert len(audited) == 1
 
 
+def test_hung_observation_fills_frozen_account_without_mandate(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = _settings_for_tmp_data(tmp_path, monkeypatch)
+    patch_provider(monkeypatch, FakeOHLCVProvider(make_ohlcv_frame()))
+    api_runs_dir = tmp_path / "api_runs"
+    account_storage = PaperAccountStorage(api_runs_dir)
+    sleeve_storage = PaperStrategySleeveStorage(api_runs_dir)
+    account = PaperAccount.open_new(initial_cash=100_000)
+    account.kill_switch = True
+    config = make_config(max_weight_per_symbol=0.99)
+    sleeve_storage.save_strategy_config(config)
+    sleeve = PaperStrategySleeveService(sleeve_storage).create_sleeve(
+        account,
+        config=config,
+        mode=StrategySleeveMode.ALLOCATED,
+        allocated_cash=1_000,
+        metadata={
+            "automation_managed": True,
+            "automation_source": "d34",
+            "artifact_id": "artifact-hung",
+            "mandate_id": "mandate-expired",
+            "promotion_scope": "paper_only",
+            "workspace_id": "default",
+        },
+    )
+    sleeve_storage.save_sleeve(sleeve)
+    account_storage.save(account)
+    runner = PaperStrategyOperationsRunner(
+        account_storage=account_storage,
+        sleeve_storage=sleeve_storage,
+        settings=settings,
+        price_source=FakePriceSource({"AAPL": 179.0}),
+        paper_execution_context_provider=lambda _sleeve: {
+            "paper_execution_enabled": False,
+            "emergency_stop": False,
+            "mandate_active": False,
+            "mandate_paper_execution_allowed": False,
+        },
+    )
+
+    signal = runner.generate_signal_once(
+        sleeve.sleeve_id,
+        signal_date="2024-03-20",
+        history_days=90,
+    )
+    plan = runner.create_execution_once(
+        sleeve.sleeve_id,
+        signal.signal_id,
+        target_date="2024-03-21",
+    )
+    result = runner.process_pending_executions_once(
+        sleeve_id=sleeve.sleeve_id,
+        target_date="2024-03-21",
+    )
+
+    assert signal.execution_blocked_reason is None
+    assert result.filled_count == 1
+    assert result.blocked_count == 0
+    assert result.account is not None
+    assert result.account.kill_switch is True
+    assert result.account.positions["AAPL"].quantity > 0
+    assert plan.metadata["paper_execution_policy_decision"]["input_document"][
+        "hung_observation"
+    ] is True
+
+
+def test_hung_observation_stays_frozen_when_live_is_on(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("QS_LIVE_TRADING_ENABLED", "true")
+    monkeypatch.setenv(
+        "QS_MANUAL_LIVE_TRADING_CONFIRMATION",
+        "I_UNDERSTAND_THIS_ENABLES_LIVE_TRADING",
+    )
+    settings = _settings_for_tmp_data(tmp_path, monkeypatch)
+    patch_provider(monkeypatch, FakeOHLCVProvider(make_ohlcv_frame()))
+    api_runs_dir = tmp_path / "api_runs"
+    account_storage = PaperAccountStorage(api_runs_dir)
+    sleeve_storage = PaperStrategySleeveStorage(api_runs_dir)
+    account = PaperAccount.open_new(initial_cash=100_000)
+    account.kill_switch = True
+    config = make_config(max_weight_per_symbol=0.99)
+    sleeve_storage.save_strategy_config(config)
+    sleeve = PaperStrategySleeveService(sleeve_storage).create_sleeve(
+        account,
+        config=config,
+        mode=StrategySleeveMode.ALLOCATED,
+        allocated_cash=1_000,
+        metadata={
+            "automation_managed": True,
+            "automation_source": "d34",
+            "artifact_id": "artifact-live-block",
+            "mandate_id": "mandate-live-block",
+            "promotion_scope": "paper_only",
+            "workspace_id": "default",
+        },
+    )
+    sleeve_storage.save_sleeve(sleeve)
+    account_storage.save(account)
+    runner = PaperStrategyOperationsRunner(
+        account_storage=account_storage,
+        sleeve_storage=sleeve_storage,
+        settings=settings,
+        price_source=FakePriceSource({"AAPL": 179.0}),
+        paper_execution_context_provider=lambda _sleeve: {
+            "paper_execution_enabled": False,
+            "emergency_stop": False,
+            "mandate_active": False,
+            "mandate_paper_execution_allowed": False,
+        },
+    )
+
+    signal = runner.generate_signal_once(
+        sleeve.sleeve_id,
+        signal_date="2024-03-20",
+        history_days=90,
+    )
+
+    assert signal.execution_blocked_reason == "account_frozen"
+
+
+def test_hung_observation_stays_frozen_when_authority_is_unknown(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = _settings_for_tmp_data(tmp_path, monkeypatch)
+    patch_provider(monkeypatch, FakeOHLCVProvider(make_ohlcv_frame()))
+    api_runs_dir = tmp_path / "api_runs"
+    account_storage = PaperAccountStorage(api_runs_dir)
+    sleeve_storage = PaperStrategySleeveStorage(api_runs_dir)
+    account = PaperAccount.open_new(initial_cash=100_000)
+    account.kill_switch = True
+    config = make_config(max_weight_per_symbol=0.99)
+    sleeve_storage.save_strategy_config(config)
+    sleeve = PaperStrategySleeveService(sleeve_storage).create_sleeve(
+        account,
+        config=config,
+        mode=StrategySleeveMode.ALLOCATED,
+        allocated_cash=1_000,
+        metadata={
+            "automation_managed": True,
+            "automation_source": "d34",
+            "artifact_id": "artifact-authority-unknown",
+            "mandate_id": "mandate-authority-unknown",
+            "promotion_scope": "paper_only",
+            "workspace_id": "default",
+        },
+    )
+    sleeve_storage.save_sleeve(sleeve)
+    account_storage.save(account)
+    runner = PaperStrategyOperationsRunner(
+        account_storage=account_storage,
+        sleeve_storage=sleeve_storage,
+        settings=settings,
+        paper_execution_context_provider=lambda _sleeve: {
+            "paper_execution_enabled": False,
+            "emergency_stop": False,
+            "authority_available": False,
+            "mandate_active": False,
+            "mandate_paper_execution_allowed": False,
+            "blockers": ["d34_authority_unavailable"],
+        },
+    )
+
+    signal = runner.generate_signal_once(
+        sleeve.sleeve_id,
+        signal_date="2024-03-20",
+        history_days=90,
+    )
+
+    assert signal.execution_blocked_reason == "account_frozen"
+
+
 def test_d34_frozen_account_override_requires_current_authoritative_context(
     tmp_path,
     monkeypatch,

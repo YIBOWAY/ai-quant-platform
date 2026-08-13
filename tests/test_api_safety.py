@@ -54,6 +54,7 @@ def test_safety_footer_overrides_route_payload_safety(tmp_path) -> None:
     assert payload["safety"]["paper_trading"] is True
     assert payload["safety"]["live_trading_enabled"] is False
     assert payload["safety"]["kill_switch"] is True
+    assert payload["safety"]["paper_observation_enabled"] is True
     assert payload["safety"]["bind_address"] == "127.0.0.1"
 
 

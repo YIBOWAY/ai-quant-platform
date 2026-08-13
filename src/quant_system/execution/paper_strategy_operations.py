@@ -12,6 +12,7 @@ from quant_system.execution.account_storage import PaperAccountStorage
 from quant_system.execution.d34_execution_context import (
     resolve_d34_execution_policy_context,
 )
+from quant_system.execution.paper_observation import hung_observation_open_for_sleeve
 from quant_system.execution.paper_execution_policy import (
     PaperExecutionBatch,
     PaperExecutionDecision,
@@ -252,12 +253,21 @@ class PaperStrategyOperationsRunner:
             workspace_id=str(sleeve.metadata.get("workspace_id", "default")),
         )
 
+    def _hung_observation_open(self, sleeve: StrategySleeve) -> bool:
+        return hung_observation_open_for_sleeve(
+            self.settings,
+            sleeve,
+            self.paper_execution_context_provider(sleeve),
+        )
+
     def _current_d34_execution_blocker(self, sleeve: StrategySleeve) -> str | None:
         if str(sleeve.metadata.get("automation_source", "d33")) != "d34":
             return None
         context = self.paper_execution_context_provider(sleeve)
         if context.get("emergency_stop") is True:
             return "automation_emergency_stop_active"
+        if self._hung_observation_open(sleeve):
+            return None
         if context.get("paper_execution_enabled") is not True:
             return "automation_paper_execution_disabled"
         if context.get("mandate_active") is not True:
@@ -266,11 +276,13 @@ class PaperStrategyOperationsRunner:
             return "automation_d34_mandate_paper_execution_not_allowed"
         return None
 
-    @staticmethod
     def _d34_scoped_frozen_account_authorized(
+        self,
         sleeve: StrategySleeve,
         context: Mapping[str, Any],
     ) -> bool:
+        if self._hung_observation_open(sleeve):
+            return True
         if (
             sleeve.metadata.get("automation_managed") is not True
             or str(sleeve.metadata.get("automation_source", "")) != "d34"
@@ -334,6 +346,7 @@ class PaperStrategyOperationsRunner:
                 mandate_paper_execution_allowed=(
                     context.get("mandate_paper_execution_allowed") is True
                 ),
+                hung_observation=self._hung_observation_open(sleeve),
             )
         )
         plan.metadata["paper_execution_policy_decision_at_execution"] = (
@@ -352,7 +365,8 @@ class PaperStrategyOperationsRunner:
             except Exception as exc:  # noqa: BLE001 - durable audit seam
                 code = str(getattr(exc, "code", "d34_policy_audit_unavailable"))
                 plan.metadata["paper_execution_policy_audit_error"] = code
-                return f"automation_{code}"
+                if not self._hung_observation_open(sleeve):
+                    return f"automation_{code}"
         return None if decision.allowed else f"automation_{decision.blockers[0]}"
 
     def generate_signal_once(
@@ -429,6 +443,11 @@ class PaperStrategyOperationsRunner:
                     sleeve.strategy_config_id,
                     version=sleeve.strategy_config_version,
                 )
+                context = (
+                    self.paper_execution_context_provider(sleeve)
+                    if str(sleeve.metadata.get("automation_source", "d33")) == "d34"
+                    else {}
+                )
                 generated.append(
                     signal_service.generate_daily_signal(
                         sleeve=sleeve,
@@ -436,6 +455,10 @@ class PaperStrategyOperationsRunner:
                         account=account,
                         signal_date=due_signal_date,
                         history_days=history_days,
+                        allow_frozen_account=self._d34_scoped_frozen_account_authorized(
+                            sleeve,
+                            context,
+                        ),
                     )
                 )
         return PaperStrategySignalBatchResult(
@@ -463,14 +486,19 @@ class PaperStrategyOperationsRunner:
             sleeve = self.sleeve_storage.load_sleeve(sleeve_id)
             signal = self._load_signal(sleeve_id, signal_id)
             plan_metadata = dict(metadata or {})
-            allow_frozen_account = False
-            if str(sleeve.metadata.get("automation_source", "d33")) == "d34":
-                context = self.paper_execution_context_provider(sleeve)
-                plan_metadata["paper_execution_policy_context"] = dict(context)
-                allow_frozen_account = self._d34_scoped_frozen_account_authorized(
-                    sleeve,
-                    context,
-                )
+            context = (
+                self.paper_execution_context_provider(sleeve)
+                if str(sleeve.metadata.get("automation_source", "d33")) == "d34"
+                else {}
+            )
+            plan_metadata["paper_execution_policy_context"] = {
+                **dict(context),
+                "hung_observation": self._hung_observation_open(sleeve),
+            }
+            allow_frozen_account = self._d34_scoped_frozen_account_authorized(
+                sleeve,
+                context,
+            )
             return sleeve_service.create_execution_plan(
                 account,
                 sleeve=sleeve,
@@ -521,13 +549,11 @@ class PaperStrategyOperationsRunner:
                     blocked_count += 1
                     continue
                 allow_frozen_account = False
-                if (
-                    account.kill_switch
-                    and str(sleeve.metadata.get("automation_source", "")) == "d34"
-                ):
+                if account.kill_switch:
+                    context = self.paper_execution_context_provider(sleeve)
                     allow_frozen_account = self._d34_scoped_frozen_account_authorized(
                         sleeve,
-                        self.paper_execution_context_provider(sleeve),
+                        context,
                     )
                 try:
                     execution = execution_service.execute_plan(

@@ -16,7 +16,7 @@ from dataclasses import asdict, dataclass
 from typing import Any, Literal
 
 DECISION_CONTRACT = "hqa.paper_execution_policy_decision/v1"
-POLICY_VERSION = "paper-execution-policy/v2"
+POLICY_VERSION = "paper-execution-policy/v3"
 
 
 def _digest(value: object) -> str:
@@ -58,6 +58,7 @@ class PaperExecutionBatch:
     paper_execution_enabled: bool
     mandate_active: bool = False
     mandate_paper_execution_allowed: bool = False
+    hung_observation: bool = False
 
 
 @dataclass(frozen=True)
@@ -114,16 +115,17 @@ class PaperExecutionPolicy:
             self._append_once(blockers, "unsupported_automation_source")
         if batch.emergency_stop is True:
             self._append_once(blockers, "emergency_stop_active")
-        if batch.paper_execution_enabled is not True:
-            self._append_once(blockers, "paper_execution_disabled")
-        if source == "d34":
-            if batch.mandate_active is not True:
-                self._append_once(blockers, "d34_mandate_inactive")
-            if batch.mandate_paper_execution_allowed is not True:
-                self._append_once(
-                    blockers,
-                    "d34_mandate_paper_execution_not_allowed",
-                )
+        if batch.hung_observation is not True:
+            if batch.paper_execution_enabled is not True:
+                self._append_once(blockers, "paper_execution_disabled")
+            if source == "d34":
+                if batch.mandate_active is not True:
+                    self._append_once(blockers, "d34_mandate_inactive")
+                if batch.mandate_paper_execution_allowed is not True:
+                    self._append_once(
+                        blockers,
+                        "d34_mandate_paper_execution_not_allowed",
+                    )
 
         for field, code in (
             (batch.workspace_id, "invalid_workspace_id"),
@@ -218,6 +220,7 @@ class PaperExecutionPolicy:
             "mandate_paper_execution_allowed": (
                 batch.mandate_paper_execution_allowed
             ),
+            "hung_observation": batch.hung_observation,
             "policy_digest": self.policy_digest,
         }
         decision_payload = {

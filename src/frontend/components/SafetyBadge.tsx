@@ -14,7 +14,8 @@ const copy = {
     live: "live trading",
     kill: "global kill_switch",
     accountFrozen: "paper account frozen",
-    paperAuthority: "paper authority",
+    paperObservation: "paper observation",
+    paperAuthority: "candidate admission",
     epoch: "epoch",
     ready: "ready",
     blocked: "blocked",
@@ -34,7 +35,8 @@ const copy = {
     live: "实盘交易",
     kill: "全局熔断开关",
     accountFrozen: "模拟账户冻结",
-    paperAuthority: "模拟盘权限",
+    paperObservation: "纸面观察",
+    paperAuthority: "候选准入",
     epoch: "权限世代",
     ready: "就绪",
     blocked: "受阻",
@@ -69,6 +71,14 @@ export async function SafetyBadge() {
       : text.liveEnabled
     : text.unavailable;
   const killStatus = safety ? (killSwitchOn ? text.on : text.off) : text.unavailable;
+  const paperObservationOn = safety?.paper_observation_enabled === true;
+  const paperObservationStatus = safety
+    ? safety.paper_observation_enabled === true
+      ? text.on
+      : safety.paper_observation_enabled === false
+        ? text.off
+        : text.unavailable
+    : text.unavailable;
   const accountFrozenStatus = paperSafety.apiError
     ? text.unavailable
     : paperSafety.canonical_account_frozen === true
@@ -87,23 +97,22 @@ export async function SafetyBadge() {
       : String(paperSafety.current_paper_authority_epoch);
   const desktopStatus = `${paperOnly ? text.paperOnly : text.paperUnavailable} · ${
     liveStatus
-  } · ${text.kill} ${killStatus} · ${text.accountFrozen} ${accountFrozenStatus} · ${
-    text.paperAuthority
-  } ${paperAuthorityStatus} (${text.epoch} ${epochStatus}) · ${text.api} ${health.status}`;
+  } · ${text.kill} ${killStatus} · ${text.paperObservation} ${paperObservationStatus} · ${
+    text.accountFrozen
+  } ${accountFrozenStatus} · ${text.paperAuthority} ${paperAuthorityStatus} (${
+    text.epoch
+  } ${epochStatus}) · ${text.api} ${health.status}`;
   const mobileStatus = `${paperOnly ? text.paperOnly : text.paperUnavailable} · ${
     liveStatus
-  } · ${text.paperAuthority} ${paperAuthorityStatus} · ${text.api} ${health.status}`;
+  } · ${text.paperObservation} ${paperObservationStatus} · ${text.api} ${health.status}`;
 
-  // Fail closed: anything short of "paper-only, live disabled, kill switch
-  // engaged, authority ready, API reachable" reads as an attention state, never
-  // as all-clear. Per AGENTS.md the safe posture is kill_switch = TRUE, so an
-  // absent or false kill switch is what warrants attention.
+  // Live-safe posture: paper-only, live off, kill on.
+  // Fill gate: paper_observation_enabled. Candidate admission is separate.
   const allSafe =
     paperOnly &&
     liveDisabled &&
     killSwitchOn &&
-    paperSafety.effective === true &&
-    !paperSafety.apiError &&
+    paperObservationOn &&
     health.status === "available";
   const badgeLabel = allSafe ? text.badge : text.badgeUnsafe;
   const dotClass = allSafe ? "bg-accent-success" : "bg-warning";
@@ -112,6 +121,7 @@ export async function SafetyBadge() {
     { label: text.paperOnly, value: paperOnly ? text.on : text.off },
     { label: text.live, value: liveStatus },
     { label: text.kill, value: killStatus },
+    { label: text.paperObservation, value: paperObservationStatus },
     { label: text.accountFrozen, value: accountFrozenStatus },
     {
       label: text.paperAuthority,

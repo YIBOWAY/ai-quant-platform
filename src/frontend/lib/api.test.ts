@@ -61,6 +61,7 @@ describe("server read retry", () => {
         paper_trading: true,
         live_trading_enabled: false,
         kill_switch: true,
+        paper_observation_enabled: true,
         bind_address: "127.0.0.1",
       },
     };

@@ -74,6 +74,7 @@ export type SafetyFooter = {
   paper_trading: boolean;
   live_trading_enabled: boolean;
   kill_switch: boolean;
+  paper_observation_enabled: boolean;
   bind_address: string;
 };
 
@@ -2142,6 +2143,7 @@ const FALLBACK_SAFETY: SafetyFooter = {
   paper_trading: true,
   live_trading_enabled: false,
   kill_switch: true,
+  paper_observation_enabled: false,
   bind_address: "127.0.0.1",
 };
 
