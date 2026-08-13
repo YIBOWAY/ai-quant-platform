@@ -6,6 +6,7 @@ import { SyntheticMetricsWarning } from "@/components/DataSourceBadge";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { AccountTradePanel } from "@/components/forms/AccountTradePanel";
 import { PaperRunForm } from "@/components/forms/PaperRunForm";
+import { AssistantRemotePanel } from "@/components/forms/AssistantRemotePanel";
 import { PaperStrategyOpsPanel } from "@/components/forms/PaperStrategyOpsPanel";
 import { PaperStrategySleevesPanel } from "@/components/forms/PaperStrategySleevesPanel";
 import { PendingOrderCancelButton } from "@/components/forms/PendingOrderCancelButton";
@@ -293,6 +294,7 @@ export default async function PaperTrading({ searchParams }: PaperTradingProps) 
           text={text}
         />
         <PaperStrategyOpsPanel accountDown={accountDown} locale={locale} />
+        <AssistantRemotePanel locale={locale} />
         <PaperStrategySleevesPanel
           accountAvailableCash={resolvePaperAccountAvailableCash(account)}
           accountDown={accountDown}

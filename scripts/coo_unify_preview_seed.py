@@ -15,6 +15,7 @@ from pathlib import Path
 import pandas as pd
 
 from quant_system.config.settings import reload_settings
+from quant_system.execution.assistant_remote import record_verified_candidate
 from quant_system.execution.account import PaperAccount
 from quant_system.execution.account_storage import PaperAccountStorage
 from quant_system.execution.paper_strategy_operations import PaperStrategyOperationsRunner
@@ -91,6 +92,12 @@ def seed(data_dir: Path) -> dict[str, object]:
     api_runs_dir.mkdir(parents=True, exist_ok=True)
     account_storage = PaperAccountStorage(api_runs_dir)
     sleeve_storage = PaperStrategySleeveStorage(api_runs_dir)
+    record_verified_candidate(
+        settings,
+        candidate_id="candidate-preview-unhung",
+        objective="隔离预览：双引擎已通过，尚未挂上。这不是每天观察。",
+        source="preview_seed",
+    )
     if account_storage.load() is not None and sleeve_storage.list_sleeves():
         account = account_storage.load()
         sleeves = sleeve_storage.list_sleeves()
@@ -99,6 +106,7 @@ def seed(data_dir: Path) -> dict[str, object]:
             "reason": "preview_already_seeded",
             "account_id": account.account_id if account else None,
             "sleeve_ids": [sleeve.sleeve_id for sleeve in sleeves],
+            "verified_candidate_id": "candidate-preview-unhung",
         }
 
     provider = _FakeOHLCVProvider(_ohlcv_frame())

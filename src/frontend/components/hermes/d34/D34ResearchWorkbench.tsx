@@ -105,6 +105,7 @@ export function D34ResearchWorkbench({ locale }: { locale: Locale }) {
   const [universe, setUniverse] = useState("SPY, QQQ, IWM, DIA");
   const [budget, setBudget] = useState("100.00");
   const [objective, setObjective] = useState("");
+  const [hangIfPass, setHangIfPass] = useState(false);
   const [consoleOpen, setConsoleOpen] = useState<boolean | undefined>(undefined);
   const [lastAsk, setLastAsk] = useState<{
     job_key?: string | null;
@@ -251,8 +252,8 @@ export function D34ResearchWorkbench({ locale }: { locale: Locale }) {
           </h2>
           <p className="mt-2 max-w-3xl text-sm text-text-secondary">
             {isZh
-              ? "你提出研究需求后才会入队。论文假设与 Qlib 迭代在 Docker 中运行，Platform 独立重放；通过后只进入低额度「纸面试运行仓」。那是小额模拟观察仓，不是第三套交易系统，live 始终关闭。"
-              : "Nothing is queued until you ask. RD-Agent/Qlib research runs in Docker and Platform independently replays execution. Qualified artifacts can enter low-allocation paper canaries only; live stays off."}
+              ? "你提出研究需求后才会入队。双引擎通过只进已验证候选，不等于挂上。要进每天跑，须另说挂上，或这次写明过了就挂。试运行仓是小额模拟观察，live 始终关闭。"
+              : "Nothing is queued until you ask. Dual-engine pass becomes a verified candidate, not a hung sleeve. Daily book needs an explicit hang, or this ask must say hang-if-pass. Live stays off."}
           </p>
         </div>
         <button
@@ -406,8 +407,8 @@ export function D34ResearchWorkbench({ locale }: { locale: Locale }) {
               </h3>
               <p className="mt-1 text-sm text-text-secondary">
                 {isZh
-                  ? "Mandate 只是预算和标的信封。五分钟 worker 不会自己开周期。"
-                  : "The Mandate is only a budget and universe envelope. The five-minute worker never invents a cycle."}
+                  ? "派研究默认只到已验证候选。要进每天跑，须另说「挂上」，或这次写明「过了就挂」。"
+                  : "Dispatch stops at a verified candidate. Daily book needs a separate hang, or this ask must say hang-if-pass."}
               </p>
               {askReady ? (
                 <form
@@ -426,6 +427,7 @@ export function D34ResearchWorkbench({ locale }: { locale: Locale }) {
                         }>("/api/hermes/research/requests", {
                           workspace_id: "default",
                           objective: trimmedObjective,
+                          hang_if_pass: hangIfPass,
                         });
                         setLastAsk({
                           job_key: result.job_key,
@@ -433,6 +435,7 @@ export function D34ResearchWorkbench({ locale }: { locale: Locale }) {
                           code: result.code,
                         });
                         setObjective("");
+                        setHangIfPass(false);
                         await refresh();
                       } catch (cause) {
                         setError(
@@ -465,8 +468,18 @@ export function D34ResearchWorkbench({ locale }: { locale: Locale }) {
                       value={objective}
                     />
                   </label>
+                  <label className="flex items-start gap-2 text-sm text-text-secondary">
+                    <input
+                      checked={hangIfPass}
+                      onChange={(event) => setHangIfPass(event.target.checked)}
+                      type="checkbox"
+                    />
+                    <span>
+                      {isZh ? "过了就挂（仅本次）" : "Hang if it passes (this ask only)"}
+                    </span>
+                  </label>
                   <button className={button} disabled={busy !== null || !askAllowed} type="submit">
-                    {isZh ? "提出研究" : "Ask for research"}
+                    {isZh ? "派研究" : "Dispatch research"}
                   </button>
                 </form>
               ) : (

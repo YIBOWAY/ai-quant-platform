@@ -58,6 +58,7 @@ def build_owner_request_input(
     mandate: Any,
     cycle_date: date,
     objective: str,
+    hang_if_pass: bool = False,
 ) -> dict[str, object]:
     return {
         "contract": JOB_INPUT_CONTRACT,
@@ -74,6 +75,7 @@ def build_owner_request_input(
         "top_k": 1,
         "paper_execution_allowed": bool(mandate_field(mandate, "paper_execution_allowed")),
         "objective": objective,
+        "hang_if_pass": hang_if_pass is True,
     }
 
 
@@ -84,6 +86,7 @@ def enqueue_owner_research_request(
     workspace_id: str,
     objective: str,
     cycle_date: date,
+    hang_if_pass: bool = False,
 ) -> str:
     cleaned = objective.strip()
     if len(cleaned) < 8:
@@ -111,6 +114,7 @@ def enqueue_owner_research_request(
         mandate=mandate,
         cycle_date=cycle_date,
         objective=cleaned,
+        hang_if_pass=hang_if_pass,
     )
     reservation = min(
         DEFAULT_JOB_RESERVATION_USD,

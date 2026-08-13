@@ -11,6 +11,8 @@ describe("D34ResearchWorkbench", () => {
     expect(html).toContain("按需双引擎纸面研究");
     expect(html).toContain("纸面试运行仓");
     expect(html).toContain("你提出研究需求后才会入队");
+    expect(html).toContain("已验证候选");
+    expect(html).toContain("过了就挂");
     expect(html).toContain("live 始终关闭");
     expect(html).not.toContain("升级 live");
     expect(html).not.toContain("Promote to live");
@@ -22,7 +24,7 @@ describe("D34ResearchWorkbench", () => {
     expect(html).toContain("On-demand dual-engine paper research");
     expect(html).toContain("on-demand paper research");
     expect(html).not.toContain("autonomous paper research");
-    expect(html).toContain("low-allocation paper canaries only");
+    expect(html).toContain("verified candidate");
     expect(html).toContain("live stays off");
   });
 });

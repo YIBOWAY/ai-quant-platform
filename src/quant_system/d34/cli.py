@@ -425,6 +425,13 @@ def request_research(
         typer.Option("--objective", help="Owner research ask. Nothing is queued without this."),
     ],
     workspace_id: Annotated[str, typer.Option("--workspace-id")] = "default",
+    hang_if_pass: Annotated[
+        bool,
+        typer.Option(
+            "--hang-if-pass",
+            help="Only then hang a passing dual-engine artifact onto the daily book.",
+        ),
+    ] = False,
 ) -> None:
     settings = load_settings()
     try:
@@ -442,6 +449,7 @@ def request_research(
             workspace_id=workspace_id,
             objective=objective,
             cycle_date=datetime.now(ZoneInfo("Asia/Shanghai")).date(),
+            hang_if_pass=hang_if_pass,
         )
     except Exception as exc:  # noqa: BLE001 - CLI boundary
         typer.echo(

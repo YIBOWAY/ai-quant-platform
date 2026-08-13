@@ -34,6 +34,7 @@ def test_paper_trading_page_mounts_strategy_sleeves_workspace() -> None:
     page = PAPER_TRADING_PAGE.read_text(encoding="utf-8")
 
     assert "PaperStrategySleevesPanel" in page
+    assert "AssistantRemotePanel" in page
     assert "getPaperStrategyConfigs()" in page
     assert "getPaperStrategySleeves()" in page
     assert "getPaperStrategySleeveDetail" in page

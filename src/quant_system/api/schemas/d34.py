@@ -70,6 +70,7 @@ class D34ResearchAskRequest(BaseModel):
 
     workspace_id: str = Field(default="default", min_length=1, max_length=128)
     objective: str = Field(min_length=8, max_length=4000)
+    hang_if_pass: bool = False
 
 
 class D34ResearchAskResponse(BaseModel):

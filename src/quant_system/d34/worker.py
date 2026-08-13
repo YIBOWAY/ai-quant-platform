@@ -167,7 +167,12 @@ class D34CycleWorker:
             raise ValueError("d34_container_path_invalid") from exc
         return path
 
-    def request_research(self, *, objective: str) -> D34WorkerResult:
+    def request_research(
+        self,
+        *,
+        objective: str,
+        hang_if_pass: bool = False,
+    ) -> D34WorkerResult:
         """Enqueue one paper-research job from an explicit owner request.
 
         Mandate is only the budget/universe envelope. The five-minute worker
@@ -210,6 +215,7 @@ class D34CycleWorker:
                 workspace_id=self.config.workspace_id,
                 objective=cleaned,
                 cycle_date=self.today(),
+                hang_if_pass=hang_if_pass,
             )
         except Exception as exc:  # noqa: BLE001 - enqueue authority boundary
             return D34WorkerResult(
@@ -371,6 +377,7 @@ class D34CycleWorker:
             "mandate_id": mandate.mandate_id,
             "workspace_id": self.config.workspace_id,
             "universe": list(document["universe"]),
+            "hang_if_pass": document.get("hang_if_pass") is True,
             "factor_id": research_output["factor_id"],
             "factor_path": research_output["factor_path"],
             "candidate_code_digest": research_output["candidate_code_digest"],
@@ -449,6 +456,21 @@ class D34CycleWorker:
                         job_id=job_id,
                     )
                 artifact = evaluation.artifact
+                if bundle.get("hang_if_pass") is not True:
+                    _write_json(
+                        phase_path,
+                        {
+                            "phase": "candidate_ready",
+                            "job_id": job_id,
+                            "artifact_id": artifact.artifact_id,
+                        },
+                    )
+                    return D34WorkerResult(
+                        status="candidate_ready",
+                        code="verified_candidate_not_hung",
+                        job_id=job_id,
+                        artifact_id=artifact.artifact_id,
+                    )
                 blocker = self._paper_activation_blocker(mandate)
                 if blocker is not None:
                     _write_json(
@@ -682,8 +704,24 @@ class D34CycleWorker:
                     {"phase": "rejected", "job_id": job_id, **outcome_document},
                 )
                 return D34WorkerResult(status="rejected", code=outcome_code, job_id=job_id)
-            phase = "canary_activation"
             artifact = evaluation.artifact
+            if document.get("hang_if_pass") is not True:
+                _write_json(
+                    phase_path,
+                    {
+                        "phase": "candidate_ready",
+                        "job_id": job_id,
+                        "artifact_id": artifact.artifact_id,
+                        **outcome_document,
+                    },
+                )
+                return D34WorkerResult(
+                    status="candidate_ready",
+                    code="verified_candidate_not_hung",
+                    job_id=job_id,
+                    artifact_id=artifact.artifact_id,
+                )
+            phase = "canary_activation"
             blocker = self._paper_activation_blocker(mandate)
             if blocker is not None:
                 _write_json(

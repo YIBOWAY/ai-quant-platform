@@ -419,6 +419,7 @@ def ask_research(
             workspace_id=body.workspace_id,
             objective=body.objective,
             cycle_date=datetime.now(ZoneInfo("Asia/Shanghai")).date(),
+            hang_if_pass=body.hang_if_pass,
         )
     except ValueError as exc:
         raise HTTPException(

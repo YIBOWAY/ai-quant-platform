@@ -793,7 +793,10 @@ def test_cycle_runs_futu_to_dual_engine_artifact_and_real_canary(tmp_path: Path)
         now=lambda: datetime(2026, 8, 11, tzinfo=UTC),
     )
 
-    worker.request_research(objective="Find a twenty-day reversal")
+    worker.request_research(
+        objective="Find a twenty-day reversal",
+        hang_if_pass=True,
+    )
     result = worker.run_once()
 
     assert result.status == "canary_active"
@@ -806,6 +809,79 @@ def test_cycle_runs_futu_to_dual_engine_artifact_and_real_canary(tmp_path: Path)
     assert registry.commands[0].platform_receipt.engine == "platform"
     assert activated[0]["factor_id"] == "d34_cycle_factor"
     assert activated[0]["artifact"].qualification_scope == "paper_only"
+
+
+def test_cycle_stops_at_verified_candidate_unless_owner_said_hang(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    platform = tmp_path / "platform"
+    hqa = tmp_path / "hqa"
+    cache = tmp_path / "cache"
+    for path in (workspace, platform, hqa, cache):
+        path.mkdir()
+    jobs, docker, registry = Jobs(), Docker(workspace), Registry()
+    mandate = SimpleNamespace(
+        mandate_id="mandate-cycle-12345678",
+        workspace_id="default",
+        status="active",
+        universe=("SPY", "QQQ", "IWM", "DIA"),
+        hypotheses_per_cycle=1,
+        max_iterations=2,
+        max_experiments_per_iteration=2,
+        max_concurrent_jobs=1,
+        llm_budget_usd=Decimal("100"),
+        paper_execution_allowed=True,
+        policy_digest="5" * 64,
+        expires_at=datetime.now(UTC) + timedelta(days=30),
+    )
+    activated: list[object] = []
+
+    def replay(**kwargs):
+        qlib = kwargs.pop("qlib_receipt")
+        return SimpleNamespace(
+            engine_receipt=EngineReceipt(
+                engine="platform",
+                snapshot_digest=qlib.snapshot_digest,
+                universe_digest=qlib.universe_digest,
+                calendar_digest=qlib.calendar_digest,
+                target_weights_digest=qlib.target_weights_digest,
+                daily_returns=qlib.daily_returns,
+                return_dates=qlib.return_dates,
+                terminal_nav=qlib.terminal_nav,
+                terminal_weights=qlib.terminal_weights,
+                receipt_digest="8" * 64,
+            )
+        )
+
+    worker = D34CycleWorker(
+        config=D34WorkerConfig(
+            workspace_root=workspace,
+            platform_root=platform,
+            hqa_root=hqa,
+            cache_root=cache,
+            workspace_id="default",
+            worker_id="test-worker",
+        ),
+        mandates=SimpleNamespace(get_active=lambda **kwargs: mandate),
+        jobs=jobs,
+        registry=registry,
+        docker_runtime=docker,
+        futu_provider=Futu(),
+        platform_replay=replay,
+        canary_activator=lambda **kwargs: activated.append(kwargs) or "canary-test",
+        safety_observer=lambda: _open_safety(mandate),
+        today=lambda: date(2026, 8, 11),
+        now=lambda: datetime(2026, 8, 11, tzinfo=UTC),
+    )
+
+    worker.request_research(objective="Find a twenty-day reversal")
+    result = worker.run_once()
+
+    assert result.status == "candidate_ready"
+    assert result.code == "verified_candidate_not_hung"
+    assert result.artifact_id
+    assert activated == []
 
 
 def test_cycle_recovers_registry_to_canary_after_terminal_crash_without_rerunning_research(
@@ -882,7 +958,10 @@ def test_cycle_recovers_registry_to_canary_after_terminal_crash_without_rerunnin
         )
 
     seeded = make_worker()
-    seeded.request_research(objective="Find a twenty-day reversal")
+    seeded.request_research(
+        objective="Find a twenty-day reversal",
+        hang_if_pass=True,
+    )
     failed = seeded.run_once()
     docker_call_count = len(docker.commands)
     recovered = make_worker().run_once()
@@ -986,7 +1065,10 @@ def test_cycle_rechecks_paper_authority_after_research_before_canary(
         )
 
     seeded = make_worker()
-    seeded.request_research(objective="Find a twenty-day reversal")
+    seeded.request_research(
+        objective="Find a twenty-day reversal",
+        hang_if_pass=True,
+    )
     blocked = seeded.run_once()
 
     assert blocked.status == "awaiting_paper_authority"
