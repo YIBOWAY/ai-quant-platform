@@ -3,19 +3,21 @@
 这是整个仓库的主地图。先用下面的“当前工作”确定执行入口，再按需查架构、操作
 指南和历史交付。不要从旧 phase、audit 或未勾选 checkbox 推断当前进度。
 
-## 当前工作（2026-08-12）
+## 当前工作（2026-08-13）
 
 | 层级 | 权威入口 | 状态 |
 |---|---|---|
-| 跨仓产品路线 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/design/2026-07-01-roadmap-phases-0b-4.md` | Hermes 是 COO/编排层；本仓库是领域后端。 |
+| 唯一现行计划 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/plans/2026-08-13-personal-quant-assistant.md` | 一台个人量化助手。D-31…D-34 不是产品线。 |
+| 跨仓导航 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/README.md` | 先读这个再读下面的历史表。 |
+| 跨仓产品路线（历史） | `/Users/sunyibo/programs/Hermes-quant-agent/docs/design/2026-07-01-roadmap-phases-0b-4.md` | Hermes 是编排层；本仓库是领域后端。D-xx 台账已停写。 |
 | 已交付跨仓计划 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-10-phase-1a-4-v2.md` | Slice 9A-9G + mini 9H 已完成。 |
 | 已交付完整 9H | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-12-full-9h-automation-notifications.md` | 调度、对账、周报、freshness 与通知已完成；平台只负责只读消费。 |
 | 已交付候选完整性 / Gate 3 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-13-candidate-integrity-and-gate3.md` | 统一 repo-anchored candidate root、immutable manifest、HQA Scene-B Gate 1 精确源绑定、Gate 2 digest CAS、迁移工具、隔离且可恢复的 Gate 3 worktree 已交付并完成对抗性加固。Scene-B 已完成 final receipt → prepare → 人工 diff/commit → reviewed → cleanup，并以 `524e791` 合入当前分支（见下）。 |
 | 已交付专业前端 / 只读壳 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-13-hermes-professional-frontend-shell.md` | F0 direction-a + F1 书面批准后，F2 Hermes 壳与可回滚默认首页已交付。Approvals 保持证据只读（`approvalMutations=false`）；official Hermes API 会话读取已接入（`sessionRead=true`）。3E-A 又交付只读 Unified Results 目录/详情，但完整切流仍关闭。设计记录见 [design/hermes-workbench/README.md](design/hermes-workbench/README.md)。 |
 | 唯一运维权威 | [Agent v0.2 local-stack](runbooks/agent-v0-2-local-stack.md) | 唯一维护 migration、backup、isolated replay、readiness、restart、candidate E2E 与 pre-028 restore 的文档；其他 runbook 只解释组件。 |
 | Platform 单一 main | [2026-08-10 Git 分支合并审计](audits/2026-08-10-platform-git-branch-consolidation.md) | 两个 Platform checkout 与 GitHub 已统一到受保护 `main`；旧分支先按 exact tip 建 archive tag 后删除，bundle/dirty snapshot 可恢复。此拓扑收口不授权 live、因子晋级或 migration 029。 |
-| D-33 自动 paper | `/Users/sunyibo/programs/Hermes-quant-agent/docs/plans/2026-08-10-full-automation-paper-path.md` 与 `docs/runbooks/full-automation-paper.md` | 双-Flag、真实 intake/final evidence、机器 Gate、`paper_only`、本地 ff-only land、029 配额、限额 sleeve 与五分钟常驻 paper 周期；不 auto-push，live 永远人工。 |
-| D-34 Mandate 双引擎 paper | [架构](architecture/d34-autonomous-paper.md) · [使用指南](guides/d34-workbench.md) · [运维](runbooks/d34-autonomous-paper.md) | 本机已形成并部署 Futu → RD-Agent/Qlib → Platform replay → Artifact/Policy → paper canary 闭环；030–032 已一次性 apply、worker 常驻，soak 为 `1/10` 周期与 `1/5` 观察日。默认研究入口仍是 D-33；D-34 需 `10/5` 加最终零重复/no-live receipt 后才显式 cutover。 |
+| 论文入队机（旧称 D-33） | HQA `docs/plans/2026-08-10-full-automation-paper-path.md` | 历史实现。研究账的一个来源，不是默认入口。 |
+| 双引擎研究作业（旧称 D-34） | [架构](architecture/d34-autonomous-paper.md) · [指南](guides/d34-workbench.md) · [运维](runbooks/d34-autonomous-paper.md) | 历史实现。代码化石可留，产品身份已取消。 |
 | 029 operator window | 2026-08-10 现场执行 | backup + isolated restore rehearsal 后一次 apply；append-only promote/demote/daily quota authority。禁止重放；启动永不自动迁移。 |
 | 应用前历史快照 | source/change set 016–028；live 现场只读核对 2026-07-31 | inspected 016–027 markers 存在；当时 028 marker 不存在，运行后端尚无 `/api/safety/effective`。这是保留的 pre-apply 快照，不描述当前 live 状态。 |
 | 028 operator window | 2026-08-01 现场观察；详见 [Agent v0.2 local-stack](runbooks/agent-v0-2-local-stack.md) | 028 marker=1/version=1，exact two binding triggers 均为 `ENABLE ALWAYS`，schema fingerprint `e3f713ac05a1a990cfa9be45157e880e06709c425a4883736544d8f2b626f33a`；一次性 apply 后的正常重启、readiness 与 `/api/safety/effective` 通过。该快照不证明论文研究语义，也不授权重放 028。 |

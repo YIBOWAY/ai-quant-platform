@@ -21,25 +21,15 @@ Local `chat_write_ready` is not public authorization. Standing
 In solo-owner trust mode the runtime reports the distinct
 `admission_mode=local_trust`; it does not counterfeit a candidate identity.
 
-D-33 adds a separate dual-Flag path for verified paper research. It can machine
-review and locally ff-land only `promotion_scope=paper_only`, admit a bounded
-automatic sleeve, and run its paper signal/execution cycle. The live registry
-rejects those factors; GitHub is never auto-pushed. Its source defaults are off;
-the inspected owner runtime enabled all four flags on 2026-08-10 after full
-acceptance. See the HQA
-`/Users/sunyibo/programs/Hermes-quant-agent/docs/runbooks/full-automation-paper.md`.
+The only current product plan lives in HQA
+`docs/plans/2026-08-13-personal-quant-assistant.md`. Paper research intake and
+the daily paper book are one assistant, not two D-xx product lines. New research
+is owner-ask or a weekly slot; registered strategies may run every day on paper.
+`paper_only` factors never enter the live registry. GitHub is never auto-pushed.
 
-D-34 adds a separate 30-day Mandate path: strict Futu Parquet snapshots feed a
-pinned RD-Agent/Qlib research engine, while Platform independently replays the
-same target weights, fees, holdings, and NAV. Deterministic policy may register
-only `paper_only` Artifacts and low-allocation canaries. In the 2026-08-12 local
-runtime, migrations 030–032 have been applied once, the persistent worker is
-enabled, and the first real cycle and canary are active. Implementation is
-complete; natural acceptance remains `1/10` complete cycles and `1/5` canary
-observation days, so D-33 remains the default new-research entry until the exact
-final zero-duplicate/no-live receipt passes.
-See the [architecture](docs/architecture/d34-autonomous-paper.md),
-[owner guide](docs/guides/d34-workbench.md), and
+Historical dual-engine and paper-automation notes:
+[architecture](docs/architecture/d34-autonomous-paper.md),
+[owner guide](docs/guides/d34-workbench.md),
 [operator runbook](docs/runbooks/d34-autonomous-paper.md).
 
 The normal local runtime is a persistent macOS stack: PostgreSQL in Docker plus

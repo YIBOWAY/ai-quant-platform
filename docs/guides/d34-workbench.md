@@ -1,5 +1,9 @@
 # D-34 Mandate 与 Paper Canary 使用指南
 
+> **历史指南。** 产品身份见 HQA
+> `docs/plans/2026-08-13-personal-quant-assistant.md`。
+> 本文只说明已经落地的研究作业 / 试运行仓控件，不再定义「D-34 默认入口」。
+
 这份指南面向本机唯一 owner。2026-08-12 的本地 runtime 已完成 source/main/runtime 对齐、
 migration 030–032 一次性 apply、完整 preflight 和常驻 worker 启用；首个完整周期与 canary
 已运行。当前自然验收为 `1/10` 周期、`1/5` 观察日，默认研究入口仍为 D-33。新的安装仍须

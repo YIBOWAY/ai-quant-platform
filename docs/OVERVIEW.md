@@ -74,24 +74,16 @@ Hermes 与 AI 研究工作流：
   主读取链路。
 - 平台不复活 LLM runner；普通 chat prompt 只经 HQA encrypted Intent Payload
   authority，不进入 PostgreSQL 或 `/act`。
-- D-33 自动 paper 只在 HQA/Platform 两对 Flag 都为 true 时运行：真实 intake/final
-  backtest 证据通过机器政策后，只写 `reviewer=auto`、`promotion_scope=paper_only`，本地
-  ff-only land，不 auto-push。029 是 append-only promote/demote/日配额权威；live registry
-  对这种因子硬拒绝。
-- D-34 是独立的 Mandate 路径：Futu Parquet snapshot 进入 RD-Agent/Qlib，Platform 只消费
-  同一 target weights 做成交/费用/NAV 重放；确定性 comparison/policy 通过后注册
-  `paper_only` Artifact 并创建低额度 canary。030–032 提供 Mandate/job/receipt/Artifact/
-  canary 权威，`GET /api/safety/effective/v2` 暴露 research/paper blocker。正式 migration
-  与 runtime worker 已部署，首个完整周期/canary 已运行；自然 `10` 周期/`5` 观察日门仍为
-  `1/10`、`1/5`，所以默认入口继续是 D-33。
+- 论文入队机和双引擎研究作业（代码里仍叫 D-33/D-34）是研究账的两个来源，不是两套产品。
+  现行计划：HQA `docs/plans/2026-08-13-personal-quant-assistant.md`。新研究按需入队；
+  已登记策略才每天在模拟盘跑。`paper_only` 进不了 live registry。
 - 新 managed Session 的 composer 只有在 local flags、owner/CSRF、migration 028
   readiness、effective paper safety、Keychain、candidate/release 与 connector
   liveness 全通过时打开。External/history session 不原地写入。
 - `public_chat_write_ready`、`public_write_authorized`、
   `release_authorized` 继续 OFF；旧研究页 redirect/retirement 仍需独立批准。
-- 手工 Scene-B 和任何 live 资格仍必须人工评审。D-33 的机器 Gate 与 D-34 的 Mandate
-  policy 都只能进入 paper；两者都没有 live 升级接口。常驻路径从不加载未绑定 candidate
-  文件。
+- 手工 Scene-B 和任何 live 资格仍必须人工评审。研究账和模拟账都只能进 paper，没有
+  live 升级接口。常驻路径从不加载未绑定 candidate 文件。
 
 AI 行业资讯：
 

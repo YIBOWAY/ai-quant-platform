@@ -3,9 +3,9 @@
 本地优先的量化研究、回测、模拟交易、只读行情与期权研究平台。
 
 历史 Phase、Wave 和 Workbench 文档是交付证据，不是当前实现或运维队列。先读
-[docs/INDEX.md](docs/INDEX.md)。跨仓产品路线仍由
-`/Users/sunyibo/programs/Hermes-quant-agent` 管理；本仓库是量化领域后端，不再
-独立扩张 Phase 15。
+[docs/INDEX.md](docs/INDEX.md)。跨仓**唯一现行计划**是
+`Hermes-quant-agent/docs/plans/2026-08-13-personal-quant-assistant.md`。
+本仓库是量化领域后端，不再独立扩张 Phase 15。`D-33`/`D-34` 不是产品线。
 
 Agent v0.2 已有受门禁控制的本地单用户 managed-session 写入、durable connector、
 transcript/follow、approval/stop/result 与 candidate/release authority。历史和外部
@@ -14,19 +14,12 @@ transcript/follow、approval/stop/result 与 candidate/release authority。历�
 `public_chat_write_ready`、`public_write_authorized` 与
 `release_authorized` 继续 OFF。
 
-当前本地 `main` 包含 D-34 与有序 migration source 016–032；030–032 已在正式
-`quantplatform` 一次性 apply，D-34 worker 与 Hermes xAI OAuth proxy 已常驻。首个真实
-完整周期和低额度 canary 已运行，当前自然验收为 `1/10` 完整周期、`1/5` canary
-观察日；在精确的零重复/no-live 最终 receipt 通过前，默认新研究入口仍为 D-33。
 migration、readiness、restart、E2E 与 restore 的唯一权威是
 [Agent v0.2 local-stack runbook](docs/runbooks/agent-v0-2-local-stack.md)。
-
-D-34 用 30 天 Mandate 驱动 Futu Parquet → RD-Agent/Qlib → Platform 独立执行重放 →
-确定性 Policy → `paper_only` Artifact → 低额度 paper canary。它没有 live 升级接口，
-不自动 push GitHub，也不自动 apply migration。参见
+研究作业和试运行仓的历史说明见
 [架构](docs/architecture/d34-autonomous-paper.md)、
-[owner 使用指南](docs/guides/d34-workbench.md)和
-[本机运维手册](docs/runbooks/d34-autonomous-paper.md)。
+[指南](docs/guides/d34-workbench.md)、
+[运维](docs/runbooks/d34-autonomous-paper.md)。
 
 - 美股及 ETF 历史数据流水线。
 - 因子研究、因子实验室诊断（2026-06-11 起真实数据优先：默认 `futu`，数据源/股票池/择时标的/基准可在界面调整，可保存因子研究运行，并可预填发送至回测器）、策略/股票池注册、回测、实验和模拟交易。

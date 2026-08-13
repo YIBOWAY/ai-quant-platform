@@ -1,5 +1,9 @@
 # D-34 自主 Paper 架构
 
+> **历史架构名。** 现行计划是 HQA
+> `docs/plans/2026-08-13-personal-quant-assistant.md`。
+> `d34_*` 表和模块是代码化石，不是第二套产品。
+
 D-34 是本地单 owner 的研究与模拟执行闭环。它把一个 30 天 Mandate 转成可恢复的研究
 job、双引擎证据、`paper_only` Artifact 和低额度 canary；它没有 live 注册或升级接口。
 
