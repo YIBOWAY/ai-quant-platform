@@ -122,12 +122,17 @@ case "$cmd" in
     start_frontend
     echo "preview_frontend=http://127.0.0.1:${FRONTEND_PORT}/zh/paper-trading"
     ;;
+  restart-backend)
+    stop_pid backend
+    start_backend
+    echo "preview_backend=http://127.0.0.1:${BACKEND_PORT}"
+    ;;
   stop)
     stop_pid frontend
     stop_pid backend
     echo "preview_stopped=true"
     ;;
   *)
-    fail "usage_start_stop_restart-frontend_or_seed"
+    fail "usage_start_stop_restart-frontend_restart-backend_or_seed"
     ;;
 esac

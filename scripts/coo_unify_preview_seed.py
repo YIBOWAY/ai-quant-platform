@@ -8,6 +8,7 @@ Later Futu mark-to-market is not strategy P&L and is not daily observation.
 
 from __future__ import annotations
 
+import hashlib
 import os
 from datetime import UTC
 from pathlib import Path
@@ -92,11 +93,34 @@ def seed(data_dir: Path) -> dict[str, object]:
     api_runs_dir.mkdir(parents=True, exist_ok=True)
     account_storage = PaperAccountStorage(api_runs_dir)
     sleeve_storage = PaperStrategySleeveStorage(api_runs_dir)
+    fixture_source = (
+        b"from __future__ import annotations\n"
+        b"import pandas as pd\n"
+        b"from quant_system.factors.base import BaseFactor\n\n"
+        b"class GeneratedFactor(BaseFactor):\n"
+        b'    factor_id = "d34_oracle"\n'
+        b'    factor_name = "D34 Oracle"\n'
+        b"    default_lookback = 2\n"
+        b'    direction = "higher_is_better"\n'
+        b'    description = "Isolation digest-bound fixture."\n\n'
+        b"    def _compute_values(self, frame: pd.DataFrame) -> pd.Series:\n"
+        b'        return frame.groupby("symbol", sort=False)["close"].pct_change(\n'
+        b"            self.lookback, fill_method=None\n"
+        b"        )\n\n"
+        b"D34_FACTOR = GeneratedFactor\n"
+    )
+    fixture_path = data_dir / "assistant_remote" / "fixture_d34_oracle.py"
+    fixture_path.parent.mkdir(parents=True, exist_ok=True)
+    fixture_path.write_bytes(fixture_source)
     record_verified_candidate(
         settings,
-        candidate_id="candidate-preview-unhung",
-        objective="隔离预览：双引擎已通过，尚未挂上。这不是每天观察。",
+        candidate_id="candidate-preview-digest",
+        objective="隔离预览：digest 已绑定、尚未挂上。这不是每天观察。",
         source="preview_seed",
+        source_digest=hashlib.sha256(fixture_source).hexdigest(),
+        source_path=str(fixture_path),
+        factor_id="d34_oracle",
+        universe=["SPY", "QQQ"],
     )
     if account_storage.load() is not None and sleeve_storage.list_sleeves():
         account = account_storage.load()
@@ -106,7 +130,7 @@ def seed(data_dir: Path) -> dict[str, object]:
             "reason": "preview_already_seeded",
             "account_id": account.account_id if account else None,
             "sleeve_ids": [sleeve.sleeve_id for sleeve in sleeves],
-            "verified_candidate_id": "candidate-preview-unhung",
+            "verified_candidate_id": "candidate-preview-digest",
         }
 
     provider = _FakeOHLCVProvider(_ohlcv_frame())
