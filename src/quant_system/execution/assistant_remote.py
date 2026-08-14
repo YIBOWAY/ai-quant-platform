@@ -13,7 +13,7 @@ import re
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 
 from quant_system.config.settings import Settings
 from quant_system.d34.artifact_factor import load_d34_paper_factor_registry
@@ -34,6 +34,12 @@ _FACTOR_ID_RE = re.compile(r"^[a-z][a-z0-9_-]{0,127}$")
 BOOK_CONTRACT = "hqa.assistant_remote_book/v1"
 DISPATCH_CONTRACT = "hqa.assistant_remote_dispatch/v1"
 HANG_CONTRACT = "hqa.assistant_remote_hang/v1"
+
+# Step 4: dispatch can hand the objective to the real D-34 job lane. The book
+# then only projects the job's truth; it never invents progress.
+DISPATCH_MODE_BOOK_ONLY = "book_only"
+DISPATCH_MODE_D34_JOB = "d34_job"
+_ACTIVE_JOB_REQUEST_STATUSES = frozenset({"queued", "leased", "running"})
 
 
 class AssistantRemoteError(ValueError):
@@ -84,30 +90,102 @@ def dispatch_research(
     *,
     objective: str,
     hang_if_pass: bool = False,
+    enqueue_job: Callable[[str, bool], str] | None = None,
 ) -> dict[str, Any]:
+    """Record a research request; optionally hand it to the real D-34 job lane.
+
+    Without ``enqueue_job`` this stays the Step-2 book-only remote. With it,
+    the objective becomes one real queued job, capped at a single in-flight
+    dispatched job at a time (the plan's one-concurrent-research red line).
+    """
     cleaned = objective.strip()
     if len(cleaned) < 8:
         raise AssistantRemoteError("research_objective_required")
     book = load_book(settings)
+    if enqueue_job is not None:
+        active = [
+            item
+            for item in book["requests"]
+            if isinstance(item, dict)
+            and item.get("job_key")
+            and str(item.get("status")) in _ACTIVE_JOB_REQUEST_STATUSES
+        ]
+        if active:
+            raise AssistantRemoteError("research_job_already_active")
+    job_key: str | None = None
+    mode = DISPATCH_MODE_BOOK_ONLY
+    status = "requested"
+    if enqueue_job is not None:
+        job_key = str(enqueue_job(cleaned, hang_if_pass is True))
+        if not job_key:
+            raise AssistantRemoteError("research_job_enqueue_failed")
+        mode = DISPATCH_MODE_D34_JOB
+        status = "queued"
     request_id = f"request-{uuid.uuid4().hex[:12]}"
     record = {
         "request_id": request_id,
         "objective": cleaned,
         "hang_if_pass": hang_if_pass is True,
-        "status": "requested",
-        "job_key": None,
+        "status": status,
+        "job_key": job_key,
+        "mode": mode,
         "created_at": _utc_now(),
     }
     book["requests"].insert(0, record)
     save_book(settings, book)
     return {
         "contract": DISPATCH_CONTRACT,
-        "status": "requested",
+        "status": status,
         "request_id": request_id,
         "candidate_id": None,
         "hang_if_pass": hang_if_pass is True,
         "hung": False,
+        "job_key": job_key,
+        "mode": mode,
     }
+
+
+def _job_row_field(job: Any, name: str) -> Any:
+    if isinstance(job, dict):
+        return job.get(name)
+    return getattr(job, name, None)
+
+
+def reconcile_dispatched_requests(
+    settings: Settings,
+    *,
+    jobs: Any,
+    workspace_id: str = "default",
+) -> int:
+    """Project real job-lane states back onto dispatched book requests.
+
+    The book never invents progress: it only copies the job authority's state
+    (queued/leased/running/succeeded/failed/...). Terminal rows stay frozen.
+    """
+    book = load_book(settings)
+    tracked = [
+        item
+        for item in book["requests"]
+        if isinstance(item, dict)
+        and item.get("job_key")
+        and str(item.get("status")) in _ACTIVE_JOB_REQUEST_STATUSES
+    ]
+    if not tracked:
+        return 0
+    rows = {
+        str(_job_row_field(job, "job_key") or ""): str(_job_row_field(job, "state") or "")
+        for job in jobs.list(workspace_id=workspace_id, limit=200, state=None)
+    }
+    changed = 0
+    for item in tracked:
+        state = rows.get(str(item["job_key"]))
+        if state and state != item.get("status"):
+            item["status"] = state
+            item["updated_at"] = _utc_now()
+            changed += 1
+    if changed:
+        save_book(settings, book)
+    return changed
 
 
 def _require_digest(value: object, *, code: str = "candidate_digest_required") -> str:
@@ -386,11 +464,14 @@ __all__ = [
     "AssistantRemoteError",
     "BOOK_CONTRACT",
     "DISPATCH_CONTRACT",
+    "DISPATCH_MODE_BOOK_ONLY",
+    "DISPATCH_MODE_D34_JOB",
     "HANG_CONTRACT",
     "dispatch_research",
     "hang_candidate",
     "load_book",
     "project_book",
+    "reconcile_dispatched_requests",
     "record_verified_candidate",
     "save_book",
 ]

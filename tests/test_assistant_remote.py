@@ -7,6 +7,7 @@ from quant_system.execution.assistant_remote import (
     dispatch_research,
     hang_candidate,
     project_book,
+    reconcile_dispatched_requests,
     record_verified_candidate,
 )
 from quant_system.execution.paper_observation import hung_sleeve_eligible
@@ -61,6 +62,83 @@ def test_dispatch_research_does_not_hang_or_invent_a_candidate(tmp_path, monkeyp
     assert book["verified_count"] == 0
     assert book["hung_count"] == 0
     assert book["requests"][0]["hang_if_pass"] is False
+
+
+def test_dispatch_with_enqueue_creates_one_real_job_and_caps_concurrency(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = _settings(tmp_path, monkeypatch)
+    enqueued: list[tuple[str, bool]] = []
+
+    def fake_enqueue(objective: str, hang_if_pass: bool) -> str:
+        enqueued.append((objective, hang_if_pass))
+        return "request:2026-08-14:abcdef123456"
+
+    receipt = dispatch_research(
+        settings,
+        objective="扩宇宙：在 20 只高流动性美股上重验横截面动量",
+        enqueue_job=fake_enqueue,
+    )
+
+    assert receipt["status"] == "queued"
+    assert receipt["mode"] == "d34_job"
+    assert receipt["job_key"] == "request:2026-08-14:abcdef123456"
+    assert receipt["hung"] is False
+    assert enqueued == [("扩宇宙：在 20 只高流动性美股上重验横截面动量", False)]
+    book = project_book(settings)
+    assert book["requests"][0]["job_key"] == "request:2026-08-14:abcdef123456"
+    assert book["requests"][0]["status"] == "queued"
+
+    # The plan allows at most one in-flight dispatched research job.
+    with pytest.raises(AssistantRemoteError) as blocked:
+        dispatch_research(
+            settings,
+            objective="second concurrent objective",
+            enqueue_job=fake_enqueue,
+        )
+    assert blocked.value.code == "research_job_already_active"
+    assert len(enqueued) == 1
+
+    # Book-only dispatch (no job lane wired) stays available and honest.
+    fallback = dispatch_research(settings, objective="book-only opinion request")
+    assert fallback["status"] == "requested"
+    assert fallback["mode"] == "book_only"
+    assert fallback["job_key"] is None
+
+
+def test_reconcile_projects_job_lane_states_without_inventing(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = _settings(tmp_path, monkeypatch)
+    job_key = "request:2026-08-14:feedbeef0001"
+    dispatch_research(
+        settings,
+        objective="扩宇宙：横截面动量重验",
+        enqueue_job=lambda _objective, _hang: job_key,
+    )
+
+    class _Jobs:
+        def __init__(self, state: str) -> None:
+            self.state = state
+
+        def list(self, *, workspace_id: str, limit: int, state):
+            assert workspace_id == "default"
+            return [{"job_key": job_key, "state": self.state}]
+
+    changed = reconcile_dispatched_requests(settings, jobs=_Jobs("running"))
+    assert changed == 1
+    assert project_book(settings)["requests"][0]["status"] == "running"
+
+    changed = reconcile_dispatched_requests(settings, jobs=_Jobs("succeeded"))
+    assert changed == 1
+    assert project_book(settings)["requests"][0]["status"] == "succeeded"
+
+    # Terminal rows freeze: reconcile never resurrects or reinvents progress.
+    changed = reconcile_dispatched_requests(settings, jobs=_Jobs("running"))
+    assert changed == 0
+    assert project_book(settings)["requests"][0]["status"] == "succeeded"
 
 
 def test_record_verified_candidate_requires_source_digest_and_universe(
