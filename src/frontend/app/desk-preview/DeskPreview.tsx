@@ -383,7 +383,7 @@ export default function DeskPreview() {
               <span className="title">Hermes</span>
               <span className="dp-live">
                 <span className="dp-dot" data-tone="ok" aria-hidden="true" />
-                已连接
+                预览 · 未接线
               </span>
               <span className="meta">local-2026-08-14</span>
               <div style={{ flex: 1 }} />

@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 import sys
 from decimal import Decimal
+from urllib.parse import urlparse
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -36,6 +37,11 @@ EXPANDED_UNIVERSE = (
 )
 
 WORKSPACE_ID = "default"
+_ISOLATION_DATABASE = "quantplatform_coo"
+
+
+def _postgres_database_name(url: str) -> str:
+    return urlparse(url).path.lstrip("/").split("/")[0]
 
 
 def main() -> int:
@@ -48,6 +54,15 @@ def main() -> int:
         )
         return 78
     settings = reload_settings()
+    resolved = ""
+    if settings.database.url is not None:
+        resolved = settings.database.url.get_secret_value()
+    if _postgres_database_name(resolved) != _ISOLATION_DATABASE:
+        print(
+            "refusing: resolved database name must be exactly quantplatform_coo",
+            file=sys.stderr,
+        )
+        return 78
     authority = PostgresMandateAuthority(settings)
     existing = authority.get_active(workspace_id=WORKSPACE_ID)
     if existing is not None:

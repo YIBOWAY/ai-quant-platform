@@ -40,6 +40,8 @@ HANG_CONTRACT = "hqa.assistant_remote_hang/v1"
 DISPATCH_MODE_BOOK_ONLY = "book_only"
 DISPATCH_MODE_D34_JOB = "d34_job"
 _ACTIVE_JOB_REQUEST_STATUSES = frozenset({"queued", "leased", "running"})
+# PostgresJobAuthority.list rejects anything outside 1..100.
+JOB_LIST_LIMIT = 100
 
 
 class AssistantRemoteError(ValueError):
@@ -174,7 +176,9 @@ def reconcile_dispatched_requests(
         return 0
     rows = {
         str(_job_row_field(job, "job_key") or ""): str(_job_row_field(job, "state") or "")
-        for job in jobs.list(workspace_id=workspace_id, limit=200, state=None)
+        for job in jobs.list(
+            workspace_id=workspace_id, limit=JOB_LIST_LIMIT, state=None
+        )
     }
     changed = 0
     for item in tracked:

@@ -125,6 +125,8 @@ def test_reconcile_projects_job_lane_states_without_inventing(
 
         def list(self, *, workspace_id: str, limit: int, state):
             assert workspace_id == "default"
+            if not 1 <= limit <= 100:
+                raise AssertionError(f"job list limit {limit} exceeds JobAuthority max 100")
             return [{"job_key": job_key, "state": self.state}]
 
     changed = reconcile_dispatched_requests(settings, jobs=_Jobs("running"))

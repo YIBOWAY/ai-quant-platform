@@ -7,7 +7,11 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from quant_system.api.dependencies import SettingsDep
-from quant_system.api.routes.d34 import _authority, _job_authority
+from quant_system.api.routes.d34 import (
+    _authority,
+    _http_error as _mandate_http_error,
+    _job_authority,
+)
 from quant_system.d34.research_request import (
     enqueue_owner_research_request,
     mandate_field,
@@ -28,11 +32,12 @@ _WORKSPACE_ID = "default"
 
 
 def _active_paper_mandate(request: Request, settings: SettingsDep):
-    """Return the active paper mandate, or None when dispatch must stay book-only."""
-    try:
-        mandate = _authority(request, settings).get_active(workspace_id=_WORKSPACE_ID)
-    except MandateAuthorityError:
-        return None
+    """Return the active paper mandate, or None when dispatch must stay book-only.
+
+    Authority / DB failures propagate. Only a genuine missing mandate stays
+    book-only; a down database must not look like a successful dispatch.
+    """
+    mandate = _authority(request, settings).get_active(workspace_id=_WORKSPACE_ID)
     if mandate is None:
         return None
     if str(mandate_field(mandate, "status")) != "active":
@@ -69,10 +74,14 @@ def get_remote_book(request: Request, settings: SettingsDep) -> dict[str, object
             jobs=_job_authority(request, settings),
             workspace_id=_WORKSPACE_ID,
         )
+    except JobAuthorityError as exc:
+        if exc.code == "d34_job_validation":
+            raise HTTPException(
+                status_code=422,
+                detail={"code": exc.code, "message": exc.message},
+            ) from exc
+        # Unavailable / other lane faults: stale book is last observed truth.
     except Exception:  # noqa: BLE001
-        # Reconciliation is a best-effort projection of the job lane; the book
-        # read must stay available when the DB lane is down. Stale statuses are
-        # honest (they were the last observed job-lane truth).
         pass
     return project_book(settings)
 
@@ -83,19 +92,25 @@ def post_remote_dispatch(
     request: Request,
     settings: SettingsDep,
 ) -> dict[str, object]:
-    mandate = _active_paper_mandate(request, settings)
+    try:
+        mandate = _active_paper_mandate(request, settings)
+    except MandateAuthorityError as exc:
+        raise _mandate_http_error(exc) from exc
     enqueue = None
     if mandate is not None:
         jobs = _job_authority(request, settings)
 
         def enqueue(objective: str, hang_if_pass: bool) -> str:
+            # Isolation dispatch stops at verified candidate. Hang is a
+            # separate digest-bound command; never arm worker canary.
+            _ = hang_if_pass
             return enqueue_owner_research_request(
                 jobs=jobs,
                 mandate=mandate,
                 workspace_id=_WORKSPACE_ID,
                 objective=objective,
                 cycle_date=datetime.now(ZoneInfo("Asia/Shanghai")).date(),
-                hang_if_pass=hang_if_pass,
+                hang_if_pass=False,
             )
 
     try:
