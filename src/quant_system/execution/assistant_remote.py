@@ -440,6 +440,66 @@ def hang_candidate(settings: Settings, *, candidate_id: str) -> dict[str, Any]:
     }
 
 
+_FACTOR_ID_ASSIGN_RE = re.compile(
+    r"factor_id\s*=\s*['\"]([a-z][a-z0-9_-]{0,127})['\"]"
+)
+
+
+def record_verified_from_dual_engine_artifact(
+    settings: Settings,
+    *,
+    artifact_id: str,
+    source_path: str | Path,
+    source_digest: str,
+    comparison_digest: str,
+    universe: Sequence[str],
+    objective: str,
+    job_key: str | None = None,
+) -> dict[str, Any]:
+    """Admit a dual-engine qualified artifact as a verified candidate. Never hangs."""
+
+    path = Path(source_path)
+    digest = _require_digest(source_digest)
+    if not path.is_file():
+        raise AssistantRemoteError("candidate_source_unavailable")
+    source = path.read_bytes()
+    if hashlib.sha256(source).hexdigest() != digest:
+        raise AssistantRemoteError("candidate_source_digest_mismatch")
+    match = _FACTOR_ID_ASSIGN_RE.search(source.decode("utf-8"))
+    if match is None:
+        raise AssistantRemoteError("candidate_factor_required")
+    factor_id = match.group(1)
+    try:
+        load_d34_paper_factor_registry(
+            code_path=path,
+            expected_code_digest=digest,
+            expected_factor_id=factor_id,
+        )
+    except ValueError as exc:
+        raise AssistantRemoteError(str(exc)) from exc
+    candidate_id = f"artifact-{digest[:16]}"
+    record = record_verified_candidate(
+        settings,
+        candidate_id=candidate_id,
+        objective=objective,
+        source="d34_artifact",
+        source_digest=digest,
+        source_path=str(path.resolve()),
+        factor_id=factor_id,
+        universe=universe,
+        artifact_id=artifact_id,
+        comparison_digest=comparison_digest,
+    )
+    if job_key:
+        book = load_book(settings)
+        for item in book["candidates"]:
+            if isinstance(item, dict) and item.get("candidate_id") == record["candidate_id"]:
+                item["job_key"] = job_key
+                record = item
+        save_book(settings, book)
+    return record
+
+
 def project_book(settings: Settings) -> dict[str, Any]:
     book = load_book(settings)
     return {
@@ -477,5 +537,6 @@ __all__ = [
     "project_book",
     "reconcile_dispatched_requests",
     "record_verified_candidate",
+    "record_verified_from_dual_engine_artifact",
     "save_book",
 ]

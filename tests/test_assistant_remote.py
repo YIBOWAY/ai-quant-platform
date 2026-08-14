@@ -9,6 +9,7 @@ from quant_system.execution.assistant_remote import (
     project_book,
     reconcile_dispatched_requests,
     record_verified_candidate,
+    record_verified_from_dual_engine_artifact,
 )
 from quant_system.execution.paper_observation import hung_sleeve_eligible
 from quant_system.execution.paper_strategy_sleeve_storage import (
@@ -316,3 +317,32 @@ def test_hang_binds_source_digest_and_does_not_mint_generic_momentum(
     assert book["hung_count"] == 1
     assert book["candidates"][0]["source_digest"] == digest
     assert book["candidates"][0]["sleeve_id"] == hung["sleeve_id"]
+
+
+def test_dual_engine_artifact_backfill_is_verified_and_not_hung(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = _settings(tmp_path, monkeypatch)
+    path, digest = _write_fixture_factor(tmp_path)
+
+    record = record_verified_from_dual_engine_artifact(
+        settings,
+        artifact_id="artifact-test-1",
+        source_path=path,
+        source_digest=digest,
+        comparison_digest="c" * 64,
+        universe=["SPY", "QQQ"],
+        objective="dual-engine accepted fixture",
+        job_key="request:2026-08-15:fixture",
+    )
+
+    assert record["status"] == "verified"
+    assert record["sleeve_id"] is None
+    assert record["source_digest"] == digest
+    assert record["factor_id"] == "d34_oracle"
+    assert record["artifact_id"] == "artifact-test-1"
+    assert record["job_key"] == "request:2026-08-15:fixture"
+    book = project_book(settings)
+    assert book["verified_count"] == 1
+    assert book["hung_count"] == 0
