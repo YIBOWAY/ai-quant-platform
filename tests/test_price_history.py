@@ -255,6 +255,69 @@ def test_reads_all_symbols_once_and_emits_deterministic_qfq_contract() -> None:
     }
 
 
+class _TiingoProvider(_Provider):
+    provider_name = "tiingo"
+
+
+def _tiingo_frame() -> pd.DataFrame:
+    frame = _frame()
+    return frame.assign(provider="tiingo", price_adjustment="adjusted")
+
+
+def _read_tiingo(frame: pd.DataFrame, **overrides):
+    provider = _TiingoProvider(frame)
+    builder_calls = []
+
+    def builder(settings, *, requested):
+        builder_calls.append((settings, requested))
+        return provider, "tiingo"
+
+    kwargs = {
+        "settings": SimpleNamespace(),
+        "symbols": ["msft", "AAPL"],
+        "start": "2026-07-08",
+        "end": "2026-07-09",
+        "provider": "tiingo",
+        "adjustment": "adjusted",
+        "provider_builder": builder,
+    }
+    kwargs.update(overrides)
+    snapshot = read_historical_prices(**kwargs)
+    return snapshot.to_dict(), provider, builder_calls
+
+
+def test_tiingo_lane_emits_explicit_adjusted_contract() -> None:
+    payload, provider, builder_calls = _read_tiingo(_tiingo_frame())
+
+    assert builder_calls[0][1] == "tiingo"
+    assert provider.calls
+    assert payload["provider"] == "tiingo"
+    assert payload["source"] == "tiingo"
+    assert payload["adjustment"] == "adjusted"
+    assert payload["series"][0]["symbol"] == "MSFT"
+
+
+def test_tiingo_lane_rejects_qfq_adjustment_label() -> None:
+    with pytest.raises(HistoricalPriceReadError) as excinfo:
+        _read_tiingo(_tiingo_frame(), adjustment="qfq")
+
+    assert excinfo.value.code == "historical_prices_invalid_request"
+
+
+def test_tiingo_lane_rejects_mixed_adjustment_provenance() -> None:
+    with pytest.raises(HistoricalPriceReadError) as excinfo:
+        _read_tiingo(_tiingo_frame().assign(price_adjustment="mixed"))
+
+    assert excinfo.value.code == "historical_prices_contract_invalid"
+
+
+def test_tiingo_lane_rejects_futu_labelled_frames() -> None:
+    with pytest.raises(HistoricalPriceReadError) as excinfo:
+        _read_tiingo(_frame())
+
+    assert excinfo.value.code == "historical_prices_contract_invalid"
+
+
 @pytest.mark.parametrize(
     "overrides",
     [

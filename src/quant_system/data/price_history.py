@@ -17,10 +17,18 @@ from quant_system.data.provider_factory import (
     build_ohlcv_provider,
 )
 from quant_system.data.providers.futu import FutuMarketDataProvider, FutuProviderError
+from quant_system.data.providers.tiingo import TiingoProviderError
 
 ProviderBuilder = Callable[..., tuple[Any, str]]
 MAX_SYMBOLS = 25
 MAX_CALENDAR_DAYS = 500
+
+# Each supported daily-history lane emits exactly one adjustment label; the
+# request must name it explicitly so provenance is never silently relabelled.
+SUPPORTED_PROVIDERS: dict[str, str] = {
+    "futu": "qfq",
+    "tiingo": "adjusted",
+}
 
 
 class HistoricalPriceReadError(RuntimeError):
@@ -149,18 +157,29 @@ def read_historical_prices(
     cache: EquityBarCache | None = None,
     allow_local_markets: bool = False,
 ) -> HistoricalPriceSnapshot:
-    """Read strict multi-symbol Futu QFQ history without storage fallback.
+    """Read strict multi-symbol daily history without storage fallback.
+
+    Futu serves the canonical QFQ lane; Tiingo is an explicit adjusted-close
+    lane (split+dividend adjusted) whose provenance is recorded as-is. The
+    requested ``adjustment`` must match the provider's only supported label so
+    data is never silently relabelled.
 
     ``allow_local_markets`` is an explicit opt-in for read-only lanes that
     need whitelisted local-market codes (HK./JP..). It is off by default so
     every existing caller keeps the exact US-only contract.
     """
-    if provider != "futu":
-        raise _invalid_request("historical prices require explicit provider=futu")
+    expected_adjustment = SUPPORTED_PROVIDERS.get(provider)
+    if expected_adjustment is None:
+        raise _invalid_request(
+            "historical prices require explicit provider=futu or provider=tiingo"
+        )
     if interval != "1d":
         raise _invalid_request("historical prices currently require interval=1d")
-    if adjustment != "qfq":
-        raise _invalid_request("historical prices currently require adjustment=qfq")
+    if adjustment != expected_adjustment:
+        raise _invalid_request(
+            f"historical prices with provider={provider} require "
+            f"adjustment={expected_adjustment}"
+        )
     normalized_symbols = _normalize_request_symbols(
         symbols,
         allow_local_markets=allow_local_markets,
@@ -170,14 +189,14 @@ def read_historical_prices(
     if cache is not None:
         try:
             cached_frame = cache.read(
-                provider="futu",
+                provider=provider,
                 symbols=normalized_symbols,
                 interval="1d",
-                adjustment="qfq",
+                adjustment=expected_adjustment,
                 start=start,
                 end=end,
             )
-        except Exception:  # noqa: BLE001 - a broken optional cache must not block live Futu
+        except Exception:  # noqa: BLE001 - a broken optional cache must not block the live read
             cached_frame = None
         if cached_frame is not None:
             return _materialize_snapshot(
@@ -187,25 +206,33 @@ def read_historical_prices(
                 end=end,
                 start_date=start_date,
                 end_date=end_date,
-                source="futu_cache",
+                source=f"{provider}_cache",
+                provider=provider,
+                adjustment=expected_adjustment,
             )
 
     try:
-        active_provider, source = provider_builder(settings, requested="futu")
+        active_provider, source = provider_builder(settings, requested=provider)
     except DataProviderUnavailableError as exc:
         raise HistoricalPriceReadError(
             code="historical_prices_provider_unavailable",
             message=str(exc),
+            provider=provider,
             provider_code=exc.reason,
         ) from exc
-    if source != "futu" or getattr(active_provider, "provider_name", None) != "futu":
-        raise _contract_invalid("explicit Futu provider resolved to a different source")
+    if (
+        source != provider
+        or getattr(active_provider, "provider_name", None) != provider
+    ):
+        raise _contract_invalid(
+            f"explicit {provider} provider resolved to a different source"
+        )
     fetch_ohlcv = active_provider.fetch_ohlcv
     if allow_local_markets:
         fetch_ohlcv = getattr(active_provider, "fetch_local_market_ohlcv", None)
         if not callable(fetch_ohlcv):
             raise _contract_invalid(
-                "explicit Futu provider does not support local-market reads"
+                f"explicit {provider} provider does not support local-market reads"
             )
     try:
         frame = fetch_ohlcv(
@@ -214,16 +241,18 @@ def read_historical_prices(
             end=end,
             interval="1d",
         )
-    except FutuProviderError as exc:
+    except (FutuProviderError, TiingoProviderError) as exc:
         raise HistoricalPriceReadError(
             code="historical_prices_provider_error",
             message=exc.message,
+            provider=provider,
             provider_code=exc.code,
         ) from exc
     except Exception as exc:
         raise HistoricalPriceReadError(
             code="historical_prices_provider_error",
-            message=f"Futu historical price read failed: {type(exc).__name__}",
+            message=f"{provider} historical price read failed: {type(exc).__name__}",
+            provider=provider,
             provider_code=type(exc).__name__,
         ) from exc
 
@@ -235,15 +264,17 @@ def read_historical_prices(
         start_date=start_date,
         end_date=end_date,
         source=source,
+        provider=provider,
+        adjustment=expected_adjustment,
     )
     if cache is not None:
-        with suppress(Exception):  # optional cache failure must not replace live Futu
+        with suppress(Exception):  # optional cache failure must not replace the live read
             cache.write(
                 frame,
-                provider="futu",
+                provider=provider,
                 symbols=normalized_symbols,
                 interval="1d",
-                adjustment="qfq",
+                adjustment=expected_adjustment,
                 start=start,
                 end=end,
             )
@@ -259,9 +290,11 @@ def _materialize_snapshot(
     start_date: date,
     end_date: date,
     source: str,
+    provider: str = "futu",
+    adjustment: str = "qfq",
 ) -> HistoricalPriceSnapshot:
     if not isinstance(frame, pd.DataFrame) or frame.empty:
-        raise _contract_invalid("Futu returned no historical price rows")
+        raise _contract_invalid(f"{provider} returned no historical price rows")
     required = {
         "symbol",
         "timestamp",
@@ -281,12 +314,16 @@ def _materialize_snapshot(
     normalized["symbol"] = normalized["symbol"].astype(str).str.upper().str.strip()
     if set(normalized["symbol"]) != set(symbols):
         raise _contract_invalid("historical price symbols do not match the request")
-    if set(normalized["provider"].astype(str)) != {"futu"}:
-        raise _contract_invalid("historical price provider provenance is not futu")
+    if set(normalized["provider"].astype(str)) != {provider}:
+        raise _contract_invalid(
+            f"historical price provider provenance is not {provider}"
+        )
     if set(normalized["interval"].astype(str)) != {"1d"}:
         raise _contract_invalid("historical price interval provenance is not 1d")
-    if set(normalized["price_adjustment"].astype(str).str.lower()) != {"qfq"}:
-        raise _contract_invalid("historical price adjustment provenance is not qfq")
+    if set(normalized["price_adjustment"].astype(str).str.lower()) != {adjustment}:
+        raise _contract_invalid(
+            f"historical price adjustment provenance is not {adjustment}"
+        )
     try:
         normalized["timestamp"] = pd.to_datetime(
             normalized["timestamp"], utc=True, errors="raise"
@@ -331,10 +368,10 @@ def _materialize_snapshot(
 
     fetched_at = normalized["knowledge_ts"].max().isoformat()
     return HistoricalPriceSnapshot(
-        provider="futu",
+        provider=provider,
         source=source,
         interval="1d",
-        adjustment="qfq",
+        adjustment=adjustment,
         start=start,
         end=end,
         fetched_at=fetched_at,
