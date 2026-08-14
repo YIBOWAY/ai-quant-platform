@@ -463,16 +463,14 @@
 .dp-strat-name { font-weight: 600; color: var(--dp-text); font-size: 13px; }
 .dp-strat-sub { margin-top: 2px; font-size: 11px; color: var(--dp-text-faint); }
 
-.dp-artifact {
-  font-family: var(--font-mono);
-  font-size: 11.5px;
+.dp-row td.wrap { white-space: normal; min-width: 240px; }
+.dp-summary {
+  font-size: 12px;
+  line-height: 1.55;
   color: var(--dp-text-dim);
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
+  max-width: 380px;
+  text-wrap: pretty;
 }
-.dp-artifact .ok { color: var(--dp-up); font-size: 10px; }
-.dp-artifact .src { color: var(--dp-text-faint); font-size: 10px; }
 
 .dp-delta { font-weight: 600; }
 .dp-delta[data-dir="up"] { color: var(--dp-up); }
@@ -689,7 +687,7 @@
   color: var(--dp-accent);
   font-size: 11px;
 }
-.dp-chip .mono { font-family: var(--font-mono); font-size: 10.5px; opacity: 0.9; }
+.dp-chip .name { font-weight: 550; }
 .dp-chip button {
   display: grid;
   place-items: center;

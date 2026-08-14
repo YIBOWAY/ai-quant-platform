@@ -41,10 +41,12 @@ import {
 type ThemeId = "warm" | "graphite" | "amber";
 
 const THEMES: { id: ThemeId; label: string }[] = [
-  { id: "warm", label: "暖岩" },
   { id: "graphite", label: "石墨" },
+  { id: "warm", label: "暖岩" },
   { id: "amber", label: "琥珀" },
 ];
+
+const DEFAULT_THEME: ThemeId = "graphite";
 
 const THEME_KEY = "dp-theme";
 const THEME_EVENT = "dp-theme-change";
@@ -56,10 +58,10 @@ function subscribeTheme(cb: () => void) {
 
 function readTheme(): ThemeId {
   const v = window.localStorage.getItem(THEME_KEY) as ThemeId | null;
-  return v && THEMES.some((t) => t.id === v) ? v : "warm";
+  return v && THEMES.some((t) => t.id === v) ? v : DEFAULT_THEME;
 }
 
-const serverTheme = (): ThemeId => "warm";
+const serverTheme = (): ThemeId => DEFAULT_THEME;
 
 function nowHHMM(): string {
   const d = new Date();
@@ -190,7 +192,7 @@ export default function DeskPreview() {
     setMessages((m) => [...m, userMsg]);
     setDraft("");
     setTimeout(() => {
-      const ctx = chip ? `（已附上下文：${chip.name} · ${chip.sleeve ?? chip.artifact}）` : "";
+      const ctx = chip ? `（已附上下文：${chip.name}）` : "";
       setMessages((m) => [
         ...m,
         { id: `h-${Date.now()}`, role: "hermes", time: nowHHMM(), text: `${ctx}${PREVIEW_REPLY}` },
@@ -312,10 +314,10 @@ export default function DeskPreview() {
           <table>
             <thead>
               <tr>
-                <th style={{ width: 118 }}>状态</th>
+                <th style={{ width: 96 }}>状态</th>
                 <th>策略</th>
-                <th style={{ width: 150 }}>Artifact</th>
-                <th style={{ width: 100 }}>近 7 观察日</th>
+                <th style={{ minWidth: 240 }}>一句话概括</th>
+                <th style={{ width: 96 }}>近 7 观察日</th>
                 <th>今日</th>
                 <th className="num" style={{ width: 150 }}>
                   当日结果
@@ -364,13 +366,8 @@ export default function DeskPreview() {
                       {e.level}
                     </span>
                   </td>
-                  <td className="dp-num" style={{ width: 132, color: "var(--dp-text-dim)", fontSize: 11 }}>
-                    {e.source}
-                  </td>
+                  <td style={{ width: 132, color: "var(--dp-text-dim)", fontSize: 11.5 }}>{e.source}</td>
                   <td style={{ whiteSpace: "normal" }}>{e.text}</td>
-                  <td className="dp-num" style={{ width: 92, color: "var(--dp-text-faint)", fontSize: 11 }}>
-                    {e.artifact ?? "—"}
-                  </td>
                 </tr>
               ))}
             </tbody>
@@ -403,9 +400,7 @@ export default function DeskPreview() {
               <div className="dp-chipline">
                 <span className="dp-chip">
                   <span>下一轮附加</span>
-                  <span className="mono">
-                    {chip.name} · {chip.sleeve ?? chip.artifact}
-                  </span>
+                  <span className="name">{chip.name}</span>
                   <button type="button" aria-label="移除上下文" onClick={() => setChip(null)}>
                     <X aria-hidden="true" />
                   </button>
@@ -503,12 +498,8 @@ function FragmentRow({
             {s.universe} · {s.statusNote}
           </div>
         </td>
-        <td>
-          <span className="dp-artifact">
-            {s.artifact}
-            {s.digestVerified ? <span className="ok">✓</span> : null}
-            {s.sleeve ? <span className="src">= sleeve</span> : null}
-          </span>
+        <td className="wrap">
+          <div className="dp-summary">{s.summary}</div>
         </td>
         <td>
           <Sparkline days={s.obsDays} />

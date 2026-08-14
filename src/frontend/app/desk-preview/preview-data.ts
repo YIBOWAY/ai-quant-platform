@@ -16,6 +16,8 @@ export type Strategy = {
   name: string;
   status: StrategyStatus;
   statusNote: string;
+  /** 一句话概括：写给人看的策略说明。digest/hash 只留给机器对账，不上桌面。 */
+  summary: string;
   artifact: string;
   sleeve?: string;
   digestVerified?: boolean;
@@ -34,6 +36,7 @@ export const STRATEGIES: Strategy[] = [
     name: "横截面动量 Top-N",
     status: "hung",
     statusNote: "已挂上 · 观察中",
+    summary: "按近期涨势给 4 只大盘 ETF 排名，等权持有最强的前 3 只，每日开盘再平衡。",
     artifact: "c42a91e",
     sleeve: "c42a91e",
     digestVerified: true,
@@ -45,7 +48,7 @@ export const STRATEGIES: Strategy[] = [
     events: [
       { time: "09:31", label: "开盘再平衡成交", detail: "买 QQQ 12 股 @ 448.12 · 卖 IWM 9 股 @ 224.05" },
       { time: "09:30", label: "信号生成", detail: "Top-3：QQQ · SPY · DIA" },
-      { time: "08:45", label: "digest 校验通过", detail: "sleeve = candidate c42a91e ✓" },
+      { time: "08:45", label: "代码指纹校验", detail: "与已验证候选一致 ✓" },
     ],
   },
   {
@@ -53,6 +56,7 @@ export const STRATEGIES: Strategy[] = [
     name: "均值回归 Top-N",
     status: "hung",
     statusNote: "已挂上 · 观察中",
+    summary: "找短期跌过头的 ETF 往回买，涨过头的减掉，赌价格回到近期均值。",
     artifact: "74bd109",
     sleeve: "74bd109",
     digestVerified: true,
@@ -63,7 +67,7 @@ export const STRATEGIES: Strategy[] = [
     todayNote: "今日无信号 · 持仓未动",
     events: [
       { time: "09:30", label: "信号生成", detail: "无换仓：偏离度未触发阈值" },
-      { time: "08:45", label: "digest 校验通过", detail: "sleeve = candidate 74bd109 ✓" },
+      { time: "08:45", label: "代码指纹校验", detail: "与已验证候选一致 ✓" },
     ],
   },
   {
@@ -71,6 +75,7 @@ export const STRATEGIES: Strategy[] = [
     name: "20 日均线反转",
     status: "candidate",
     statusNote: "已验证候选 · 未挂上",
+    summary: "价格偏离 20 日均线过远时反着做一把，等它回归均线就了结。",
     artifact: "8f3c2a7",
     digestVerified: true,
     universe: "美股大盘 ETF ×4",
@@ -80,7 +85,7 @@ export const STRATEGIES: Strategy[] = [
     todayNote: "双引擎已通过（08-12） · 等你决定",
     events: [
       { time: "08-12 22:41", label: "双引擎回测通过", detail: "平台引擎 + Qlib 对照差 < 1bp" },
-      { time: "08-12 22:14", label: "研究任务 R-248 完成", detail: "源码 digest 8f3c2a7 已归档" },
+      { time: "08-12 22:14", label: "研究任务 R-248 完成", detail: "策略源码已归档存证" },
     ],
   },
   {
@@ -88,6 +93,7 @@ export const STRATEGIES: Strategy[] = [
     name: "低波动质量因子",
     status: "paused",
     statusNote: "已暂停 · 08-11 手动",
+    summary: "挑波动小、走势稳的标的拿着少折腾，回撤超阈值就先停下来复盘。",
     artifact: "9d21f44",
     sleeve: "9d21f44",
     digestVerified: true,
@@ -107,18 +113,17 @@ export type LedgerEvent = {
   level: "成交" | "观察" | "研究" | "数据" | "摘要" | "系统";
   source: string;
   text: string;
-  artifact?: string;
 };
 
 export const LEDGER_EVENTS: LedgerEvent[] = [
-  { time: "09:31:12", level: "成交", source: "sleeve.c42a91e", text: "开盘再平衡：买 QQQ 12 股 @ 448.12，卖 IWM 9 股 @ 224.05", artifact: "c42a91e" },
-  { time: "09:30:04", level: "系统", source: "orchestrator", text: "2 条已挂策略完成信号生成；候选与暂停仓不参与" },
-  { time: "08:45:20", level: "系统", source: "authority", text: "digest 复核：2 条已挂仓源码摘要一致 ✓" },
-  { time: "08:30:02", level: "数据", source: "futu", text: "行情通道恢复在线（昨夜 23:41 起中断 47 分钟）" },
-  { time: "08:17:00", level: "摘要", source: "digest", text: "今日晨报已生成：观察 2 · 候选 1 · 待决定 1", artifact: "brief-0814" },
-  { time: "08:03:11", level: "研究", source: "R-249", text: "论文复现任务已派出 · 默认停在已验证候选", artifact: "R-249" },
-  { time: "08:01:47", level: "研究", source: "R-247", text: "财报动量假设：诚实失败——材料无法证伪化，未产生候选" },
-  { time: "昨 16:00", level: "观察", source: "valuation", text: "观察日估值完成：横截面动量 +0.31% · 均值回归 −0.04%" },
+  { time: "09:31:12", level: "成交", source: "横截面动量", text: "开盘再平衡：买 QQQ 12 股 @ 448.12，卖 IWM 9 股 @ 224.05" },
+  { time: "09:30:04", level: "系统", source: "调度", text: "2 条已挂策略完成信号生成；候选与暂停仓不参与" },
+  { time: "08:45:20", level: "系统", source: "对账", text: "代码指纹复核：2 条已挂仓与候选一致 ✓" },
+  { time: "08:30:02", level: "数据", source: "Futu 行情", text: "行情通道恢复在线（昨夜 23:41 起中断 47 分钟）" },
+  { time: "08:17:00", level: "摘要", source: "晨报", text: "今日晨报已生成：观察 2 · 候选 1 · 待决定 1" },
+  { time: "08:03:11", level: "研究", source: "研究 R-249", text: "论文复现任务已派出 · 默认停在已验证候选" },
+  { time: "08:01:47", level: "研究", source: "研究 R-247", text: "财报动量假设：诚实失败——材料无法证伪化，未产生候选" },
+  { time: "昨 16:00", level: "观察", source: "估值", text: "观察日估值完成：横截面动量 +0.31% · 均值回归 −0.04%" },
 ];
 
 export type ChatRole = "user" | "hermes";
