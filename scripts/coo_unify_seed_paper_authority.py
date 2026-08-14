@@ -42,11 +42,19 @@ def main() -> int:
     if not account_path.is_file():
         print("refusing: isolation file paper account is missing", file=sys.stderr)
         return 78
-    backfill_account_file(account_path, settings=settings, source="coo_unify_preview")
     database = get_database(settings)
     if database is None:
         print("refusing: isolation database unavailable", file=sys.stderr)
         return 78
+    with database.connect() as conn:
+        count_row = conn.execute(
+            "SELECT count(*) FROM quant_system.paper_accounts WHERE owner_user_id = %s",
+            (ROOT_USER_ID,),
+        ).fetchone()
+    if count_row is None or int(count_row[0]) == 0:
+        backfill_account_file(
+            account_path, settings=settings, source="coo_unify_preview"
+        )
     with database.connect() as conn:
         existing = conn.execute(
             """
