@@ -5,6 +5,7 @@ export type BriefSafetyFooter = {
   paper_trading: boolean;
   live_trading_enabled: boolean;
   kill_switch: boolean;
+  paper_observation_enabled: boolean;
   bind_address: string;
 };
 
