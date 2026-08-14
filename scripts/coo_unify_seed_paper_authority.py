@@ -48,16 +48,25 @@ def main() -> int:
         print("refusing: isolation database unavailable", file=sys.stderr)
         return 78
     with database.connect() as conn:
-        conn.execute(
-            "SELECT quant_system.bump_agent_v02_paper_authority_owner(%s)",
-            (ROOT_USER_ID,),
-        )
-        row = conn.execute(
+        existing = conn.execute(
             """
-            SELECT quant_system.ensure_agent_v02_paper_authority_epoch(%s, %s)
+            SELECT quant_system.current_agent_v02_paper_authority_epoch(%s, %s)
             """,
             (ROOT_USER_ID, "default"),
         ).fetchone()
+        if existing is None or existing[0] is None:
+            conn.execute(
+                "SELECT quant_system.bump_agent_v02_paper_authority_owner(%s)",
+                (ROOT_USER_ID,),
+            )
+            row = conn.execute(
+                """
+                SELECT quant_system.ensure_agent_v02_paper_authority_epoch(%s, %s)
+                """,
+                (ROOT_USER_ID, "default"),
+            ).fetchone()
+        else:
+            row = existing
     print(
         {
             "seeded": True,
