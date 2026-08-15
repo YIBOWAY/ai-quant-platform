@@ -1,5 +1,6 @@
 import { HermesSessionDeepLinkBinder } from "@/components/hermes/sessions/HermesSessionDeepLinkBinder";
 import { D34ResearchWorkbench } from "@/components/hermes/d34";
+import { HermesDeskToday } from "@/components/hermes/desk/HermesDeskToday";
 import {
   HermesTodayView,
   RecentResults,
@@ -57,25 +58,29 @@ export default async function HermesWorkbenchPage({
       {deepLinkedSessionId ? (
         <HermesSessionDeepLinkBinder hermesSessionId={deepLinkedSessionId} />
       ) : null}
-      <div className="flex flex-col gap-6">
-        <HermesTodayView artifacts={artifacts} locale={locale} model={overview} />
-        <D34ResearchWorkbench locale={locale} />
-        <TodayResults
-          hqaConclusions={[]}
-          locale={locale}
-          preview={unifiedResults}
-        />
-        <RecentResults
-          artifacts={artifacts}
-          locale={locale}
-          results={hqaConclusions}
-        />
-        <TodayAutomation
-          artifact={latestAutomation}
-          locale={locale}
-          summary={overview.automation}
-        />
-      </div>
+      <HermesDeskToday
+        dutyExtra={
+          <>
+            <HermesTodayView artifacts={artifacts} locale={locale} model={overview} />
+            <TodayResults
+              hqaConclusions={[]}
+              locale={locale}
+              preview={unifiedResults}
+            />
+            <RecentResults
+              artifacts={artifacts}
+              locale={locale}
+              results={hqaConclusions}
+            />
+            <TodayAutomation
+              artifact={latestAutomation}
+              locale={locale}
+              summary={overview.automation}
+            />
+          </>
+        }
+        researchExtra={<D34ResearchWorkbench locale={locale} />}
+      />
     </>
   );
 }
