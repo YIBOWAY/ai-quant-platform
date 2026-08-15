@@ -9,6 +9,32 @@
   width: 100%;
 }
 
+/* Embedded in the site main pane: keep the site sidebar, drop the extra icon rail. */
+.dp[data-hermes-desk][data-embedded="true"] {
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: var(--dp-topstrip) minmax(0, 1fr) var(--dp-footer);
+}
+
+.dp[data-hermes-desk][data-embedded="true"] .dp-topstrip {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+
+.dp[data-hermes-desk][data-embedded="true"] .dp-main {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.dp[data-hermes-desk][data-embedded="true"] .dp-rail {
+  grid-column: 2;
+  grid-row: 2 / 4;
+}
+
+.dp[data-hermes-desk][data-embedded="true"] .dp-footer {
+  grid-column: 1;
+  grid-row: 3;
+}
+
 .dp[data-hermes-desk] > .sr-only {
   position: absolute;
   width: 1px;
@@ -27,14 +53,18 @@
   gap: 4px;
 }
 
-.dp-subnav a {
+.dp-subnav a,
+.dp-subnav button {
   font-size: 11.5px;
   color: var(--dp-text-dim);
   padding: 4px 8px;
   border-radius: var(--dp-r-sm);
+  background: transparent;
+  border: 0;
 }
 
-.dp-subnav a[data-current="true"] {
+.dp-subnav a[data-current="true"],
+.dp-subnav button[data-current="true"] {
   color: var(--dp-text);
   background: var(--dp-bg-active);
 }

@@ -102,20 +102,20 @@ const paperSection: NavSection = {
 const optionsSection: NavSection = {
   id: "options",
   items: [
-    { id: "optionsScreener", href: "/options-screener", icon: ListFilter, surfaces: [] },
-    { id: "optionsRadar", href: "/options-radar", icon: Radar, surfaces: [] },
-    { id: "optionsTools", href: "/options-tools", icon: Wrench, surfaces: [] },
-    { id: "buySide", href: "/options-buyside", icon: BadgeDollarSign, surfaces: [] },
+    { id: "optionsScreener", href: "/options-screener", icon: ListFilter },
+    { id: "optionsRadar", href: "/options-radar", icon: Radar },
+    { id: "optionsTools", href: "/options-tools", icon: Wrench },
+    { id: "buySide", href: "/options-buyside", icon: BadgeDollarSign },
   ],
 };
 
 const marketsSection: NavSection = {
   id: "markets",
   items: [
-    { id: "asiaRadar", href: "/asia-radar", icon: Globe2, surfaces: [] },
-    { id: "marketCrossSection", href: "/market-cross-section", icon: Grid3X3, surfaces: [] },
-    { id: "aiNews", href: "/ai-news", icon: Newspaper, surfaces: [] },
-    { id: "orderBook", href: "/polymarket", icon: BookOpen, surfaces: [] },
+    { id: "asiaRadar", href: "/asia-radar", icon: Globe2 },
+    { id: "marketCrossSection", href: "/market-cross-section", icon: Grid3X3 },
+    { id: "aiNews", href: "/ai-news", icon: Newspaper },
+    { id: "orderBook", href: "/polymarket", icon: BookOpen },
     { id: "agentStudio", href: "/agent-studio", icon: Zap, surfaces: [] },
   ],
 };
