@@ -159,7 +159,7 @@ export function HermesDeskFrame({ children }: { children: ReactNode }) {
       )}
 
       <footer className="dp-footer">
-        <span>Hermes 工作台 · 远程账接线 · 不是额外的今日桌面</span>
+        <span>Hermes 工作台 · 远程账接线</span>
         <span className="grow" />
         <span>live_trading=false · 种子市值差不是策略盈亏</span>
       </footer>
