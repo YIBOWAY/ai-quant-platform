@@ -13,7 +13,7 @@ import {
 
 const copy = {
   en: {
-    tagline: "Local research workspace",
+    tagline: "Duty · Research · Paper",
     docs: "Docs",
     support: "Help",
     groups: {
@@ -25,7 +25,6 @@ const copy = {
     },
     nav: {
       dashboard: "Dashboard",
-      desk: "Duty desk",
       hermes: "Hermes",
       brief: "Morning Brief",
       dataExplorer: "Data Explorer",
@@ -50,7 +49,7 @@ const copy = {
     },
   },
   zh: {
-    tagline: "本地研究环境",
+    tagline: "值班 · 研究 · 模拟",
     docs: "文档",
     support: "帮助",
     groups: {
@@ -62,7 +61,6 @@ const copy = {
     },
     nav: {
       dashboard: "仪表盘",
-      desk: "今日桌面",
       hermes: "Hermes 工作台",
       brief: "每日晨报",
       dataExplorer: "行情浏览",

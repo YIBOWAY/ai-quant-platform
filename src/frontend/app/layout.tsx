@@ -6,6 +6,7 @@ import { TopBar } from '@/components/TopBar';
 import { SafetyBadge } from '@/components/SafetyBadge';
 import { Providers } from '@/components/Providers';
 import { LocaleProvider } from '@/components/LocaleProvider';
+import { AppChrome } from '@/components/AppChrome';
 import { hermesFeatureFlags } from '@/lib/hermes/featureFlags';
 import { getServerLocale } from '@/lib/serverLocale';
 
@@ -68,21 +69,23 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body className="min-h-screen bg-bg-base antialiased selection:bg-info selection:text-bg-base">
         <LocaleProvider locale={locale}>
           <Providers>
-            <Sidebar
-              agentStudioRedirect={flags.agentStudioRedirect}
-              shellEnabled={shellEnabled}
-            />
-            <TopBar
-              agentStudioRedirect={flags.agentStudioRedirect}
-              safetySlot={<SafetyBadge />}
-              shellEnabled={shellEnabled}
-            />
-            {/* h-screen + pt makes the content area a *fixed* height box (viewport
-                minus the topbar), so child pages using h-full / flex-1 can size
-                correctly instead of collapsing to content height. */}
-            <main className="ml-0 h-screen overflow-hidden bg-bg-base pt-[var(--spacing-topbar-height)] lg:ml-[220px]">
+            <AppChrome
+              sidebar={
+                <Sidebar
+                  agentStudioRedirect={flags.agentStudioRedirect}
+                  shellEnabled={shellEnabled}
+                />
+              }
+              topbar={
+                <TopBar
+                  agentStudioRedirect={flags.agentStudioRedirect}
+                  safetySlot={<SafetyBadge />}
+                  shellEnabled={shellEnabled}
+                />
+              }
+            >
               {children}
-            </main>
+            </AppChrome>
           </Providers>
         </LocaleProvider>
       </body>

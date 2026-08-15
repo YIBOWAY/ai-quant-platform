@@ -1,16 +1,21 @@
-import type { Metadata } from "next";
-import { OfficialDesk } from "@/components/desk/OfficialDesk";
+import { redirect } from "next/navigation";
 import { LegacyDashboard } from "@/components/dashboard/LegacyDashboard";
 import { hermesFeatureFlags } from "@/lib/hermes/featureFlags";
+import {
+  hermesHomeHref,
+  type HermesSearchParams,
+} from "@/lib/hermes/routes";
+import { getServerLocale } from "@/lib/serverLocale";
 
-export const metadata: Metadata = {
-  title: "值班 · 研究 · 模拟 · 个人量化助手",
-  description: "三本账桌面：值班、研究、模拟。接线远程账，不是预览假数据。",
+type HomePageProps = {
+  searchParams: Promise<HermesSearchParams>;
 };
 
-export default function HomePage() {
+export default async function HomePage({ searchParams }: HomePageProps) {
   if (!hermesFeatureFlags().shell) {
     return <LegacyDashboard />;
   }
-  return <OfficialDesk />;
+  const resolvedSearchParams = await searchParams;
+  const locale = await getServerLocale(resolvedSearchParams);
+  redirect(hermesHomeHref(locale, resolvedSearchParams));
 }

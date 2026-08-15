@@ -1,0 +1,38 @@
+/* Hermes desk chrome — graphite tokens from the official blotter. */
+@import "../../../app/desk-preview/desk-preview.css";
+
+.dp[data-hermes-desk] {
+  position: relative;
+  inset: auto;
+  z-index: 0;
+  height: 100%;
+  width: 100%;
+}
+
+.dp[data-hermes-desk] .dp-main {
+  min-width: 0;
+}
+
+.dp-subnav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.dp-subnav a {
+  font-size: 11.5px;
+  color: var(--dp-text-dim);
+  padding: 4px 8px;
+  border-radius: var(--dp-r-sm);
+}
+
+.dp-subnav a[data-current="true"] {
+  color: var(--dp-text);
+  background: var(--dp-bg-active);
+}
+
+.dp-embed {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--dp-border);
+}

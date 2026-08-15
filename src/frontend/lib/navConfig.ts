@@ -19,7 +19,6 @@ import {
   ScrollText,
   Settings,
   Sparkles,
-  Sun,
   Sunrise,
   Wrench,
   Zap,
@@ -29,7 +28,6 @@ export type NavSurface = "sidebar" | "mobile";
 
 export type NavItemId =
   | "dashboard"
-  | "desk"
   | "hermes"
   | "brief"
   | "dataExplorer"
@@ -68,12 +66,6 @@ const dashboardItem: NavItem = {
   id: "dashboard",
   href: "/",
   icon: LayoutDashboard,
-};
-
-const deskItem: NavItem = {
-  id: "desk",
-  href: "/",
-  icon: Sun,
 };
 
 const hermesItem: NavItem = {
@@ -151,7 +143,7 @@ export function buildNavSections({
   agentStudioRedirect?: boolean;
 }): NavSection[] {
   const researchItems: NavItem[] = shellEnabled
-    ? [deskItem, hermesItem, briefItem, ...researchTail]
+    ? [hermesItem, briefItem, ...researchTail]
     : [dashboardItem, hermesItem, briefItem, ...researchTail];
 
   const visibleMarkets = agentStudioRedirect
