@@ -215,7 +215,7 @@ export function OfficialDesk() {
           <span className="sep">·</span>
           <span className="dp-num">live_trading=false</span>
         </div>
-        <span className="dp-previewtag">正式账 · 接线远程书</span>
+        <span className="dp-previewtag">正式账 · 接线远程账</span>
         <div style={{ flex: 1 }} />
         <Link className="dp-btn" href={localizePath("/paper-trading", locale)}>
           模拟深页
