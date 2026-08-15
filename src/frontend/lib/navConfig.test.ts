@@ -205,6 +205,18 @@ describe("buildNavSections", () => {
     const mobileRoutes = routesForSurface(sections, "mobile");
 
     expect(sidebarRoutes).not.toContain("/docs/reversal-momentum");
+    expect(sidebarRoutes).toEqual(
+      expect.arrayContaining([
+        "/options-screener",
+        "/options-radar",
+        "/options-tools",
+        "/options-buyside",
+        "/asia-radar",
+        "/market-cross-section",
+        "/ai-news",
+        "/polymarket",
+      ]),
+    );
     expect(sidebarRoutes.filter((href) => href === "/settings")).toHaveLength(1);
     expect(mobileRoutes).toContain("/docs/reversal-momentum");
     expect(mobileRoutes.filter((href) => href === "/settings")).toHaveLength(1);

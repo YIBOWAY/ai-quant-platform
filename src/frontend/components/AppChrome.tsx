@@ -1,9 +1,8 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { usePathname } from "next/navigation";
-import { splitLocalePath } from "@/lib/locale";
 
+/** Site chrome is always on. Hermes desk embeds in the main pane. */
 export function AppChrome({
   sidebar,
   topbar,
@@ -13,18 +12,6 @@ export function AppChrome({
   topbar: ReactNode;
   children: ReactNode;
 }) {
-  const pathname = usePathname();
-  const path = splitLocalePath(pathname).pathname;
-  const hermesDesk = path === "/hermes" || path.startsWith("/hermes/");
-
-  if (hermesDesk) {
-    return (
-      <div className="h-screen overflow-hidden bg-bg-base" data-app-chrome="hermes-desk">
-        {children}
-      </div>
-    );
-  }
-
   return (
     <>
       {sidebar}

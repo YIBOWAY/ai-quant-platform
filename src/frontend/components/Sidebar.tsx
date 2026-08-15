@@ -13,7 +13,7 @@ import {
 
 const copy = {
   en: {
-    tagline: "Duty · Research · Paper",
+    tagline: "Local research workspace",
     docs: "Docs",
     support: "Help",
     groups: {
@@ -49,7 +49,7 @@ const copy = {
     },
   },
   zh: {
-    tagline: "值班 · 研究 · 模拟",
+    tagline: "本地研究环境",
     docs: "文档",
     support: "帮助",
     groups: {
