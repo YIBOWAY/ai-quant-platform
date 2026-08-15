@@ -25,6 +25,7 @@ const copy = {
     },
     nav: {
       dashboard: "Dashboard",
+      desk: "Duty desk",
       hermes: "Hermes",
       brief: "Morning Brief",
       dataExplorer: "Data Explorer",
@@ -61,6 +62,7 @@ const copy = {
     },
     nav: {
       dashboard: "仪表盘",
+      desk: "今日桌面",
       hermes: "Hermes 工作台",
       brief: "每日晨报",
       dataExplorer: "行情浏览",

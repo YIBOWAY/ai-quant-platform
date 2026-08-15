@@ -19,6 +19,7 @@ import {
   ScrollText,
   Settings,
   Sparkles,
+  Sun,
   Sunrise,
   Wrench,
   Zap,
@@ -28,6 +29,7 @@ export type NavSurface = "sidebar" | "mobile";
 
 export type NavItemId =
   | "dashboard"
+  | "desk"
   | "hermes"
   | "brief"
   | "dataExplorer"
@@ -68,6 +70,12 @@ const dashboardItem: NavItem = {
   icon: LayoutDashboard,
 };
 
+const deskItem: NavItem = {
+  id: "desk",
+  href: "/",
+  icon: Sun,
+};
+
 const hermesItem: NavItem = {
   id: "hermes",
   href: "/hermes",
@@ -102,20 +110,20 @@ const paperSection: NavSection = {
 const optionsSection: NavSection = {
   id: "options",
   items: [
-    { id: "optionsScreener", href: "/options-screener", icon: ListFilter },
-    { id: "optionsRadar", href: "/options-radar", icon: Radar },
-    { id: "optionsTools", href: "/options-tools", icon: Wrench },
-    { id: "buySide", href: "/options-buyside", icon: BadgeDollarSign },
+    { id: "optionsScreener", href: "/options-screener", icon: ListFilter, surfaces: [] },
+    { id: "optionsRadar", href: "/options-radar", icon: Radar, surfaces: [] },
+    { id: "optionsTools", href: "/options-tools", icon: Wrench, surfaces: [] },
+    { id: "buySide", href: "/options-buyside", icon: BadgeDollarSign, surfaces: [] },
   ],
 };
 
 const marketsSection: NavSection = {
   id: "markets",
   items: [
-    { id: "asiaRadar", href: "/asia-radar", icon: Globe2 },
-    { id: "marketCrossSection", href: "/market-cross-section", icon: Grid3X3 },
-    { id: "aiNews", href: "/ai-news", icon: Newspaper },
-    { id: "orderBook", href: "/polymarket", icon: BookOpen },
+    { id: "asiaRadar", href: "/asia-radar", icon: Globe2, surfaces: [] },
+    { id: "marketCrossSection", href: "/market-cross-section", icon: Grid3X3, surfaces: [] },
+    { id: "aiNews", href: "/ai-news", icon: Newspaper, surfaces: [] },
+    { id: "orderBook", href: "/polymarket", icon: BookOpen, surfaces: [] },
     { id: "agentStudio", href: "/agent-studio", icon: Zap, surfaces: [] },
   ],
 };
@@ -143,7 +151,7 @@ export function buildNavSections({
   agentStudioRedirect?: boolean;
 }): NavSection[] {
   const researchItems: NavItem[] = shellEnabled
-    ? [hermesItem, briefItem, ...researchTail]
+    ? [deskItem, hermesItem, briefItem, ...researchTail]
     : [dashboardItem, hermesItem, briefItem, ...researchTail];
 
   const visibleMarkets = agentStudioRedirect

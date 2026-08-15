@@ -7,6 +7,7 @@ fills. Only allocated, automation-managed, paper_only sleeves qualify.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Mapping
 
 from quant_system.config.settings import Settings
@@ -14,6 +15,14 @@ from quant_system.config.settings import Settings
 _AUTHORITY_OUTAGE_CODES = frozenset(
     {"d34_authority_unavailable", "d34_safety_unavailable"}
 )
+_DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _official_source_digest(metadata: Mapping[str, Any]) -> bool:
+    digest = str(
+        metadata.get("candidate_code_digest") or metadata.get("source_digest") or ""
+    )
+    return _DIGEST_RE.fullmatch(digest) is not None
 
 
 def hung_sleeve_eligible(sleeve: Any) -> bool:
@@ -24,11 +33,14 @@ def hung_sleeve_eligible(sleeve: Any) -> bool:
         "value",
         getattr(sleeve, "status", ""),
     )
+    if metadata.get("fossil") is True or metadata.get("official_observation") is False:
+        return False
     return (
         str(mode) == "allocated"
         and str(status) == "running"
         and metadata.get("automation_managed") is True
         and str(metadata.get("promotion_scope", "")) == "paper_only"
+        and _official_source_digest(metadata)
     )
 
 

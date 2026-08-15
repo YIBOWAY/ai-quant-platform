@@ -34,6 +34,8 @@ _FACTOR_ID_RE = re.compile(r"^[a-z][a-z0-9_-]{0,127}$")
 BOOK_CONTRACT = "hqa.assistant_remote_book/v1"
 DISPATCH_CONTRACT = "hqa.assistant_remote_dispatch/v1"
 HANG_CONTRACT = "hqa.assistant_remote_hang/v1"
+INTAKE_CONTRACT = "hqa.assistant_remote_intake/v1"
+_ACCEPTED_CYCLE_PHASES = frozenset({"candidate_ready", "canary_active"})
 
 # Step 4: dispatch can hand the objective to the real D-34 job lane. The book
 # then only projects the job's truth; it never invents progress.
@@ -204,6 +206,15 @@ def _require_factor_id(value: object) -> str:
     if _FACTOR_ID_RE.fullmatch(cleaned) is None:
         raise AssistantRemoteError("candidate_factor_required")
     return cleaned
+
+
+def _has_source_digest(item: dict[str, Any]) -> bool:
+    return (
+        _DIGEST_RE.fullmatch(
+            str(item.get("source_digest") or item.get("candidate_code_digest") or "")
+        )
+        is not None
+    )
 
 
 def _require_universe(value: object) -> list[str]:
@@ -500,8 +511,192 @@ def record_verified_from_dual_engine_artifact(
     return record
 
 
+def intake_material(
+    settings: Settings,
+    *,
+    note: str,
+    universe: Sequence[str] | None = None,
+    formula: str | None = None,
+    hang_if_pass: bool = False,
+    enqueue_job: Callable[[str, bool], str] | None = None,
+) -> dict[str, Any]:
+    """Owner paper/material intake. Missing formula or universe fails closed.
+
+    A complete note becomes one research ask. It never hangs and never invents
+    a universe or formula.
+    """
+    cleaned = note.strip()
+    if len(cleaned) < 8:
+        raise AssistantRemoteError("research_objective_required")
+    formula_text = str(formula or "").strip()
+    if not formula_text:
+        raise AssistantRemoteError("intake_formula_required")
+    symbols = _require_universe(universe)
+    _ = hang_if_pass
+    objective = (
+        f"{cleaned}\nformula: {formula_text}\nuniverse: {','.join(symbols)}"
+    )
+    receipt = dispatch_research(
+        settings,
+        objective=objective,
+        hang_if_pass=False,
+        enqueue_job=enqueue_job,
+    )
+    return {
+        "contract": INTAKE_CONTRACT,
+        "status": receipt["status"],
+        "hung": False,
+        "candidate_id": None,
+        "formula": formula_text,
+        "universe": symbols,
+        "request_id": receipt["request_id"],
+        "job_key": receipt.get("job_key"),
+        "mode": receipt.get("mode"),
+        "hang_if_pass": False,
+    }
+
+
+def iter_accepted_cycle_receipts(settings: Settings) -> list[dict[str, Any]]:
+    """Read dual-engine-accepted cycle receipts from the workspace. Never invents."""
+    jobs_root = Path(settings.data.data_dir) / "d34" / "jobs"
+    if not jobs_root.is_dir():
+        return []
+    records: list[dict[str, Any]] = []
+    for cycle_path in sorted(jobs_root.glob("job-*/cycle_receipt.json")):
+        try:
+            receipt = json.loads(cycle_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(receipt, dict):
+            continue
+        if receipt.get("contract") != "hqa.d34_job_outcome/v1":
+            continue
+        if receipt.get("comparison_accepted") is not True:
+            continue
+        if str(receipt.get("phase") or "") not in _ACCEPTED_CYCLE_PHASES:
+            continue
+        request_path = cycle_path.parent / "research_request.json"
+        try:
+            request = json.loads(request_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(request, dict):
+            continue
+        factor_rel = str(receipt.get("factor_path") or "").strip()
+        if not factor_rel:
+            continue
+        source_path = Path(settings.data.data_dir) / "d34" / factor_rel
+        artifact_id = str(receipt.get("artifact_id") or "").strip()
+        if not artifact_id:
+            continue
+        records.append(
+            {
+                "artifact_id": artifact_id,
+                "source_path": source_path,
+                "source_digest": receipt.get("candidate_code_digest"),
+                "comparison_digest": receipt.get("comparison_digest"),
+                "universe": request.get("universe"),
+                "objective": request.get("objective") or "",
+                "job_id": receipt.get("job_id"),
+                "job_key": request.get("job_key"),
+            }
+        )
+    return records
+
+
+def admit_accepted_artifacts(settings: Settings) -> list[dict[str, Any]]:
+    """Admit dual-engine-accepted artifacts as verified candidates. Never hangs."""
+    admitted: list[dict[str, Any]] = []
+    for item in iter_accepted_cycle_receipts(settings):
+        try:
+            record = record_verified_from_dual_engine_artifact(
+                settings,
+                artifact_id=str(item["artifact_id"]),
+                source_path=item["source_path"],
+                source_digest=str(item["source_digest"]),
+                comparison_digest=str(item["comparison_digest"]),
+                universe=item["universe"],
+                objective=str(item["objective"]),
+                job_key=str(item["job_key"]) if item.get("job_key") else None,
+            )
+        except AssistantRemoteError:
+            continue
+        admitted.append(record)
+    return admitted
+
+
+def quarantine_fossil_sleeves(settings: Settings) -> dict[str, Any]:
+    """Label digest-less / preview-seed sleeves so they are not official hung P&L."""
+    book = load_book(settings)
+    labeled_candidates = 0
+    for item in book["candidates"]:
+        if not isinstance(item, dict):
+            continue
+        if item.get("status") != "hung":
+            continue
+        if _has_source_digest(item) and item.get("source") != "preview_seed":
+            continue
+        if item.get("fossil") is True and item.get("official_observation") is False:
+            continue
+        item["fossil"] = True
+        item["official_observation"] = False
+        labeled_candidates += 1
+    if labeled_candidates:
+        save_book(settings, book)
+
+    api_runs_dir = Path(settings.data.data_dir) / "api_runs"
+    storage = PaperStrategySleeveStorage(api_runs_dir)
+    labeled_sleeves = 0
+    for sleeve in storage.list_sleeves():
+        metadata = dict(sleeve.metadata or {})
+        digest = str(
+            metadata.get("candidate_code_digest") or metadata.get("source_digest") or ""
+        )
+        preview = metadata.get("preview_label") == "hung_observation_demo"
+        seed = metadata.get("automation_source") == "preview_seed" or preview
+        digest_ok = _DIGEST_RE.fullmatch(digest) is not None
+        if digest_ok and not seed:
+            continue
+        if metadata.get("fossil") is True and metadata.get("official_observation") is False:
+            continue
+        metadata["fossil"] = True
+        metadata["official_observation"] = False
+        metadata["fossil_reason"] = (
+            "preview_seed" if seed or not digest_ok else "digest_less"
+        )
+        sleeve.metadata = metadata
+        storage.save_sleeve(sleeve)
+        labeled_sleeves += 1
+    return {
+        "labeled_candidates": labeled_candidates,
+        "labeled_sleeves": labeled_sleeves,
+    }
+
+
+def reconcile_remote_book(settings: Settings, *, jobs: Any = None, workspace_id: str = "default") -> dict[str, Any]:
+    """Project job states, admit accepted artifacts, then return the book."""
+    if jobs is not None:
+        reconcile_dispatched_requests(
+            settings, jobs=jobs, workspace_id=workspace_id
+        )
+    admit_accepted_artifacts(settings)
+    quarantine_fossil_sleeves(settings)
+    return project_book(settings)
+
+
 def project_book(settings: Settings) -> dict[str, Any]:
     book = load_book(settings)
+    fossils = [
+        {
+            "candidate_id": item.get("candidate_id"),
+            "sleeve_id": item.get("sleeve_id"),
+            "reason": "digest_less",
+        }
+        for item in book["candidates"]
+        if isinstance(item, dict)
+        and item.get("status") == "hung"
+        and (item.get("fossil") is True or not _has_source_digest(item))
+    ]
     return {
         "contract": BOOK_CONTRACT,
         "candidates": book["candidates"],
@@ -509,18 +704,20 @@ def project_book(settings: Settings) -> dict[str, Any]:
         "verified_count": sum(
             1
             for item in book["candidates"]
-            if isinstance(item, dict) and item.get("status") == "verified"
+            if isinstance(item, dict)
+            and item.get("status") == "verified"
+            and _has_source_digest(item)
         ),
         "hung_count": sum(
             1
             for item in book["candidates"]
             if isinstance(item, dict)
             and item.get("status") == "hung"
-            and _DIGEST_RE.fullmatch(
-                str(item.get("source_digest") or item.get("candidate_code_digest") or "")
-            )
-            is not None
+            and _has_source_digest(item)
+            and item.get("fossil") is not True
         ),
+        "fossil_count": len(fossils),
+        "fossils": fossils,
     }
 
 
@@ -531,11 +728,17 @@ __all__ = [
     "DISPATCH_MODE_BOOK_ONLY",
     "DISPATCH_MODE_D34_JOB",
     "HANG_CONTRACT",
+    "INTAKE_CONTRACT",
+    "admit_accepted_artifacts",
     "dispatch_research",
     "hang_candidate",
+    "intake_material",
+    "iter_accepted_cycle_receipts",
     "load_book",
     "project_book",
+    "quarantine_fossil_sleeves",
     "reconcile_dispatched_requests",
+    "reconcile_remote_book",
     "record_verified_candidate",
     "record_verified_from_dual_engine_artifact",
     "save_book",

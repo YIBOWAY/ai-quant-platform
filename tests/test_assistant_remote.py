@@ -1,13 +1,18 @@
 import hashlib
+import json
 from pathlib import Path
 
 from quant_system.config.settings import reload_settings
 from quant_system.execution.assistant_remote import (
     AssistantRemoteError,
+    admit_accepted_artifacts,
     dispatch_research,
     hang_candidate,
+    intake_material,
     project_book,
+    quarantine_fossil_sleeves,
     reconcile_dispatched_requests,
+    reconcile_remote_book,
     record_verified_candidate,
     record_verified_from_dual_engine_artifact,
 )
@@ -346,3 +351,146 @@ def test_dual_engine_artifact_backfill_is_verified_and_not_hung(
     book = project_book(settings)
     assert book["verified_count"] == 1
     assert book["hung_count"] == 0
+
+
+def test_intake_fails_closed_without_formula_or_universe(tmp_path, monkeypatch) -> None:
+    settings = _settings(tmp_path, monkeypatch)
+
+    with pytest.raises(AssistantRemoteError) as no_formula:
+        intake_material(
+            settings,
+            note="Reproduce the twenty-day reversal writeup",
+            universe=["SPY", "QQQ"],
+        )
+    assert no_formula.value.code == "intake_formula_required"
+
+    with pytest.raises(AssistantRemoteError) as no_universe:
+        intake_material(
+            settings,
+            note="Reproduce the twenty-day reversal writeup",
+            formula="rank by 20-day return, hold top 1",
+        )
+    assert no_universe.value.code == "candidate_universe_required"
+    assert project_book(settings)["requests"] == []
+
+
+def test_intake_with_formula_and_universe_asks_and_does_not_hang(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = _settings(tmp_path, monkeypatch)
+
+    receipt = intake_material(
+        settings,
+        note="Reproduce the twenty-day reversal writeup",
+        formula="rank by 20-day return, hold top 1",
+        universe=["SPY", "QQQ", "IWM"],
+        hang_if_pass=True,
+    )
+
+    assert receipt["contract"] == "hqa.assistant_remote_intake/v1"
+    assert receipt["hung"] is False
+    assert receipt["candidate_id"] is None
+    assert receipt["hang_if_pass"] is False
+    assert receipt["universe"] == ["SPY", "QQQ", "IWM"]
+    assert "formula: rank by 20-day return, hold top 1" in project_book(settings)["requests"][0]["objective"]
+    assert project_book(settings)["hung_count"] == 0
+
+
+def test_get_book_auto_admits_accepted_cycle_receipt(tmp_path, monkeypatch) -> None:
+    settings = _settings(tmp_path, monkeypatch)
+    path, digest = _write_fixture_factor(tmp_path)
+    job_root = tmp_path / "d34" / "jobs" / "job-accepted-fixture"
+    research_dir = job_root / "research" / "research-fixture"
+    research_dir.mkdir(parents=True)
+    factor_dest = research_dir / "candidate_factor.py"
+    factor_dest.write_bytes(path.read_bytes())
+    rel = "jobs/job-accepted-fixture/research/research-fixture/candidate_factor.py"
+    (job_root / "cycle_receipt.json").write_text(
+        json.dumps(
+            {
+                "contract": "hqa.d34_job_outcome/v1",
+                "phase": "candidate_ready",
+                "comparison_accepted": True,
+                "artifact_id": "artifact-accepted-fixture",
+                "candidate_code_digest": digest,
+                "comparison_digest": "d" * 64,
+                "factor_path": rel,
+                "job_id": "job-accepted-fixture",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (job_root / "research_request.json").write_text(
+        json.dumps(
+            {
+                "objective": "dual-engine accepted fixture for book GET",
+                "universe": ["SPY", "QQQ"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    book = reconcile_remote_book(settings)
+
+    assert book["verified_count"] == 1
+    assert book["hung_count"] == 0
+    candidate = book["candidates"][0]
+    assert candidate["status"] == "verified"
+    assert candidate["sleeve_id"] is None
+    assert candidate["source_digest"] == digest
+    assert candidate["artifact_id"] == "artifact-accepted-fixture"
+    assert admit_accepted_artifacts(settings)[0]["candidate_id"] == candidate["candidate_id"]
+
+
+def test_get_book_does_not_admit_rejected_cycle_receipt(tmp_path, monkeypatch) -> None:
+    settings = _settings(tmp_path, monkeypatch)
+    path, digest = _write_fixture_factor(tmp_path)
+    job_root = tmp_path / "d34" / "jobs" / "job-rejected-fixture"
+    research_dir = job_root / "research" / "research-fixture"
+    research_dir.mkdir(parents=True)
+    (research_dir / "candidate_factor.py").write_bytes(path.read_bytes())
+    (job_root / "cycle_receipt.json").write_text(
+        json.dumps(
+            {
+                "contract": "hqa.d34_job_outcome/v1",
+                "phase": "rejected",
+                "comparison_accepted": False,
+                "artifact_id": "artifact-rejected-fixture",
+                "candidate_code_digest": digest,
+                "comparison_digest": "e" * 64,
+                "factor_path": "jobs/job-rejected-fixture/research/research-fixture/candidate_factor.py",
+                "job_id": "job-rejected-fixture",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (job_root / "research_request.json").write_text(
+        json.dumps({"objective": "rejected should not admit", "universe": ["SPY"]}),
+        encoding="utf-8",
+    )
+
+    book = reconcile_remote_book(settings)
+    assert book["verified_count"] == 0
+    assert book["candidates"] == []
+
+
+def test_quarantine_labels_digestless_preview_seed(tmp_path, monkeypatch) -> None:
+    settings = _settings(tmp_path, monkeypatch)
+    book_path = tmp_path / "assistant_remote" / "book.json"
+    book_path.parent.mkdir(parents=True)
+    book_path.write_text(
+        '{"contract":"hqa.assistant_remote_book/v1","candidates":[{"candidate_id":'
+        '"candidate-preview-unhung","objective":"old demo","status":"hung",'
+        '"source":"preview_seed","artifact_id":null,'
+        '"sleeve_id":"sleeve-1273d32417c8"}],"requests":[]}',
+        encoding="utf-8",
+    )
+
+    labeled = quarantine_fossil_sleeves(settings)
+    book = project_book(settings)
+    assert labeled["labeled_candidates"] == 1
+    assert book["hung_count"] == 0
+    assert book["fossil_count"] == 1
+    assert book["candidates"][0]["fossil"] is True
+    assert book["candidates"][0]["official_observation"] is False

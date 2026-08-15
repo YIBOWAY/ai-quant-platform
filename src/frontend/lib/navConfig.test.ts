@@ -11,6 +11,7 @@ import {
 } from "./navConfig";
 
 const expectedEnabledItemIds: NavItemId[] = [
+  "desk",
   "hermes",
   "brief",
   "dataExplorer",
@@ -89,7 +90,7 @@ describe("buildNavSections", () => {
     const enabled = buildNavSections({ shellEnabled: true }).flatMap(
       (section) => section.items,
     );
-    expect(enabled[0]).toMatchObject({ id: "hermes", href: "/hermes" });
+    expect(enabled[0]).toMatchObject({ id: "desk", href: "/" });
     expect(enabled.some((item) => item.id === "dashboard")).toBe(false);
 
     const rolledBack = buildNavSections({ shellEnabled: false }).flatMap(
@@ -116,6 +117,7 @@ describe("buildNavSections", () => {
   it("keeps exact item routes for every navigation group in both modes", () => {
     const enabled = buildNavSections({ shellEnabled: true });
     expect(itemRoutesFor(enabled, "research")).toEqual([
+      { id: "desk", href: "/" },
       { id: "hermes", href: "/hermes" },
       { id: "brief", href: "/brief" },
       { id: "dataExplorer", href: "/data-explorer" },

@@ -51,6 +51,7 @@ def test_hung_observation_closed_when_authority_is_unknown() -> None:
             "metadata": {
                 "automation_managed": True,
                 "promotion_scope": "paper_only",
+                "source_digest": "a" * 64,
             },
         },
     )()
@@ -75,6 +76,43 @@ def test_manual_sleeve_is_not_hung_eligible() -> None:
         "Sleeve",
         (),
         {"mode": "allocated", "status": "running", "metadata": {}},
+    )()
+
+    assert hung_sleeve_eligible(sleeve) is False
+
+
+def test_preview_seed_sleeve_is_not_hung_eligible() -> None:
+    sleeve = type(
+        "Sleeve",
+        (),
+        {
+            "mode": "allocated",
+            "status": "running",
+            "metadata": {
+                "automation_managed": True,
+                "promotion_scope": "paper_only",
+                "preview_label": "hung_observation_demo",
+                "official_observation": False,
+                "fossil": True,
+            },
+        },
+    )()
+
+    assert hung_sleeve_eligible(sleeve) is False
+
+
+def test_digest_less_automation_sleeve_is_not_hung_eligible() -> None:
+    sleeve = type(
+        "Sleeve",
+        (),
+        {
+            "mode": "allocated",
+            "status": "running",
+            "metadata": {
+                "automation_managed": True,
+                "promotion_scope": "paper_only",
+            },
+        },
     )()
 
     assert hung_sleeve_eligible(sleeve) is False
