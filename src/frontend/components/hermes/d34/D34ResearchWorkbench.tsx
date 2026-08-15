@@ -196,6 +196,7 @@ export function D34ResearchWorkbench({ locale }: { locale: Locale }) {
     () => snapshot?.mandates.find((item) => item.status === "active" || item.status === "paused"),
     [snapshot],
   );
+  const [nowMs] = useState(() => Date.now());
   const askReady = useMemo(() => {
     if (
       activeMandate?.status !== "active" ||
@@ -204,8 +205,8 @@ export function D34ResearchWorkbench({ locale }: { locale: Locale }) {
       return false;
     }
     const expiresAt = Date.parse(activeMandate.expires_at);
-    return Number.isFinite(expiresAt) && expiresAt > Date.now();
-  }, [activeMandate]);
+    return Number.isFinite(expiresAt) && expiresAt > nowMs;
+  }, [activeMandate, nowMs]);
   const trimmedObjective = objective.trim();
   const askAllowed = askReady && trimmedObjective.length >= 8 && trimmedObjective.length <= 4000;
   const exceptions = useMemo(
