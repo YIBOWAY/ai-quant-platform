@@ -53,7 +53,7 @@ type SleeveAction = "pause" | "resume" | "stop";
 const copy = {
   en: {
     title: "Strategy Sleeves",
-    desc: "Strategy cash and lots stay isolated inside the same paper account. Signals are generated here; fills remain manual for this slice.",
+    desc: "Strategy cash and lots stay isolated inside the same paper account. Hung allocated sleeves can fill and record P&L while live stays off.",
     configs: "Configs",
     sleeves: "Sleeves",
     allocated: "Allocated",
@@ -113,15 +113,15 @@ const copy = {
     staleConfig: "config missing",
   },
   zh: {
-    title: "策略袖珍仓",
-    desc: "策略现金与 lot 在同一个模拟账户内分账隔离。本切片只在这里生成信号，成交仍然不会自动发生。",
+    title: "策略仓",
+    desc: "策略现金与 lot 在同一个模拟账户内分账隔离。已挂上的划拨仓可以成交并记盈亏；实盘仍关。",
     configs: "配置",
-    sleeves: "袖珍仓",
+    sleeves: "策略仓",
     allocated: "已划拨",
     manualCash: "账户现金",
     configTitle: "定义策略配置",
-    sleeveTitle: "开设袖珍仓",
-    activeSleeves: "运行中的袖珍仓",
+    sleeveTitle: "开设策略仓",
+    activeSleeves: "运行中的策略仓",
     name: "名称",
     strategy: "策略",
     symbols: "标的",
@@ -133,16 +133,16 @@ const copy = {
     configCreated: "策略配置已创建",
     configFailed: (reason: string) => `配置创建失败${reason ? `：${reason}` : ""}`,
     duplicateConfigName: "已有同名配置。请改名；同一策略参数变更应走版本，不要再建同名配置。",
-    noConfig: "先创建策略配置，再开设袖珍仓。",
+    noConfig: "先创建策略配置，再开设策略仓。",
     config: "配置",
     mode: "模式",
     signalOnly: "仅信号",
     allocatedMode: "划拨现金",
     cash: "现金",
-    openSleeve: "开设袖珍仓",
+    openSleeve: "开设策略仓",
     openingSleeve: "开设中...",
-    sleeveOpened: "袖珍仓已开设",
-    sleeveFailed: (reason: string) => `袖珍仓创建失败${reason ? `：${reason}` : ""}`,
+    sleeveOpened: "策略仓已开设",
+    sleeveFailed: (reason: string) => `策略仓创建失败${reason ? `：${reason}` : ""}`,
     historyDays: "历史天数",
     generateSignal: "生成信号",
     generatingSignal: "生成中...",
@@ -162,7 +162,7 @@ const copy = {
     resume: "恢复",
     stop: "停止",
     actionFailed: (reason: string) => `状态切换失败${reason ? `：${reason}` : ""}`,
-    noSleeves: "还没有袖珍仓。若不想移动现金，先从“仅信号”模式开始。",
+    noSleeves: "还没有策略仓。若不想移动现金，先从“仅信号”模式开始。",
     latestSignal: "最新信号",
     targetWeights: "目标权重",
     noSignal: "尚未生成信号",
@@ -208,7 +208,7 @@ export function PaperStrategySleevesPanel({
   const defaultStrategyId = strategyOptions[0]?.id ?? "cross_sectional_top_n";
   const [strategyId, setStrategyId] = useState(defaultStrategyId);
   const [configName, setConfigName] = useState(
-    locale === "zh" ? "动量袖珍仓配置" : "Momentum sleeve config",
+    locale === "zh" ? "动量策略仓配置" : "Momentum sleeve config",
   );
   const [symbols, setSymbols] = useState("SPY,QQQ,IWM,DIA");
   const [lookback, setLookback] = useState(20);

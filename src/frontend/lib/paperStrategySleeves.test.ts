@@ -41,15 +41,15 @@ function config(
 describe("paper strategy sleeve UI helpers", () => {
   it("keeps duplicate config option labels distinguishable", () => {
     const configs = [
-      config("strategy-config-aaa111bbb222", "动量袖珍仓配置"),
-      config("strategy-config-ccc333ddd444", "动量袖珍仓配置"),
+      config("strategy-config-aaa111bbb222", "动量策略仓配置"),
+      config("strategy-config-ccc333ddd444", "动量策略仓配置"),
     ];
 
     expect(formatStrategyConfigOptionLabel(configs[0], configs)).toBe(
-      "动量袖珍仓配置 v1 · aaa111",
+      "动量策略仓配置 v1 · aaa111",
     );
     expect(formatStrategyConfigOptionLabel(configs[1], configs)).toBe(
-      "动量袖珍仓配置 v1 · ccc333",
+      "动量策略仓配置 v1 · ccc333",
     );
   });
 
@@ -61,12 +61,12 @@ describe("paper strategy sleeve UI helpers", () => {
 
   it("suggests the next readable config name after creation", () => {
     const configs = [
-      config("strategy-config-aaa111bbb222", "动量袖珍仓配置"),
-      config("strategy-config-ccc333ddd444", "动量袖珍仓配置 2"),
+      config("strategy-config-aaa111bbb222", "动量策略仓配置"),
+      config("strategy-config-ccc333ddd444", "动量策略仓配置 2"),
     ];
 
-    expect(suggestNextStrategyConfigName("动量袖珍仓配置", configs)).toBe(
-      "动量袖珍仓配置 3",
+    expect(suggestNextStrategyConfigName("动量策略仓配置", configs)).toBe(
+      "动量策略仓配置 3",
     );
   });
 });

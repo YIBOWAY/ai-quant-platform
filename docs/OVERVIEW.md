@@ -76,7 +76,7 @@ Hermes 与 AI 研究工作流：
   authority，不进入 PostgreSQL 或 `/act`。
 - 论文入队机和双引擎研究作业（代码里仍叫 D-33/D-34）是研究账的两个来源，不是两套产品。
   现行计划：HQA `docs/plans/2026-08-13-personal-quant-assistant.md`。新研究按需入队；
-  已登记策略才每天在模拟盘跑。`paper_only` 进不了 live registry。
+  已挂上的策略才每天在模拟盘跑。`paper_only` 进不了 live registry。
 - 新 managed Session 的 composer 只有在 local flags、owner/CSRF、migration 028
   readiness、effective paper safety、Keychain、candidate/release 与 connector
   liveness 全通过时打开。External/history session 不原地写入。

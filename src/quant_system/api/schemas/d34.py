@@ -65,6 +65,23 @@ class D34MandateRenewRequest(D34MandateTransitionRequest):
     duration_days: int = Field(default=30, ge=1, le=365)
 
 
+class D34ResearchAskRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    workspace_id: str = Field(default="default", min_length=1, max_length=128)
+    objective: str = Field(min_length=8, max_length=4000)
+    hang_if_pass: bool = False
+
+
+class D34ResearchAskResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    contract: str = Field(pattern=r"^hqa\.d34_research_request/v1$")
+    status: str
+    code: str
+    job_key: str | None = None
+
+
 class D34ExperimentJobResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

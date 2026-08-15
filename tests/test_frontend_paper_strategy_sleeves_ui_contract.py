@@ -34,6 +34,7 @@ def test_paper_trading_page_mounts_strategy_sleeves_workspace() -> None:
     page = PAPER_TRADING_PAGE.read_text(encoding="utf-8")
 
     assert "PaperStrategySleevesPanel" in page
+    assert "AssistantRemotePanel" in page
     assert "getPaperStrategyConfigs()" in page
     assert "getPaperStrategySleeves()" in page
     assert "getPaperStrategySleeveDetail" in page
@@ -48,16 +49,16 @@ def test_paper_trading_page_fetches_details_for_all_strategy_sleeves() -> None:
     assert ".slice(0, 6)" not in page
 
 
-def test_strategy_sleeves_panel_is_signal_first_without_auto_fill_language() -> None:
+def test_strategy_sleeves_panel_says_hung_sleeves_can_fill() -> None:
     panel = SLEEVES_PANEL.read_text(encoding="utf-8")
 
-    assert "Signals are generated here; fills remain manual" in panel
-    assert "成交仍然不会自动发生" in panel
+    assert "Hung allocated sleeves can fill and record P&L" in panel
+    assert "已挂上的划拨仓可以成交并记盈亏" in panel
     assert 'apiPost<PaperStrategySignalMutationResponse>' in panel
     assert '"/api/paper/strategy-sleeves"' in panel
     assert "allocated_cash: mode === \"allocated\" ? allocatedCash : 0" in panel
-    assert "auto-fill" not in panel.lower()
-    assert "automatic execution" not in panel.lower()
+    assert "fills remain manual" not in panel
+    assert "成交仍然不会自动发生" not in panel
 
 
 def test_strategy_sleeves_panel_processes_due_pending_execution_not_latest_only() -> None:
@@ -80,9 +81,9 @@ def test_legacy_rebalance_is_labeled_as_full_account_advanced_path() -> None:
     trade_panel = ACCOUNT_TRADE_PANEL.read_text(encoding="utf-8")
 
     assert "Advanced: Full-Account Rebalance (not a sleeve)" in trade_panel
-    assert "高级：全账户再平衡（非袖珍仓）" in trade_panel
+    assert "高级：全账户再平衡（非策略仓）" in trade_panel
     assert '"/api/paper/account/rebalance"' in trade_panel
     assert "Strategy Sleeves use the separate signal panel" in trade_panel
-    assert "策略袖珍仓请使用独立信号面板" in trade_panel
+    assert "策略仓请使用独立信号面板" in trade_panel
     assert "not a liquidation button or a new sleeve" in trade_panel
-    assert "它不是清仓按钮，也不是新建袖珍仓" in trade_panel
+    assert "它不是清仓按钮，也不是新建策略仓" in trade_panel

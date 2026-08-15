@@ -52,8 +52,8 @@ const notoSerifSC = localFont({
 });
 
 export const metadata: Metadata = {
-  title: 'QUANTUM_CORE',
-  description: 'AI Quant Platform',
+  title: '值班 · 研究 · 模拟 · 个人量化助手',
+  description: '本地个人量化助手：值班、研究、模拟三本账',
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {

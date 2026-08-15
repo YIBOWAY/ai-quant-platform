@@ -16,6 +16,7 @@ from quant_system.api.bootstrap import build_services
 from quant_system.api.routes import (
     agent,
     asia_radar,
+    assistant_remote,
     backtest,
     benchmark,
     brief,
@@ -477,6 +478,7 @@ def create_app(
     app.include_router(benchmark.router, prefix="/api", tags=["benchmark"])
     app.include_router(experiments.router, prefix="/api", tags=["experiments"])
     app.include_router(paper.router, prefix="/api", tags=["paper"])
+    app.include_router(assistant_remote.router, prefix="/api", tags=["assistant-remote"])
     app.include_router(agent.router, prefix="/api", tags=["agent"])
     app.include_router(brief.router, prefix="/api", tags=["brief"])
     app.include_router(prediction_market.router, prefix="/api", tags=["prediction-market"])

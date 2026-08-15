@@ -11,6 +11,7 @@ import {
 } from "./navConfig";
 
 const expectedEnabledItemIds: NavItemId[] = [
+  "desk",
   "hermes",
   "brief",
   "dataExplorer",
@@ -89,7 +90,7 @@ describe("buildNavSections", () => {
     const enabled = buildNavSections({ shellEnabled: true }).flatMap(
       (section) => section.items,
     );
-    expect(enabled[0]).toMatchObject({ id: "hermes", href: "/hermes" });
+    expect(enabled[0]).toMatchObject({ id: "desk", href: "/" });
     expect(enabled.some((item) => item.id === "dashboard")).toBe(false);
 
     const rolledBack = buildNavSections({ shellEnabled: false }).flatMap(
@@ -116,6 +117,7 @@ describe("buildNavSections", () => {
   it("keeps exact item routes for every navigation group in both modes", () => {
     const enabled = buildNavSections({ shellEnabled: true });
     expect(itemRoutesFor(enabled, "research")).toEqual([
+      { id: "desk", href: "/" },
       { id: "hermes", href: "/hermes" },
       { id: "brief", href: "/brief" },
       { id: "dataExplorer", href: "/data-explorer" },
@@ -158,7 +160,7 @@ describe("buildNavSections", () => {
       expect(itemRoutesFor(sections, "system")).toEqual([
         { id: "settings", href: "/settings" },
         { id: "docs", href: "/docs/reversal-momentum" },
-        { id: "support", href: "/settings" },
+        { id: "support", href: "/docs/reversal-momentum" },
       ]);
     }
   });
@@ -207,10 +209,10 @@ describe("buildNavSections", () => {
     expect(sidebarRoutes).not.toContain("/docs/reversal-momentum");
     expect(sidebarRoutes.filter((href) => href === "/settings")).toHaveLength(1);
     expect(mobileRoutes).toContain("/docs/reversal-momentum");
-    expect(mobileRoutes.filter((href) => href === "/settings")).toHaveLength(2);
+    expect(mobileRoutes.filter((href) => href === "/settings")).toHaveLength(1);
   });
 
-  it("marks docs and support as mobile-only", () => {
+  it("keeps docs mobile-only and hides the duplicate help entry", () => {
     const system = buildNavSections({ shellEnabled: true }).find(
       (section) => section.id === "system",
     );
@@ -218,11 +220,11 @@ describe("buildNavSections", () => {
     const support = system?.items.find((item) => item.id === "support");
 
     expect(docs?.surfaces).toEqual(["mobile"]);
-    expect(support?.surfaces).toEqual(["mobile"]);
+    expect(support?.surfaces).toEqual([]);
     expect(docs && isVisibleOnSurface(docs, "sidebar")).toBe(false);
     expect(support && isVisibleOnSurface(support, "sidebar")).toBe(false);
     expect(docs && isVisibleOnSurface(docs, "mobile")).toBe(true);
-    expect(support && isVisibleOnSurface(support, "mobile")).toBe(true);
+    expect(support && isVisibleOnSurface(support, "mobile")).toBe(false);
   });
 
   it("provides id, href, and icon for every navigation item", () => {

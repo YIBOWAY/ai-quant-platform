@@ -57,7 +57,25 @@ function formatQuantity(value: number) {
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 6 }).format(value);
 }
 
-function StatusPill({ value }: { value: string }) {
+function statusLabel(value: string, isZh: boolean): string {
+  if (!isZh) return value;
+  const labels: Record<string, string> = {
+    active: "进行中",
+    running: "运行中",
+    succeeded: "已完成",
+    qualified: "已合格",
+    canary_active: "金丝雀生效",
+    paused: "已暂停",
+    queued: "排队",
+    leased: "占用中",
+    outcome_unknown: "结果未知",
+    rejected: "已拒绝",
+    cancelled: "已取消",
+  };
+  return labels[value] ?? value;
+}
+
+function StatusPill({ value, isZh }: { value: string; isZh: boolean }) {
   const positive = ["active", "running", "succeeded", "qualified", "canary_active"].includes(
     value,
   );
@@ -66,13 +84,13 @@ function StatusPill({ value }: { value: string }) {
     <span
       className={`rounded-full px-2 py-1 font-data-mono text-[11px] ${
         positive
-          ? "bg-success/10 text-success"
+          ? "bg-accent-success/10 text-accent-success"
           : warning
             ? "bg-warning/10 text-warning"
             : "bg-danger/10 text-danger"
       }`}
     >
-      {value}
+      {statusLabel(value, isZh)}
     </span>
   );
 }
@@ -86,6 +104,14 @@ export function D34ResearchWorkbench({ locale }: { locale: Locale }) {
   const [error, setError] = useState<string | null>(null);
   const [universe, setUniverse] = useState("SPY, QQQ, IWM, DIA");
   const [budget, setBudget] = useState("100.00");
+  const [objective, setObjective] = useState("");
+  const [hangIfPass, setHangIfPass] = useState(false);
+  const [consoleOpen, setConsoleOpen] = useState<boolean | undefined>(undefined);
+  const [lastAsk, setLastAsk] = useState<{
+    job_key?: string | null;
+    status?: string;
+    code?: string;
+  } | null>(null);
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -170,6 +196,13 @@ export function D34ResearchWorkbench({ locale }: { locale: Locale }) {
     () => snapshot?.mandates.find((item) => item.status === "active" || item.status === "paused"),
     [snapshot],
   );
+  const askReady =
+    activeMandate?.status === "active" &&
+    activeMandate.paper_execution_allowed === true &&
+    Number.isFinite(Date.parse(activeMandate.expires_at)) &&
+    Date.parse(activeMandate.expires_at) > Date.now();
+  const trimmedObjective = objective.trim();
+  const askAllowed = askReady && trimmedObjective.length >= 8 && trimmedObjective.length <= 4000;
   const exceptions = useMemo(
     () =>
       snapshot?.jobs.filter((job) =>
@@ -211,14 +244,16 @@ export function D34ResearchWorkbench({ locale }: { locale: Locale }) {
       />
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="font-label-caps text-text-secondary">D-34 · autonomous paper research</p>
+          <p className="font-label-caps text-text-secondary">
+            {isZh ? "D-34 · 双引擎纸面研究" : "D-34 · on-demand paper research"}
+          </p>
           <h2 className="mt-1 font-headline-lg text-text-primary" id="d34-workbench-title">
-            {isZh ? "Mandate 驱动的双引擎研究" : "Mandate-driven dual-engine research"}
+            {isZh ? "按需双引擎纸面研究" : "On-demand dual-engine paper research"}
           </h2>
           <p className="mt-2 max-w-3xl text-sm text-text-secondary">
             {isZh
-              ? "论文假设与 Qlib 迭代在 Docker 中运行，Platform 独立重放；通过确定性政策后只进入低额度 paper canary。live 始终关闭。"
-              : "RD-Agent/Qlib research runs in Docker and Platform independently replays execution. Qualified artifacts can enter low-allocation paper canaries only; live stays off."}
+              ? "你提出研究需求后才会入队。双引擎通过只进已验证候选，不等于挂上。要进每天跑，须另说挂上，或这次写明过了就挂。试运行仓是小额模拟观察，live 始终关闭。"
+              : "Nothing is queued until you ask. Dual-engine pass becomes a verified candidate, not a hung sleeve. Daily book needs an explicit hang, or this ask must say hang-if-pass. Live stays off."}
           </p>
         </div>
         <button
@@ -241,16 +276,26 @@ export function D34ResearchWorkbench({ locale }: { locale: Locale }) {
         <>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <div className={card}>
-              <p className="font-label-caps text-text-secondary">paper authority</p>
+              <p className="font-label-caps text-text-secondary">
+                {isZh ? "纸面权限" : "paper authority"}
+              </p>
               <p className="mt-2 text-2xl font-semibold text-text-primary">
-                {snapshot.safety.paper_execution_enabled ? "READY" : "BLOCKED"}
+                {snapshot.safety.paper_execution_enabled
+                  ? isZh
+                    ? "就绪"
+                    : "READY"
+                  : isZh
+                    ? "受阻"
+                    : "BLOCKED"}
               </p>
               <p className="mt-1 text-xs text-text-secondary">
-                live = {String(snapshot.safety.live_execution_enabled)}
+                {isZh ? "实盘" : "live"} = {String(snapshot.safety.live_execution_enabled)}
               </p>
             </div>
             <div className={card}>
-              <p className="font-label-caps text-text-secondary">research jobs</p>
+              <p className="font-label-caps text-text-secondary">
+                {isZh ? "研究任务" : "research jobs"}
+              </p>
               <p className="mt-2 text-2xl font-semibold text-text-primary">
                 {snapshot.safety.d34.running_jobs} / {snapshot.safety.d34.queued_jobs}
               </p>
@@ -259,21 +304,28 @@ export function D34ResearchWorkbench({ locale }: { locale: Locale }) {
               </p>
             </div>
             <div className={card}>
-              <p className="font-label-caps text-text-secondary">LLM budget</p>
+              <p className="font-label-caps text-text-secondary">
+                {isZh ? "LLM 预算" : "LLM budget"}
+              </p>
               <p className="mt-2 text-2xl font-semibold text-text-primary">
-                ${snapshot.safety.budget.remaining_usd ?? "—"}
+                {snapshot.safety.budget.remaining_usd == null
+                  ? "—"
+                  : formatMoney(snapshot.safety.budget.remaining_usd)}
               </p>
               <p className="mt-1 text-xs text-text-secondary">
-                {isZh ? "本 Mandate 剩余" : "remaining this Mandate"}
+                {isZh ? "本授权剩余" : "remaining this Mandate"}
               </p>
             </div>
             <div className={card}>
-              <p className="font-label-caps text-text-secondary">paper canaries</p>
+              <p className="font-label-caps text-text-secondary">
+                {isZh ? "纸面试运行仓" : "paper trial sleeves"}
+              </p>
               <p className="mt-2 text-2xl font-semibold text-text-primary">
                 {snapshot.safety.canaries.active_count}
               </p>
               <p className="mt-1 text-xs text-text-secondary">
-                ${snapshot.safety.canaries.allocated_cash} allocated
+                {formatMoney(snapshot.safety.canaries.allocated_cash)}{" "}
+                {isZh ? "已划拨" : "allocated"}
               </p>
             </div>
           </div>
@@ -293,7 +345,7 @@ export function D34ResearchWorkbench({ locale }: { locale: Locale }) {
               <span
                 className={`rounded-full px-2 py-1 font-data-mono text-[11px] ${
                   snapshot.safety.soak.time_gate_ready
-                    ? "bg-success/10 text-success"
+                    ? "bg-accent-success/10 text-accent-success"
                     : "bg-warning/10 text-warning"
                 }`}
               >
@@ -308,7 +360,7 @@ export function D34ResearchWorkbench({ locale }: { locale: Locale }) {
             </div>
             <div className="mt-3 grid gap-3 sm:grid-cols-3">
               <p className="rounded-[var(--radius-card)] bg-bg-base p-3 text-sm text-text-primary">
-                {isZh ? "完整自动周期" : "Complete automatic cycles"}{" "}
+                {isZh ? "完整研究周期" : "Complete research cycles"}{" "}
                 <span className="font-data-mono">
                   {snapshot.safety.soak.completed_cycles} / {snapshot.safety.soak.required_completed_cycles}
                 </span>
@@ -348,9 +400,159 @@ export function D34ResearchWorkbench({ locale }: { locale: Locale }) {
             ) : null}
           </div>
 
+          {activeMandate ? (
+            <div className={card}>
+              <h3 className="font-headline-sm text-text-primary">
+                {isZh ? "提出研究" : "Ask for research"}
+              </h3>
+              <p className="mt-1 text-sm text-text-secondary">
+                {isZh
+                  ? "派研究默认只到已验证候选。要进每天跑，须另说「挂上」，或这次写明「过了就挂」。"
+                  : "Dispatch stops at a verified candidate. Daily book needs a separate hang, or this ask must say hang-if-pass."}
+              </p>
+              {askReady ? (
+                <form
+                  className="mt-3 space-y-2"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    if (!askAllowed) return;
+                    void (async () => {
+                      setBusy("ask-research");
+                      setError(null);
+                      try {
+                        const result = await ownerPostJson<{
+                          job_key?: string | null;
+                          status?: string;
+                          code?: string;
+                        }>("/api/hermes/research/requests", {
+                          workspace_id: "default",
+                          objective: trimmedObjective,
+                          hang_if_pass: hangIfPass,
+                        });
+                        setLastAsk({
+                          job_key: result.job_key,
+                          status: result.status,
+                          code: result.code,
+                        });
+                        setObjective("");
+                        setHangIfPass(false);
+                        await refresh();
+                      } catch (cause) {
+                        setError(
+                          cause instanceof WorkspaceClientError
+                            ? `${cause.code ? `[${cause.code}] ` : ""}${cause.message}`
+                            : cause instanceof Error
+                              ? cause.message
+                              : "D-34 mutation failed",
+                        );
+                      } finally {
+                        setBusy(null);
+                      }
+                    })();
+                  }}
+                >
+                  <label className="block text-sm text-text-secondary">
+                    {isZh ? "研究需求（你不提就不跑）" : "Research ask (nothing runs until you ask)"}
+                    <textarea
+                      className="app-touch-target mt-1 min-h-20 w-full rounded-[var(--radius-card)] border border-border-subtle bg-bg-base px-3 py-2 text-text-primary"
+                      maxLength={4000}
+                      minLength={8}
+                      name="objective"
+                      onChange={(event) => setObjective(event.target.value)}
+                      placeholder={
+                        isZh
+                          ? "例如：找一个二十日反转，并说明为什么比上次好"
+                          : "e.g. Find a 20-day reversal and say why it beats the last receipt"
+                      }
+                      required
+                      value={objective}
+                    />
+                  </label>
+                  <label className="flex items-start gap-2 text-sm text-text-secondary">
+                    <input
+                      checked={hangIfPass}
+                      onChange={(event) => setHangIfPass(event.target.checked)}
+                      type="checkbox"
+                    />
+                    <span>
+                      {isZh ? "过了就挂（仅本次）" : "Hang if it passes (this ask only)"}
+                    </span>
+                  </label>
+                  <button className={button} disabled={busy !== null || !askAllowed} type="submit">
+                    {isZh ? "派研究" : "Dispatch research"}
+                  </button>
+                </form>
+              ) : (
+                <p className="mt-3 text-sm text-warning">
+                  {isZh
+                    ? "先恢复或续期进行中的 Mandate，才能提出研究。"
+                    : "Resume or renew the active Mandate before asking for research."}
+                </p>
+              )}
+              {lastAsk?.job_key ? (
+                <p className="mt-3 font-data-mono text-xs text-text-secondary">
+                  {lastAsk.status ?? "queued"} · {lastAsk.code ?? "d34_research_requested"} ·{" "}
+                  {lastAsk.job_key}
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <div className={card}>
+              <h3 className="font-headline-sm text-text-primary">
+                {isZh ? "先建研究信封" : "Create the research envelope"}
+              </h3>
+              <p className="mt-1 text-sm text-text-secondary">
+                {isZh
+                  ? "没有 Mandate 就不会入队。先建 30 天纸面信封，再提出研究。"
+                  : "Nothing queues without a Mandate. Create the 30-day paper envelope, then ask."}
+              </p>
+              <form className="mt-3 space-y-3" onSubmit={createMandate}>
+                <label className="block text-sm text-text-secondary">
+                  Universe
+                  <input
+                    className="app-touch-target mt-1 w-full rounded-[var(--radius-card)] border border-border-subtle bg-bg-base px-3 py-2 text-text-primary"
+                    onChange={(event) => setUniverse(event.target.value)}
+                    required
+                    value={universe}
+                  />
+                </label>
+                <label className="block text-sm text-text-secondary">
+                  {isZh ? "LLM 预算（美元）" : "LLM budget (USD)"}
+                  <input
+                    className="app-touch-target mt-1 w-full rounded-[var(--radius-card)] border border-border-subtle bg-bg-base px-3 py-2 text-text-primary"
+                    min="1"
+                    onChange={(event) => setBudget(event.target.value)}
+                    required
+                    step="0.01"
+                    type="number"
+                    value={budget}
+                  />
+                </label>
+                <button className={button} disabled={busy !== null} type="submit">
+                  {isZh ? "创建 30 天 Mandate 并允许 paper" : "Create 30-day paper Mandate"}
+                </button>
+              </form>
+            </div>
+          )}
+
+          <details
+            className="group rounded-[var(--radius-card)] border border-border-subtle bg-bg-surface"
+            onToggle={(event) => setConsoleOpen(event.currentTarget.open)}
+            open={consoleOpen ?? exceptions.length > 0}
+          >
+            <summary className="app-touch-target cursor-pointer list-none px-4 py-3 font-body-sm text-text-primary marker:hidden">
+              {isZh
+                ? exceptions.length
+                  ? `展开操作台 · ${exceptions.length} 条异常待处理`
+                  : "展开操作台（限额、授权、任务、金丝雀）"
+                : exceptions.length
+                  ? `Open console · ${exceptions.length} exceptions`
+                  : "Open operator console (limits, mandate, jobs, canaries)"}
+            </summary>
+            <div className="flex flex-col gap-4 border-t border-border-subtle p-4">
           <div className={card}>
             <h3 className="font-headline-sm text-text-primary">
-              {isZh ? "Paper 风险限额" : "Paper risk limits"}
+              {isZh ? "纸面风险限额" : "Paper risk limits"}
             </h3>
             <div className="mt-3 grid gap-2 text-sm text-text-secondary sm:grid-cols-2 xl:grid-cols-4">
               <p>
@@ -375,7 +577,9 @@ export function D34ResearchWorkbench({ locale }: { locale: Locale }) {
           <div className={`${card} border-danger/30`}>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h3 className="font-headline-sm text-text-primary">Emergency stop</h3>
+                <h3 className="font-headline-sm text-text-primary">
+                  {isZh ? "紧急停止" : "Emergency stop"}
+                </h3>
                 <p className="mt-1 text-sm text-text-secondary">
                   {isZh
                     ? "立即阻止新研究与新 paper 订单；不会伪造平仓。"
@@ -415,8 +619,10 @@ export function D34ResearchWorkbench({ locale }: { locale: Locale }) {
           <div className="grid gap-4 xl:grid-cols-2">
             <div className={card}>
               <div className="flex items-center justify-between gap-3">
-                <h3 className="font-headline-sm text-text-primary">Mandate</h3>
-                {activeMandate ? <StatusPill value={activeMandate.status} /> : null}
+                <h3 className="font-headline-sm text-text-primary">
+                  {isZh ? "研究授权" : "Mandate"}
+                </h3>
+                {activeMandate ? <StatusPill isZh={isZh} value={activeMandate.status} /> : null}
               </div>
               {activeMandate ? (
                 <div className="mt-3 space-y-3 text-sm">
@@ -489,32 +695,11 @@ export function D34ResearchWorkbench({ locale }: { locale: Locale }) {
                   </div>
                 </div>
               ) : (
-                <form className="mt-3 space-y-3" onSubmit={createMandate}>
-                  <label className="block text-sm text-text-secondary">
-                    Universe
-                    <input
-                      className="app-touch-target mt-1 w-full rounded-[var(--radius-card)] border border-border-subtle bg-bg-base px-3 py-2 text-text-primary"
-                      onChange={(event) => setUniverse(event.target.value)}
-                      required
-                      value={universe}
-                    />
-                  </label>
-                  <label className="block text-sm text-text-secondary">
-                    {isZh ? "LLM 预算（美元）" : "LLM budget (USD)"}
-                    <input
-                      className="app-touch-target mt-1 w-full rounded-[var(--radius-card)] border border-border-subtle bg-bg-base px-3 py-2 text-text-primary"
-                      min="1"
-                      onChange={(event) => setBudget(event.target.value)}
-                      required
-                      step="0.01"
-                      type="number"
-                      value={budget}
-                    />
-                  </label>
-                  <button className={button} disabled={busy !== null} type="submit">
-                    {isZh ? "创建 30 天 Mandate 并允许 paper" : "Create 30-day paper Mandate"}
-                  </button>
-                </form>
+                <p className="mt-3 text-sm text-text-secondary">
+                  {isZh
+                    ? "创建 Mandate 的入口在上方，不藏在操作台里。"
+                    : "Create the Mandate in the card above, not inside this console."}
+                </p>
               )}
             </div>
 
@@ -534,7 +719,7 @@ export function D34ResearchWorkbench({ locale }: { locale: Locale }) {
                       <span className="font-data-mono text-xs text-text-secondary" title={job.job_id}>
                         {short(job.job_id)} · {job.outcome_code ?? "no outcome"}
                       </span>
-                      <StatusPill value={job.state} />
+                      <StatusPill isZh={isZh} value={job.state} />
                     </li>
                   ))}
                 </ul>
@@ -547,7 +732,9 @@ export function D34ResearchWorkbench({ locale }: { locale: Locale }) {
           </div>
 
           <div className={card}>
-            <h3 className="font-headline-sm text-text-primary">Research jobs</h3>
+            <h3 className="font-headline-sm text-text-primary">
+              {isZh ? "研究任务" : "Research jobs"}
+            </h3>
             <div className="mt-3 grid gap-2">
               {snapshot.jobs.slice(0, 8).map((job) => (
                 <div className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-card)] bg-bg-base p-3" key={job.job_id}>
@@ -556,19 +743,25 @@ export function D34ResearchWorkbench({ locale }: { locale: Locale }) {
                       {short(job.job_id)}
                     </p>
                     <p className="mt-1 text-xs text-text-secondary">
-                      {job.job_key} · attempts {job.attempt_count}/{job.max_attempts} · ${job.budget_spent_usd}
+                      {job.job_key} · attempts {job.attempt_count}/{job.max_attempts} · {formatMoney(job.budget_spent_usd)}
                     </p>
                   </div>
-                  <StatusPill value={job.state} />
+                  <StatusPill isZh={isZh} value={job.state} />
                 </div>
               ))}
-              {!snapshot.jobs.length ? <p className="text-sm text-text-secondary">No jobs yet.</p> : null}
+              {!snapshot.jobs.length ? (
+                <p className="text-sm text-text-secondary">
+                  {isZh ? "还没有研究任务。" : "No jobs yet."}
+                </p>
+              ) : null}
             </div>
           </div>
 
           <div className="grid gap-4 xl:grid-cols-2">
             <div className={card}>
-              <h3 className="font-headline-sm text-text-primary">Artifact Registry</h3>
+              <h3 className="font-headline-sm text-text-primary">
+                {isZh ? "产物登记" : "Artifact Registry"}
+              </h3>
               <div className="mt-3 space-y-2">
                 {snapshot.artifacts.slice(0, 8).map((artifact) => (
                   <div className="rounded-[var(--radius-card)] bg-bg-base p-3" key={artifact.artifact_id}>
@@ -576,7 +769,7 @@ export function D34ResearchWorkbench({ locale }: { locale: Locale }) {
                       <p className="font-data-mono text-xs text-text-primary" title={artifact.artifact_id}>
                         {short(artifact.artifact_id)}
                       </p>
-                      <StatusPill value={artifact.status} />
+                      <StatusPill isZh={isZh} value={artifact.status} />
                     </div>
                     <p className="mt-2 font-data-mono text-[11px] text-text-secondary" title={artifact.comparison_digest}>
                       comparison {short(artifact.comparison_digest)} · {artifact.qualification_scope}
@@ -601,7 +794,9 @@ export function D34ResearchWorkbench({ locale }: { locale: Locale }) {
 
             <div className={card}>
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="font-headline-sm text-text-primary">Paper canaries</h3>
+                <h3 className="font-headline-sm text-text-primary">
+                  {isZh ? "纸面试运行仓" : "Paper trial sleeves"}
+                </h3>
                 <button
                   className={`${button} text-danger`}
                   disabled={busy !== null || !snapshot.canaries.some((item) => ["running", "paused", "provisioning"].includes(item.status))}
@@ -623,7 +818,7 @@ export function D34ResearchWorkbench({ locale }: { locale: Locale }) {
                       <p className="font-data-mono text-xs text-text-primary" title={canary.canary_id}>
                         {short(canary.canary_id)} · ${canary.allocated_cash}
                       </p>
-                      <StatusPill value={canary.status} />
+                      <StatusPill isZh={isZh} value={canary.status} />
                     </div>
                     <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-text-secondary">
                       <span>P&amp;L {formatMoney(canary.daily_pnl, true)}</span>
@@ -686,19 +881,27 @@ export function D34ResearchWorkbench({ locale }: { locale: Locale }) {
                           }
                           type="button"
                         >
-                          demote · hold
+                          {isZh ? "降级并持有" : "demote · hold"}
                         </button>
                       </div>
                     ) : null}
                   </div>
                 ))}
-                {!snapshot.canaries.length ? <p className="text-sm text-text-secondary">No canaries yet.</p> : null}
+                {!snapshot.canaries.length ? (
+                  <p className="text-sm text-text-secondary">
+                    {isZh ? "还没有金丝雀。" : "No canaries yet."}
+                  </p>
+                ) : null}
               </div>
             </div>
           </div>
+            </div>
+          </details>
         </>
       ) : ownerReady && !loading ? (
-        <p className="text-sm text-text-secondary">D-34 data is unavailable.</p>
+        <p className="text-sm text-text-secondary">
+          {isZh ? "D-34 数据暂不可用。" : "D-34 data is unavailable."}
+        </p>
       ) : null}
     </section>
   );

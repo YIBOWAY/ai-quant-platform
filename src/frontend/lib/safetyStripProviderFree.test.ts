@@ -21,6 +21,8 @@ describe("SafetyBadge provider-free SSR authority", () => {
     expect(source).toContain("paperSafety.effective");
     expect(source).toContain("paperSafety.canonical_account_frozen");
     expect(source).toContain("paperSafety.current_paper_authority_epoch");
+    expect(source).toContain("paper_observation_enabled");
+    expect(source).toContain("candidate admission");
   });
 
   it("caches both provider-free safety getters on the server", () => {

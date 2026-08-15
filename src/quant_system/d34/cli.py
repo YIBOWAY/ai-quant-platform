@@ -8,6 +8,7 @@ import stat
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
+from zoneinfo import ZoneInfo
 
 import typer
 
@@ -26,6 +27,7 @@ from quant_system.d34.research_routing import (
     D34ResearchRoutingAuthority,
     project_research_routing,
 )
+from quant_system.d34.research_request import enqueue_owner_research_request
 from quant_system.d34.worker import D34CycleWorker, D34WorkerConfig
 from quant_system.data.provider_factory import build_ohlcv_provider
 from quant_system.execution.account_repository_factory import (
@@ -414,6 +416,66 @@ def preflight(
         )
         raise typer.Exit(code=1) from exc
     typer.echo(json.dumps(receipt.to_public_dict(), sort_keys=True))
+
+
+@d34_app.command("request-research")
+def request_research(
+    objective: Annotated[
+        str,
+        typer.Option("--objective", help="Owner research ask. Nothing is queued without this."),
+    ],
+    workspace_id: Annotated[str, typer.Option("--workspace-id")] = "default",
+    hang_if_pass: Annotated[
+        bool,
+        typer.Option(
+            "--hang-if-pass",
+            help="Only then hang a passing dual-engine artifact onto the daily book.",
+        ),
+    ] = False,
+) -> None:
+    settings = load_settings()
+    try:
+        mandate = PostgresMandateAuthority(settings).get_active(workspace_id=workspace_id)
+        if (
+            mandate is None
+            or mandate.status != "active"
+            or mandate.expires_at <= datetime.now(UTC)
+            or mandate.paper_execution_allowed is not True
+        ):
+            raise ValueError("no_active_mandate")
+        job_key = enqueue_owner_research_request(
+            jobs=PostgresJobAuthority(settings),
+            mandate=mandate,
+            workspace_id=workspace_id,
+            objective=objective,
+            cycle_date=datetime.now(ZoneInfo("Asia/Shanghai")).date(),
+            hang_if_pass=hang_if_pass,
+        )
+    except Exception as exc:  # noqa: BLE001 - CLI boundary
+        typer.echo(
+            json.dumps(
+                {
+                    "contract": "hqa.d34_worker_result/v1",
+                    "status": "failed",
+                    "code": str(getattr(exc, "code", type(exc).__name__)),
+                    "message": str(exc),
+                },
+                sort_keys=True,
+            )
+        )
+        raise typer.Exit(code=1) from exc
+    typer.echo(
+        json.dumps(
+            {
+                "contract": "hqa.d34_worker_result/v1",
+                "status": "queued",
+                "code": "d34_research_requested",
+                "job_key": job_key,
+            },
+            default=str,
+            sort_keys=True,
+        )
+    )
 
 
 @d34_app.command("worker-once")

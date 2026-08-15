@@ -38,10 +38,12 @@
   --color-text-mono: #D8D1C4;
 
   --color-accent-success: #089981;   /* trading gain / genuine success */
+  --color-success: #089981;          /* alias used by status pills */
   --color-accent-danger: #F23645;    /* loss / error: pairs with accent-success */
   --color-warning: #F0B90B;
   --color-danger: #F23645;
   --color-info: #5EA2FF;
+  --color-border-strong: #5EA2FF;
 
   /* ---- Compat aliases (legacy class names -> canonical palette) ----
      Kept so `bg-base`, `bg-surface`, `bg-surface-muted`, `text-primary`,
@@ -113,6 +115,7 @@
   --font-code-sm: var(--font-mono, 'JetBrains Mono'), monospace;
   --font-body-md: var(--font-sans, 'Inter'), sans-serif;
   --font-headline-lg: var(--font-sans, 'Inter'), sans-serif;
+  --font-headline-sm: var(--font-sans, 'Inter'), sans-serif;
   --font-editorial-serif: var(--font-serif), var(--font-serif-sc), Georgia, 'Songti SC', serif;
 }
 
@@ -174,6 +177,12 @@ select option {
 .font-headline-lg {
   font-size: 20px;
   line-height: 28px;
+  letter-spacing: -0.01em;
+  font-weight: 600;
+}
+.font-headline-sm {
+  font-size: 15px;
+  line-height: 22px;
   letter-spacing: -0.01em;
   font-weight: 600;
 }

@@ -419,15 +419,65 @@ def test_cycle_uses_shanghai_date_when_research_window_crosses_utc_day(
         now=lambda: datetime(2026, 8, 12, 22, 30, tzinfo=UTC),
     )
 
+    requested = worker.request_research(objective="Find a twenty-day reversal")
+    result = worker.run_once()
+
+    assert requested.status == "queued"
+    assert requested.code == "d34_research_requested"
+    assert result.status == "idle"
+    assert result.code == "no_queued_job"
+    assert [job.job_key for job in jobs.items] == [requested.job_id]
+    assert jobs.input.input_document["cycle_date"] == "2026-08-13"
+    assert jobs.input.input_document["trigger"] == "owner_request"
+    assert jobs.input.input_document["objective"] == "Find a twenty-day reversal"
+
+
+def test_run_once_does_not_invent_a_research_cycle(tmp_path: Path) -> None:
+    roots = [tmp_path / name for name in ("workspace", "platform", "hqa", "cache")]
+    for path in roots:
+        path.mkdir()
+    mandate = SimpleNamespace(
+        mandate_id="mandate-cycle-12345678",
+        workspace_id="default",
+        status="active",
+        universe=("SPY", "QQQ", "IWM", "DIA"),
+        hypotheses_per_cycle=1,
+        max_iterations=2,
+        max_experiments_per_iteration=2,
+        max_concurrent_jobs=1,
+        llm_budget_usd=Decimal("100"),
+        paper_execution_allowed=True,
+        policy_digest="5" * 64,
+        expires_at=datetime(2026, 9, 1, tzinfo=UTC),
+    )
+    jobs = Jobs()
+    worker = D34CycleWorker(
+        config=D34WorkerConfig(
+            workspace_root=roots[0],
+            platform_root=roots[1],
+            hqa_root=roots[2],
+            cache_root=roots[3],
+        ),
+        mandates=SimpleNamespace(get_active=lambda **_kwargs: mandate),
+        jobs=jobs,
+        registry=Registry(),
+        docker_runtime=Docker(roots[0]),
+        futu_provider=Futu(),
+        platform_replay=lambda **_kwargs: pytest.fail("unsolicited cycle replayed"),
+        canary_activator=lambda **_kwargs: pytest.fail("unsolicited canary"),
+        safety_observer=lambda: _open_safety(mandate),
+        today=lambda: date(2026, 8, 11),
+        now=lambda: datetime(2026, 8, 11, tzinfo=UTC),
+    )
+
     result = worker.run_once()
 
     assert result.status == "idle"
     assert result.code == "no_queued_job"
-    assert [job.job_key for job in jobs.items] == ["cycle:2026-08-13:hypothesis:1"]
-    assert jobs.input.input_document["cycle_date"] == "2026-08-13"
+    assert jobs.items == []
 
 
-def test_cycle_records_futu_unavailable_without_enqueuing_research(tmp_path: Path) -> None:
+def test_cycle_records_futu_unavailable_when_processing_owner_request(tmp_path: Path) -> None:
     roots = [tmp_path / name for name in ("workspace", "platform", "hqa", "cache")]
     for path in roots:
         path.mkdir()
@@ -475,11 +525,88 @@ def test_cycle_records_futu_unavailable_without_enqueuing_research(tmp_path: Pat
         now=lambda: datetime(2026, 8, 11, tzinfo=UTC),
     )
 
+    requested = worker.request_research(objective="Find a twenty-day reversal")
+    result = worker.run_once()
+
+    assert requested.status == "queued"
+    assert requested.code == "d34_research_requested"
+    assert result.status == "failed"
+    assert result.code == "snapshot_futu_unavailable"
+    assert [job.job_key for job in jobs.items] == [requested.job_id]
+    assert docker.commands == []
+
+
+def test_cycle_rejects_queued_jobs_that_were_not_owner_requested(tmp_path: Path) -> None:
+    roots = [tmp_path / name for name in ("workspace", "platform", "hqa", "cache")]
+    for path in roots:
+        path.mkdir()
+    mandate = SimpleNamespace(
+        mandate_id="mandate-cycle-12345678",
+        workspace_id="default",
+        status="active",
+        universe=("SPY", "QQQ", "IWM", "DIA"),
+        hypotheses_per_cycle=1,
+        max_iterations=2,
+        max_experiments_per_iteration=2,
+        max_concurrent_jobs=1,
+        llm_budget_usd=Decimal("100"),
+        paper_execution_allowed=True,
+        policy_digest="5" * 64,
+        expires_at=datetime(2026, 9, 1, tzinfo=UTC),
+    )
+    document = {
+        "contract": "hqa.d34_job_input/v1",
+        "cycle_date": "2026-08-11",
+        "hypothesis_number": 1,
+        "trigger": "schedule",
+        "mandate_id": mandate.mandate_id,
+        "mandate_policy_digest": mandate.policy_digest,
+        "universe": list(mandate.universe),
+        "max_iterations": 2,
+        "experiments_per_iteration": 2,
+        "top_k": 1,
+        "paper_execution_allowed": True,
+    }
+    jobs = Jobs()
+    jobs.items.append(
+        SimpleNamespace(
+            job_id="job-cycle-12345678",
+            job_key="cycle:2026-08-11:hypothesis:1",
+            state="queued",
+            mandate_id=mandate.mandate_id,
+            budget_reserved_usd=Decimal("10"),
+        )
+    )
+    jobs.input = LeasedJobInput(
+        job_id="job-cycle-12345678",
+        input_digest=_digest(document),
+        input_document=document,
+    )
+    docker = Docker(roots[0])
+    worker = D34CycleWorker(
+        config=D34WorkerConfig(
+            workspace_root=roots[0],
+            platform_root=roots[1],
+            hqa_root=roots[2],
+            cache_root=roots[3],
+        ),
+        mandates=SimpleNamespace(get_active=lambda **_kwargs: mandate),
+        jobs=jobs,
+        registry=Registry(),
+        docker_runtime=docker,
+        futu_provider=Futu(),
+        platform_replay=lambda **_kwargs: pytest.fail("legacy job replayed"),
+        canary_activator=lambda **_kwargs: pytest.fail("legacy job activated canary"),
+        safety_observer=lambda: _open_safety(mandate),
+        today=lambda: date(2026, 8, 11),
+        now=lambda: datetime(2026, 8, 11, tzinfo=UTC),
+    )
+
     result = worker.run_once()
 
     assert result.status == "failed"
-    assert result.code == "snapshot_futu_unavailable"
-    assert jobs.items == []
+    assert result.code == "d34_job_not_owner_requested"
+    assert jobs.finished[0]["state"] == "rejected"
     assert docker.commands == []
 
 
@@ -534,6 +661,7 @@ def test_cycle_rejects_tampered_durable_job_input_without_leaking_the_lease(
         now=lambda: datetime(2026, 8, 11, tzinfo=UTC),
     )
 
+    worker.request_research(objective="Find a twenty-day reversal")
     result = worker.run_once()
 
     assert result.status == "failed"
@@ -593,6 +721,7 @@ def test_cycle_marks_research_container_timeout_outcome_unknown(tmp_path: Path) 
         now=lambda: datetime(2026, 8, 11, tzinfo=UTC),
     )
 
+    worker.request_research(objective="Find a twenty-day reversal")
     result = worker.run_once()
 
     assert result.status == "failed"
@@ -664,6 +793,10 @@ def test_cycle_runs_futu_to_dual_engine_artifact_and_real_canary(tmp_path: Path)
         now=lambda: datetime(2026, 8, 11, tzinfo=UTC),
     )
 
+    worker.request_research(
+        objective="Find a twenty-day reversal",
+        hang_if_pass=True,
+    )
     result = worker.run_once()
 
     assert result.status == "canary_active"
@@ -676,6 +809,79 @@ def test_cycle_runs_futu_to_dual_engine_artifact_and_real_canary(tmp_path: Path)
     assert registry.commands[0].platform_receipt.engine == "platform"
     assert activated[0]["factor_id"] == "d34_cycle_factor"
     assert activated[0]["artifact"].qualification_scope == "paper_only"
+
+
+def test_cycle_stops_at_verified_candidate_unless_owner_said_hang(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    platform = tmp_path / "platform"
+    hqa = tmp_path / "hqa"
+    cache = tmp_path / "cache"
+    for path in (workspace, platform, hqa, cache):
+        path.mkdir()
+    jobs, docker, registry = Jobs(), Docker(workspace), Registry()
+    mandate = SimpleNamespace(
+        mandate_id="mandate-cycle-12345678",
+        workspace_id="default",
+        status="active",
+        universe=("SPY", "QQQ", "IWM", "DIA"),
+        hypotheses_per_cycle=1,
+        max_iterations=2,
+        max_experiments_per_iteration=2,
+        max_concurrent_jobs=1,
+        llm_budget_usd=Decimal("100"),
+        paper_execution_allowed=True,
+        policy_digest="5" * 64,
+        expires_at=datetime.now(UTC) + timedelta(days=30),
+    )
+    activated: list[object] = []
+
+    def replay(**kwargs):
+        qlib = kwargs.pop("qlib_receipt")
+        return SimpleNamespace(
+            engine_receipt=EngineReceipt(
+                engine="platform",
+                snapshot_digest=qlib.snapshot_digest,
+                universe_digest=qlib.universe_digest,
+                calendar_digest=qlib.calendar_digest,
+                target_weights_digest=qlib.target_weights_digest,
+                daily_returns=qlib.daily_returns,
+                return_dates=qlib.return_dates,
+                terminal_nav=qlib.terminal_nav,
+                terminal_weights=qlib.terminal_weights,
+                receipt_digest="8" * 64,
+            )
+        )
+
+    worker = D34CycleWorker(
+        config=D34WorkerConfig(
+            workspace_root=workspace,
+            platform_root=platform,
+            hqa_root=hqa,
+            cache_root=cache,
+            workspace_id="default",
+            worker_id="test-worker",
+        ),
+        mandates=SimpleNamespace(get_active=lambda **kwargs: mandate),
+        jobs=jobs,
+        registry=registry,
+        docker_runtime=docker,
+        futu_provider=Futu(),
+        platform_replay=replay,
+        canary_activator=lambda **kwargs: activated.append(kwargs) or "canary-test",
+        safety_observer=lambda: _open_safety(mandate),
+        today=lambda: date(2026, 8, 11),
+        now=lambda: datetime(2026, 8, 11, tzinfo=UTC),
+    )
+
+    worker.request_research(objective="Find a twenty-day reversal")
+    result = worker.run_once()
+
+    assert result.status == "candidate_ready"
+    assert result.code == "verified_candidate_not_hung"
+    assert result.artifact_id
+    assert activated == []
 
 
 def test_cycle_recovers_registry_to_canary_after_terminal_crash_without_rerunning_research(
@@ -751,7 +957,12 @@ def test_cycle_recovers_registry_to_canary_after_terminal_crash_without_rerunnin
             now=lambda: datetime(2026, 8, 11, tzinfo=UTC),
         )
 
-    failed = make_worker().run_once()
+    seeded = make_worker()
+    seeded.request_research(
+        objective="Find a twenty-day reversal",
+        hang_if_pass=True,
+    )
+    failed = seeded.run_once()
     docker_call_count = len(docker.commands)
     recovered = make_worker().run_once()
 
@@ -853,7 +1064,12 @@ def test_cycle_rechecks_paper_authority_after_research_before_canary(
             now=lambda: datetime(2026, 8, 11, tzinfo=UTC),
         )
 
-    blocked = make_worker().run_once()
+    seeded = make_worker()
+    seeded.request_research(
+        objective="Find a twenty-day reversal",
+        hang_if_pass=True,
+    )
+    blocked = seeded.run_once()
 
     assert blocked.status == "awaiting_paper_authority"
     assert blocked.code == "emergency_stop_active"

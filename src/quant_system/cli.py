@@ -1746,55 +1746,25 @@ def paper_strategy_create_execution_command(
     ] = "next_open",
 ) -> None:
     """Create one pending Paper Strategy Sleeve execution from a signal."""
-    from quant_system.execution.account import PaperAccount
-    from quant_system.execution.account_repository_factory import (
-        build_paper_account_repository,
-    )
-    from quant_system.execution.paper_strategy_sleeve_storage import (
-        PaperStrategySleeveStorage,
-    )
     from quant_system.execution.paper_strategy_sleeves import (
-        PaperStrategySleeveService,
         StrategyExecutionPlanError,
     )
 
     settings = load_settings()
-    api_runs_dir = settings.data.data_dir / "api_runs"
-    account_storage = build_paper_account_repository(api_runs_dir, settings=settings)
-    sleeve_storage = PaperStrategySleeveStorage(api_runs_dir)
-    service = PaperStrategySleeveService(sleeve_storage)
-    execution_window = window.replace("-", "_")
-    with account_storage.mutation_lock(), sleeve_storage.mutation_lock():
-        persisted_account = account_storage.load()
-        sleeve_storage.reconcile_pending_sleeves(persisted_account)
-        account = persisted_account or PaperAccount.open_new(account_id=account_storage.account_id)
-        try:
-            sleeve = sleeve_storage.load_sleeve(sleeve_id)
-        except FileNotFoundError as exc:
-            typer.echo(f"strategy sleeve not found: {sleeve_id}")
-            raise typer.Exit(code=1) from exc
-        signal = next(
-            (
-                item
-                for item in sleeve_storage.load_signals(sleeve_id)
-                if item.signal_id == signal_id
-            ),
-            None,
+    runner = _paper_strategy_operations_runner(settings)
+    try:
+        execution = runner.create_execution_once(
+            sleeve_id,
+            signal_id,
+            execution_window=window.replace("-", "_"),
+            target_date=target_date,
         )
-        if signal is None:
-            typer.echo(f"strategy signal not found: {signal_id}")
-            raise typer.Exit(code=1)
-        try:
-            execution = service.create_execution_plan(
-                account,
-                sleeve=sleeve,
-                signal=signal,
-                execution_window=execution_window,
-                target_date=target_date,
-            )
-        except StrategyExecutionPlanError as exc:
-            typer.echo(f"execution unavailable: {exc.code}")
-            raise typer.Exit(code=1) from exc
+    except FileNotFoundError as exc:
+        typer.echo(f"strategy sleeve not found: {sleeve_id}")
+        raise typer.Exit(code=1) from exc
+    except StrategyExecutionPlanError as exc:
+        typer.echo(f"execution unavailable: {exc.code}")
+        raise typer.Exit(code=1) from exc
 
     typer.echo(
         " ".join(

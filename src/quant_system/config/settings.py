@@ -34,6 +34,8 @@ class SafetySettings(BaseSettings):
     live_trading_enabled: bool = False
     no_live_trade_without_manual_approval: bool = True
     kill_switch: bool = True
+    # Hung paper sleeves may fill while kill_switch stays on for live.
+    paper_observation_enabled: bool = True
 
     max_position_size: float = Field(default=0.05, ge=0, le=1)
     max_daily_loss: float = Field(default=0.02, ge=0, le=1)

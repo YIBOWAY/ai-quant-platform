@@ -16,6 +16,7 @@ def build_safety_footer(*, settings: Settings, bind_address: str) -> dict[str, A
         "paper_trading": settings.safety.paper_trading,
         "live_trading_enabled": settings.safety.live_trading_enabled,
         "kill_switch": settings.safety.kill_switch,
+        "paper_observation_enabled": settings.safety.paper_observation_enabled,
         "bind_address": bind_address,
     }
 

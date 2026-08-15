@@ -8,8 +8,11 @@ describe("D34ResearchWorkbench", () => {
     const html = renderToStaticMarkup(<D34ResearchWorkbench locale="zh" />);
 
     expect(html).toContain('id="d34-workbench-title"');
-    expect(html).toContain("Mandate 驱动的双引擎研究");
-    expect(html).toContain("只进入低额度 paper canary");
+    expect(html).toContain("按需双引擎纸面研究");
+    expect(html).toContain("纸面试运行仓");
+    expect(html).toContain("你提出研究需求后才会入队");
+    expect(html).toContain("已验证候选");
+    expect(html).toContain("过了就挂");
     expect(html).toContain("live 始终关闭");
     expect(html).not.toContain("升级 live");
     expect(html).not.toContain("Promote to live");
@@ -18,8 +21,10 @@ describe("D34ResearchWorkbench", () => {
   it("renders the English paper-only research boundary", () => {
     const html = renderToStaticMarkup(<D34ResearchWorkbench locale="en" />);
 
-    expect(html).toContain("Mandate-driven dual-engine research");
-    expect(html).toContain("low-allocation paper canaries only");
+    expect(html).toContain("On-demand dual-engine paper research");
+    expect(html).toContain("on-demand paper research");
+    expect(html).not.toContain("autonomous paper research");
+    expect(html).toContain("verified candidate");
     expect(html).toContain("live stays off");
   });
 });

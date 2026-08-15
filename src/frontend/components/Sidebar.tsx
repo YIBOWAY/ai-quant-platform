@@ -2,10 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  FileText,
-  HelpCircle,
-} from "lucide-react";
+import { FileText } from "lucide-react";
 import { useLocale } from "@/components/LocaleProvider";
 import { localizePath, splitLocalePath } from "@/lib/locale";
 import {
@@ -28,6 +25,7 @@ const copy = {
     },
     nav: {
       dashboard: "Dashboard",
+      desk: "Duty desk",
       hermes: "Hermes",
       brief: "Morning Brief",
       dataExplorer: "Data Explorer",
@@ -64,6 +62,7 @@ const copy = {
     },
     nav: {
       dashboard: "仪表盘",
+      desk: "今日桌面",
       hermes: "Hermes 工作台",
       brief: "每日晨报",
       dataExplorer: "行情浏览",
@@ -128,8 +127,8 @@ export function Sidebar({
       data-testid="desktop-sidebar"
     >
       <div className="border-b border-border-subtle p-6">
-        <div className="mb-1 font-mono text-lg font-black uppercase tracking-tighter text-accent-success">
-          QUANTUM_CORE
+        <div className="mb-0.5 font-sans text-lg font-semibold tracking-tight text-text-primary">
+          Hermes
         </div>
         <div className="font-sans text-xs tracking-tight text-text-secondary">
           {text.tagline}
@@ -182,16 +181,6 @@ export function Sidebar({
             >
               <FileText size={16} />
               <span>{text.docs}</span>
-            </Link>
-          </li>
-          <li>
-            <Link
-              href={localizePath("/settings", locale)}
-              prefetch={disableNavigationPrefetch ? false : undefined}
-              className="app-touch-target flex items-center gap-3 rounded-lg px-3 font-sans text-xs tracking-tight text-text-secondary transition-colors hover:bg-bg-sidebar-muted hover:text-text-primary"
-            >
-              <HelpCircle size={16} />
-              <span>{text.support}</span>
             </Link>
           </li>
         </ul>

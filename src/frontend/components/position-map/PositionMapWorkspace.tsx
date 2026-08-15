@@ -166,8 +166,8 @@ const copy = {
       freeze: "冻结",
       unfreeze: "解冻",
       order_cancelled: "已取消",
-      sleeve_cash_allocated: "袖珍仓现金",
-      sleeve_execution_fill: "袖珍仓成交",
+      sleeve_cash_allocated: "策略仓现金",
+      sleeve_execution_fill: "策略仓成交",
     } as Record<string, string>,
     statusLabels: {
       pending: "等待",

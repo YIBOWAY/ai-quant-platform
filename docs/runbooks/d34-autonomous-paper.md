@@ -49,7 +49,8 @@ docker run --rm --env-file /absolute/owner-only/d34.env \
 ```
 
 可从 `docker/d34/.env.example` 复制变量名。本地默认由常驻 Hermes xAI OAuth 代理把
-`grok-4.5` 以 OpenAI-compatible 协议提供给容器；当前研究链不依赖单独 embedding
+`grok-4.6` 以 OpenAI-compatible 协议提供给容器（`OPENAI_API_BASE=http://127.0.0.1:8645/v1`）；
+当前研究链不依赖单独 embedding
 服务。启用入口会在启动容器前验证 chat 模型为显式非空值，并拒绝
 `LITELLM_*_KEY|TOKEN|SECRET|PASSWORD`；provider secret 应继续使用 LiteLLM 原生变量，
 例如 `OPENAI_API_KEY`。这些检查只读取变量名和是否为空，不输出 secret。
@@ -134,9 +135,10 @@ tail -n 100 data/_runtime/logs/d34-worker.launchd.err.log
 ```
 
 `com.aiquant.d34-worker` 每五分钟只跑一次 bounded cycle，不依赖 Codex、Claude 或终端。
-Mandate 未创建/暂停/过期、预算耗尽或 emergency stop 时，它保留已有 canary 估值，但不启动
-新研究；paper 权限关闭时不创建或执行新订单。新 snapshot/research 只在上海时区周二至
-周六 06:00 以后启动；canary 估值、paper 计划维护和 terminal recovery 每轮仍会执行。
+没有 owner 研究需求时它只维护已有纸面试运行仓，返回 `no_queued_job`，不会发明新周期。
+Mandate 未创建/暂停/过期、预算耗尽或 emergency stop 时，同样保留已有 canary 估值。
+paper 权限关闭时不创建或执行新订单。已入队作业的 snapshot/research 只在上海时区周二至
+周六 06:00 以后处理；canary 估值、paper 计划维护和 terminal recovery 每轮仍会执行。
 
 ## 日常检查
 

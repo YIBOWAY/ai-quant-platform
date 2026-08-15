@@ -12,6 +12,7 @@ from quant_system.d34.research_driver import (
     QlibExperimentResult,
     ResearchProposal,
     execute_research_request,
+    qlib_expression,
     render_factor_source,
 )
 
@@ -107,6 +108,23 @@ def test_factor_renderer_produces_digest_bound_platform_factor(
     )
     result = factor.compute(frame)
     assert set(result["factor_id"]) == {factor_id}
+
+
+def test_composed_expression_renders_validated_qlib_and_pandas() -> None:
+    proposal = ResearchProposal(
+        title="Ranked twenty-day reversal",
+        thesis="Names that fell for twenty days should mean-revert next open.",
+        operator="composed",
+        short_window=1,
+        long_window=20,
+        qlib_expr="Rank(1-$close/Ref($close,20),1)",
+        rationale="Prior catalog momentum receipts did not fade enough.",
+    )
+    assert qlib_expression(proposal).startswith("Rank(")
+    source, digest = render_factor_source(proposal=proposal, factor_id="d34_composed_rev")
+    assert "import numpy as np" in source
+    assert "rank(pct=True)" in source
+    assert len(digest) == 64
 
 
 def test_research_loop_iterates_selects_best_and_is_idempotent(tmp_path: Path) -> None:

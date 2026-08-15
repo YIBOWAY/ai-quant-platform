@@ -22,12 +22,12 @@ In solo-owner trust mode the runtime reports the distinct
 `admission_mode=local_trust`; it does not counterfeit a candidate identity.
 
 The only current product plan lives in HQA
-`docs/plans/2026-08-13-personal-quant-assistant.md`. Paper research intake and
-the daily paper book are one assistant, not two D-xx product lines. New research
-is owner-ask or a weekly slot; registered strategies may run every day on paper.
-`paper_only` factors never enter the live registry. GitHub is never auto-pushed.
+`docs/plans/2026-08-13-personal-quant-assistant.md`. Paper research and the daily
+paper book are one assistant, not two D-xx product lines. New research is
+owner-ask only; there is no weekly slot. Hung strategies may run every day on
+paper. `paper_only` never enters the live registry. GitHub is never auto-pushed.
 
-Historical dual-engine and paper-automation notes:
+Historical notes:
 [architecture](docs/architecture/d34-autonomous-paper.md),
 [owner guide](docs/guides/d34-workbench.md),
 [operator runbook](docs/runbooks/d34-autonomous-paper.md).

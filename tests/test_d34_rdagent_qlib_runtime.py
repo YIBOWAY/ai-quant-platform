@@ -79,7 +79,8 @@ def test_rdagent_proposal_uses_structured_json_and_prior_receipts(tmp_path) -> N
     assert '"title"' in backend.prompt
     assert '"long_window"' in backend.prompt
     assert '"rationale"' in backend.prompt
-    assert "Do not output Python code" in backend.prompt
+    assert "Do not output Python" in backend.prompt
+    assert "composed" in backend.prompt
 
 
 def test_target_weights_shift_scores_to_next_trade_day() -> None:

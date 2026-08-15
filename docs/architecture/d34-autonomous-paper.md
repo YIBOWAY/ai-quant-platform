@@ -1,18 +1,20 @@
 # D-34 自主 Paper 架构
 
-> **历史架构名。** 现行计划是 HQA
-> `docs/plans/2026-08-13-personal-quant-assistant.md`。
-> `d34_*` 表和模块是代码化石，不是第二套产品。
+> **历史模块名。** 现行计划是 HQA
+> `docs/plans/2026-08-13-personal-quant-assistant.md`。`d34_*` 是代码化石，不是第二套产品。
 
-D-34 是本地单 owner 的研究与模拟执行闭环。它把一个 30 天 Mandate 转成可恢复的研究
-job、双引擎证据、`paper_only` Artifact 和低额度 canary；它没有 live 注册或升级接口。
+D-34 是本地单 owner 的研究与模拟执行闭环。Mandate 只是预算/标的信封。owner 提出
+研究需求后，才把一次可恢复的研究 job 入队；再经双引擎证据、`paper_only` Artifact
+和低额度 canary。它没有 live 注册或升级接口，也不会自行发明每日周期。
 
 ## 数据流
 
 ```text
-Mandate
+Owner research ask
+  -> queued job (no snapshot yet)
+  -> worker lease (only if a job exists)
   -> Futu 1d QFQ Parquet snapshot + manifest + digest
-  -> RD-Agent proposal / generated factor
+  -> RD-Agent proposal / whitelist Qlib expression
   -> Qlib factor research + target weights + receipt
   -> Platform fill/fee/position/NAV replay + receipt
   -> deterministic comparison and policy decision
@@ -55,8 +57,9 @@ Artifact、canary、预算和 order 都必须幂等。租约发放在锁定 Mand
    `PaperExecutionPolicy`，不能只依赖创建计划时的旧判断。
 4. 已完成研究但尚未写完 Artifact/canary 的 terminal phase 可幂等恢复；过期 lease 收敛为
    `outcome_unknown` 并保留凭证供核对，不盲目重跑无法证明结果的研究。
-5. 只有上海时区周二至周六 06:00 以后才会刷新 Futu snapshot 或启动新研究；估值、订单维护
-   和 terminal recovery 不受这个研究窗口限制。
+5. 只有上海时区周二至周六 06:00 以后才会处理**已入队**的研究作业（含 Futu snapshot）。
+   没有 owner 研究需求时，这一步保持 `no_queued_job`。估值、订单维护和 terminal
+   recovery 不受这个研究窗口限制。
 6. 容器 timeout/启动失败留下 `workspace/jobs/<job_id>/docker_failure.json`，记录 image、命令、
    return code、stdout/stderr 长度与 digest 以及精确容器清理结果，不保存可能含 secret 的原始日志。
 

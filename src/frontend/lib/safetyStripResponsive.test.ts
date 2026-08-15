@@ -15,6 +15,7 @@ describe("SafetyBadge responsive copy", () => {
     expect(source).toContain("paperOnly");
     expect(source).toContain("liveDisabled");
     expect(source).toContain("killSwitchOn");
+    expect(source).toContain("paperObservationOn");
     expect(source).toContain("health.status");
   });
 });

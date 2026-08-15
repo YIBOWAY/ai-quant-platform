@@ -14,7 +14,8 @@ transcript/follow、approval/stop/result 与 candidate/release authority。历�
 `public_chat_write_ready`、`public_write_authorized` 与
 `release_authorized` 继续 OFF。
 
-migration、readiness、restart、E2E 与 restore 的唯一权威是
+现行计划是 HQA `docs/plans/2026-08-13-personal-quant-assistant.md`。
+`D-33`/`D-34` 不是产品线。migration 与栈的权威仍是
 [Agent v0.2 local-stack runbook](docs/runbooks/agent-v0-2-local-stack.md)。
 研究作业和试运行仓的历史说明见
 [架构](docs/architecture/d34-autonomous-paper.md)、

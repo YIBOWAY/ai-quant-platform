@@ -147,7 +147,7 @@ const en: HermesWorkbenchCopy = {
     },
     local_mutation_authorized: {
       title: "Hermes chat is ready",
-      body: "This installation may submit through the managed Hermes Session path (owner cookie + CSRF + submit-turn). Trading remains constrained by kill_switch, paper, and dry_run.",
+      body: "You can send messages in a managed Hermes conversation. Live trading stays off; paper and the kill switch still apply.",
     },
   },
   labels: {
@@ -281,7 +281,7 @@ const zh: HermesWorkbenchCopy = {
     },
     local_mutation_authorized: {
       title: "Hermes 对话已就绪",
-      body: "当前安装可通过受管 Hermes Session 路径提交（owner cookie + CSRF + submit-turn）。交易仍受 kill_switch、paper 和 dry_run 约束。",
+      body: "可以在受管对话里直接给 Hermes 发消息。实盘仍关闭，模拟盘与熔断开关继续生效。",
     },
   },
   labels: {

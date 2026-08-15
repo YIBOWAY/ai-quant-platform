@@ -670,6 +670,7 @@ class PaperStrategySleeveService:
                     mandate_paper_execution_allowed=(
                         policy_context.get("mandate_paper_execution_allowed") is True
                     ),
+                    hung_observation=policy_context.get("hung_observation") is True,
                 )
             except FactorAutomationLimitError as exc:
                 raise StrategyExecutionPlanError(

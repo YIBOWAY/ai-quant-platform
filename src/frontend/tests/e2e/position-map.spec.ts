@@ -148,7 +148,7 @@ test.describe("position map", () => {
     // Live-account tab is the default: manual controls come first on mobile,
     // replay research is not rendered until its tab is opened.
     await expect(page.getByText("手动下单", { exact: true })).toBeVisible();
-    await expect(page.getByText("高级：全账户再平衡（非袖珍仓）", { exact: true })).toBeVisible();
+    await expect(page.getByText("高级：全账户再平衡（非策略仓）", { exact: true })).toBeVisible();
     await expect(page.getByText("历史回放（研究）", { exact: true })).toHaveCount(0);
 
     const replayTab = page.getByRole("tab", { name: "历史回放" });

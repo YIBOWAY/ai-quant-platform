@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
@@ -23,8 +25,14 @@ from quant_system.api.schemas.d34 import (
     D34MandateRenewRequest,
     D34MandateResponse,
     D34MandateTransitionRequest,
+    D34ResearchAskRequest,
+    D34ResearchAskResponse,
     D34RollbackRequest,
     D34RollbackResponse,
+)
+from quant_system.d34.research_request import (
+    enqueue_owner_research_request,
+    mandate_field,
 )
 from quant_system.d34.research_routing import D34ResearchRoutingAuthority
 from quant_system.execution.d34_canary_control import (
@@ -170,6 +178,7 @@ def _http_error(exc: MandateAuthorityError) -> HTTPException:
 def _job_http_error(exc: JobAuthorityError) -> HTTPException:
     status_code = {
         "d34_job_conflict": 409,
+        "d34_budget_exhausted": 409,
         "d34_job_validation": 422,
         "d34_job_unavailable": 503,
     }.get(exc.code, 503)
@@ -361,6 +370,70 @@ def renew_mandate(
         )
     except MandateAuthorityError as exc:
         raise _http_error(exc) from exc
+
+
+@router.post(
+    "/hermes/research/requests",
+    response_model=D34ResearchAskResponse,
+)
+def ask_research(
+    body: D34ResearchAskRequest,
+    request: Request,
+    settings: SettingsDep,
+) -> dict[str, object]:
+    owner = require_mutation_security(request)
+    consume_owner_mutation_budget(
+        request, owner_user_id=owner.owner_user_id, route=D34_MANDATE_ROUTE
+    )
+    try:
+        mandate = _authority(request, settings).get_active(workspace_id=body.workspace_id)
+    except MandateAuthorityError as exc:
+        raise _http_error(exc) from exc
+    if mandate is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "no_active_mandate",
+                "message": "an active paper Mandate is required before research",
+            },
+        )
+    status_value = str(mandate_field(mandate, "status"))
+    expires_at = mandate_field(mandate, "expires_at")
+    paper_allowed = mandate_field(mandate, "paper_execution_allowed") is True
+    if (
+        status_value != "active"
+        or expires_at <= datetime.now(UTC)
+        or not paper_allowed
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "mandate_inactive",
+                "message": "the active Mandate cannot authorize a new research job",
+            },
+        )
+    try:
+        job_key = enqueue_owner_research_request(
+            jobs=_job_authority(request, settings),
+            mandate=mandate,
+            workspace_id=body.workspace_id,
+            objective=body.objective,
+            cycle_date=datetime.now(ZoneInfo("Asia/Shanghai")).date(),
+            hang_if_pass=body.hang_if_pass,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": str(exc), "message": str(exc)},
+        ) from exc
+    except JobAuthorityError as exc:
+        raise _job_http_error(exc) from exc
+    return {
+        "contract": "hqa.d34_research_request/v1",
+        "status": "queued",
+        "code": "d34_research_requested",
+        "job_key": job_key,
+    }
 
 
 @router.get(

@@ -36,11 +36,19 @@ dirty work. Historical plans and audits are evidence, not an executable queue.
   once after their recorded backup/isolated-restore windows. Do not replay them.
   Backend and LaunchAgent startup keep `QS_DATABASE_AUTO_MIGRATE=false`.
 - Paper research and the daily paper book are one product. New research is
-  owner-ask or a weekly slot; the five-minute worker must not invent a cycle.
-  Registered strategies may run every day on paper. Nothing here grants live
-  eligibility or automatically pushes GitHub.
-- `live_trading_enabled=false`. No paper factor, Artifact, Mandate, trial sleeve
-  or routing receipt has a live-upgrade operation. Do not fabricate observations.
+  owner-ask only; there is no weekly slot. The five-minute worker must not
+  invent a cycle. Hung allocated sleeves may fill when
+  `QS_PAPER_OBSERVATION_ENABLED` is on (default). That is not live
+  eligibility and not automatic GitHub push.
+- `live_trading_enabled=false`. `kill_switch` freezes live danger, not hung
+  paper observation. `emergency_stop` still freezes paper fills. Isolation
+  preview: `bash scripts/coo_unify_preview.sh start` on `:8876`/`:3002` with
+  database `quantplatform_coo` only. The preview frontend must keep
+  `NEXT_PUBLIC_QUANT_API_BASE_URL` on `:3002` (same-origin `/api`); Next
+  rewrites to `:8876`. A preview seed fill is not daily observation and
+  its mark-to-market is not strategy P&L. Do not replay 006–033 on live
+  `quantplatform`. No paper factor, Artifact, Mandate, trial sleeve or
+  routing receipt has a live-upgrade operation. Do not fabricate observations.
 - Agent v0.2 has a gated local managed-session write path. Historical/external
   sessions remain Web read-only and require an explicit fork to continue.
   `chat_write_ready` is local readiness; `public_chat_write_ready`,
