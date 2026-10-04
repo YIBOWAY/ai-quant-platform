@@ -9,6 +9,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { createHermesLifecycleFixture } from "./hermes-lifecycle-fixture.mjs";
+import { collectionFixture } from "./research-product-fixtures.mjs";
+import { deskFixture, fixtureResults } from "./hermes-desk-fixtures.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE_DIR = path.resolve(
@@ -251,6 +253,7 @@ export function createFixtureServer(
     includePersistedSession = false,
     includeFixtureGateway = false,
     includeLifecycle = false,
+    deskScenario = "normal",
   } = {},
 ) {
   const validated = validateCombinedFixture(
@@ -259,18 +262,32 @@ export function createFixtureServer(
       : JSON.parse(JSON.stringify(fixture)),
   );
   const lifecycle = includeLifecycle ? createHermesLifecycleFixture() : null;
+  const desk = deskFixture(deskScenario);
 
   const routes = new Map([
     ["/api/health", validated.health],
     [
       "/api/settings",
       {
-        safety: validated.health.safety,
+        safety: { ...validated.health.safety, paper_observation_enabled: !desk.offline },
         settings: {},
       },
     ],
     ["/api/hermes/artifacts", validated.artifacts],
     ["/api/agent/candidates", validated.candidates],
+    ["/api/collection", collectionFixture],
+    // The old candidate catalog is not the remote research book. It must not
+    // manufacture a verified or hung candidate from a pending catalog row.
+    ["/api/assistant/remote/book", desk.book],
+    ["/api/safety/effective", desk.safety],
+    ["/api/paper/strategy-sleeves/observation-calendar", desk.calendar],
+    ["/api/paper/strategy-sleeves/hung-effect", {
+      hung_count: desk.book.hung_count, observation_day_count: 0, empty: desk.book.hung_count === 0, empty_label_zh: desk.book.hung_count ? null : "尚无模拟运行策略",
+      sleeve_return_pct: null, spy_return_pct: null, sleeve_equity: null,
+      sleeve_equity_status: desk.book.hung_count ? "unavailable" : "empty", sleeve_equity_reason: desk.book.hung_count ? "fixture_market_data_unavailable" : null, spy_status: "empty", spy_reason: null,
+      price_source: null, turnover: null, cost_drag_pct: null, series: [], as_of: null,
+      requested_as_of: null, last_fill_date: null, valuation_status: "unavailable",
+    }],
   ]);
 
   const candidateById = new Map(
@@ -310,9 +327,9 @@ export function createFixtureServer(
     read_status: fixtureGatewayUnavailable ? "unavailable" : "available",
     connected: !fixtureGatewayUnavailable,
     model: "fixture-model",
-    session_api_available: includePersistedSession,
+    session_api_available: !fixtureGatewayUnavailable && (includePersistedSession || includeFixtureGateway),
     chat_write_ready: false,
-    features: { session_resources: includePersistedSession },
+    features: { session_resources: !fixtureGatewayUnavailable && (includePersistedSession || includeFixtureGateway) },
     upstream_blockers: [fixtureGatewayBlocker],
     platform_delivery_blockers: ["fixture_write_disabled"],
     blockers: fixtureGatewayUnavailable
@@ -469,6 +486,27 @@ export function createFixtureServer(
       finish(200, sessionsResponse);
       return;
     }
+    if (includeFixtureGateway && pathname === "/api/hermes/sessions") {
+      finish(200, { read_status: desk.offline ? "unavailable" : "available", sessions: [], limit: 50, offset: 0,
+        has_more: false, warnings: desk.offline ? [{ code: "fixture_sessions_unavailable", message: "This test scenario has no readable session source." }] : [] });
+      return;
+    }
+
+    if (pathname === "/api/assistant/remote/book" && desk.offline) {
+      finish(503, { detail: "fixture_book_unavailable" }); return;
+    }
+    if (pathname === "/api/hermes/results") {
+      finish(200, fixtureResults(validated.artifacts, deskScenario, url.searchParams)); return;
+    }
+    const resultMatch = pathname.match(/^\/api\/hermes\/results\/([^/]+)\/([^/]+)$/);
+    if (resultMatch) {
+      const [kind, id] = resultMatch.slice(1).map(decodeURIComponent);
+      const artifact = validated.artifacts.items.find(row => row.kind === kind && row.id === id);
+      const item = fixtureResults(validated.artifacts, deskScenario, new URLSearchParams({ kind, limit: "100" })).items.find(row => row.resource_id === id);
+      finish(200, { read_status: desk.offline ? "unavailable" : item?.read_status || "missing", item: item || null,
+        resource: artifact || null, warnings: artifact ? [] : [{ source: "hqa_artifact_feed", code: "result_not_found" }] });
+      return;
+    }
 
     const sessionMessagesMatch = pathname.match(
       /^\/api\/hermes\/sessions\/([^/]+)\/messages$/,
@@ -525,6 +563,15 @@ export function createFixtureServer(
       return;
     }
 
+    if (pathname === "/api/market-data/history") {
+      // No historical prices have been seeded. An empty source-bound response
+      // exercises the real “no data” UI, never a successful price chart.
+      const ticker = url.searchParams.get("ticker") ?? "SPY";
+      finish(200, { symbol: ticker, ticker, source: "futu", frequency: "1d", row_count: 0,
+        rows: [], metadata: { provider: "futu", requested_provider: "futu", fetched_at: null } });
+      return;
+    }
+
     if (!routes.has(pathname)) {
       finish(404, { detail: "not_found" });
       return;
@@ -546,6 +593,7 @@ export function startFixtureServer(
     includePersistedSession: fixtureName === "normal",
     includeFixtureGateway: true,
     includeLifecycle,
+    deskScenario: fixtureName,
   });
   return new Promise((resolve, reject) => {
     const onError = (error) => {
@@ -594,6 +642,7 @@ function main(argv) {
     includePersistedSession: fixtureName === "normal",
     includeFixtureGateway: true,
     includeLifecycle: mode === "lifecycle",
+    deskScenario: fixtureName,
   });
   server.on("error", (error) => {
     console.error(error instanceof Error ? error.message : String(error));

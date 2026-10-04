@@ -96,4 +96,20 @@ describe("HermesSessionForkController", () => {
     expect(html).not.toContain("从这里继续");
     expect(html).toContain("此会话不能创建分支");
   });
+
+  it("explains the official API limitation without offering confirmation or retry", () => {
+    const html = renderToStaticMarkup(createElement(HermesSessionForkController, {
+      forkEligible: false,
+      forkReasonCode: "native_exact_fork_unavailable",
+      hermesSessionId: "historical-session",
+      isZh: true,
+      messages,
+    }));
+    expect(html).toContain("当前 Hermes 版本不支持从指定消息建立独立分支");
+    expect(html).toContain("Keep this exact context");
+    expect(html).toContain("新对话");
+    expect(html).not.toContain("data-hermes-message-fork-select");
+    expect(html).not.toContain("data-hermes-session-fork-policy-confirmation");
+    expect(html).not.toContain("data-hermes-session-fork-retry");
+  });
 });

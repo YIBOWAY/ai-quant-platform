@@ -213,6 +213,7 @@ def main() -> int:
             "docker-smoke",
             "smoke",
             "research",
+            "registered-verify",
             "rdagent",
             "qrun",
         ),
@@ -233,6 +234,21 @@ def main() -> int:
         result = run_container_research(
             request_path=research_args.request,
             output_root=research_args.output_root,
+        )
+        print(json.dumps(result, sort_keys=True))
+        return 0
+    if parsed.command == "registered-verify":
+        verify_parser = argparse.ArgumentParser(prog="d34 registered-verify")
+        verify_parser.add_argument("--request", required=True)
+        verify_parser.add_argument("--output-root", required=True)
+        verify_args = verify_parser.parse_args(parsed.args)
+        from quant_system.d34.rdagent_qlib_runtime import (  # noqa: PLC0415
+            run_registered_factor_verification,
+        )
+
+        result = run_registered_factor_verification(
+            request_path=verify_args.request,
+            output_root=verify_args.output_root,
         )
         print(json.dumps(result, sort_keys=True))
         return 0

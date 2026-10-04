@@ -14,6 +14,7 @@ from typing import Protocol
 
 import pandas as pd
 
+from quant_system.d34.research_driver import validate_xnys_calendar
 from quant_system.data.schema import REQUIRED_OHLCV_COLUMNS, normalize_ohlcv_dataframe
 
 SNAPSHOT_CONTRACT = "hqa.market_data_snapshot/v1"
@@ -131,6 +132,24 @@ def _validate_frame(frame: pd.DataFrame, universe: tuple[str, ...]) -> pd.DataFr
         )
     if normalized.duplicated(subset=["symbol", "timestamp"]).any():
         raise MarketDataSnapshotError("snapshot_duplicate_bar", "snapshot contains duplicate bars")
+    calendars = {
+        symbol: tuple(
+            pd.Timestamp(value).isoformat()
+            for value in rows.sort_values("timestamp")["timestamp"]
+        )
+        for symbol, rows in normalized.groupby("symbol", sort=True)
+    }
+    try:
+        for calendar in calendars.values():
+            validate_xnys_calendar(calendar)
+    except ValueError as exc:
+        raise MarketDataSnapshotError(
+            "snapshot_calendar_invalid", "snapshot bars are not exact XNYS sessions"
+        ) from exc
+    if len(set(calendars.values())) != 1:
+        raise MarketDataSnapshotError(
+            "snapshot_calendar_mismatch", "snapshot symbols do not share one exact calendar"
+        )
     if (normalized["knowledge_ts"] < normalized["event_ts"]).any():
         raise MarketDataSnapshotError(
             "snapshot_temporal_invalid", "knowledge time cannot precede event time"

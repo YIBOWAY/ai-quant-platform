@@ -21,13 +21,12 @@ test("sidebar groups the product areas instead of showing one flat list", async 
   await page.waitForLoadState("networkidle");
 
   await expect(page).toHaveURL(/\/en\/hermes$/);
-  await expect(page.getByText("Research Pipeline", { exact: true })).toBeVisible();
+  await expect(page.getByText("Workspace", { exact: true })).toBeVisible();
   await expect(page.getByText("Options Research", { exact: true })).toBeVisible();
-  await expect(page.getByText("Markets & AI", { exact: true })).toBeVisible();
   await expect(page.getByText("System", { exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Backtester" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Hermes", exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Factor Lab", exact: true })).toBeVisible();
+  await expect(page.getByTestId("desktop-sidebar").getByRole("link")).toHaveCount(11);
+  await expect(page.getByRole("link", { name: "Candidate Library" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Dashboard", exact: true })).toHaveCount(0);
 });
 
@@ -36,12 +35,24 @@ test("Chinese sidebar uses the same grouped information architecture", async ({ 
   await page.waitForLoadState("networkidle");
 
   await expect(page).toHaveURL(/\/zh\/hermes$/);
-  await expect(page.getByText("研究流水线", { exact: true })).toBeVisible();
+  await expect(page.getByText("工作台", { exact: true })).toBeVisible();
   await expect(page.getByText("期权研究", { exact: true })).toBeVisible();
-  await expect(page.getByText("市场与 AI", { exact: true })).toBeVisible();
   await expect(page.getByText("系统", { exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Hermes 工作台", exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "因子实验室", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Hermes 助手", exact: true })).toBeVisible();
+  await expect(page.getByTestId("desktop-sidebar").getByRole("link")).toHaveCount(11);
+  await expect(page.getByTestId("desktop-sidebar").getByRole("link")).toHaveText([
+    "Hermes 助手",
+    "市场研判",
+    "公司研究",
+    "日报",
+    "策略与因子",
+    "模拟账户",
+    "期权筛选",
+    "期权推荐",
+    "买方期权",
+    "AI 新闻",
+    "设置",
+  ]);
   await expect(page.getByRole("link", { name: "仪表盘", exact: true })).toHaveCount(0);
 });
 
@@ -73,7 +84,7 @@ test("app shell keeps a fixed viewport with a scrollable page region inside", as
 
 test("mobile shell gives the page full width and exposes navigation", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/position-map");
+  await page.goto("/paper-trading?view=map");
   await page.waitForLoadState("networkidle");
 
   await expect(page.getByTestId("desktop-sidebar")).toBeHidden();
@@ -82,8 +93,13 @@ test("mobile shell gives the page full width and exposes navigation", async ({ p
   expect(shellBox?.width ?? 0).toBeGreaterThanOrEqual(389);
 
   await page.getByRole("button", { name: "Open navigation" }).click();
-  await expect(page.getByRole("link", { name: "Paper Trading", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Open navigation" })).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  await expect(page.getByRole("link", { name: "Paper Account", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Hermes", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Candidate Library" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Dashboard", exact: true })).toHaveCount(0);
 });
 

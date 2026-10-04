@@ -25,3 +25,14 @@ def test_paper_ops_panel_exposes_pending_sleeves_without_promising_get_recovery(
     assert "paper strategies recover-pending" in panel
     assert "status?.corrupt_journal_count" in panel
     assert "status.corrupt_journal_count" in panel
+
+
+def test_paper_ops_panel_is_compact_when_clear_and_expands_for_attention() -> None:
+    panel = _read("src/frontend/components/forms/PaperStrategyOpsPanel.tsx")
+
+    assert "strategyOpsNeedsAttention(status)" in panel
+    assert 'data-paper-strategy-ops="exception-first"' in panel
+    assert "open={needsAttention}" in panel
+    assert 'title: "执行队列状态"' in panel
+    assert "队列为空不代表信号正常或已经成交" in panel
+    assert "自动化运维" not in panel

@@ -21,6 +21,50 @@ def test_all_json_200_responses_publish_component_refs(tmp_path) -> None:
     assert non_ref_responses == []
 
 
+def test_company_backup_and_saved_strategy_routes_have_named_evidence_contracts(tmp_path) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+    openapi = client.get("/openapi.json").json()
+    expected = {
+        ("get", "/api/data-sources", "200"): "DataSourcesResponse",
+        ("post", "/api/data-sources/check", "202"): "DataSourcesResponse",
+        ("get", "/api/market-data/daily-backup", "200"): "DailyBackupResponse",
+        ("get", "/api/strategy-library", "200"): "StrategyLibraryResponse",
+        ("get", "/api/strategy-library/factor-options", "200"): "StrategyFactorOptionsResponse",
+    }
+    for path in ("compose", "import-study", "import-backtest", "{strategy_id}/enable"):
+        expected[("post", "/api/strategy-library/" + path, "200")] = "StrategyLibraryEntryResponse"
+    expected[("get", "/api/strategy-library/{strategy_id}", "200")] = "StrategyLibraryEntryResponse"
+    expected[("post", "/api/strategy-library/{strategy_id}/validate", "202")] = (
+        "StrategyLibraryEntryResponse"
+    )
+    for (method, path, code), model in expected.items():
+        schema = openapi["paths"][path][method]["responses"][code]["content"]["application/json"]
+        assert schema["schema"] == {"$ref": "#/components/schemas/" + model}
+    assert set(openapi["components"]["schemas"]["StrategyLibraryEntryResponse"]["required"]) == {
+        "strategy_id", "title", "status",
+    }
+
+
+def test_saved_strategy_contract_keeps_stale_placeholders_and_additional_evidence(
+    tmp_path, monkeypatch,
+):
+    from quant_system.api.routes import strategy_library
+
+    stale = {"strategy_id": "strategy-000", "title": "记录无法读取", "status": "stale"}
+    available = {
+        "strategy_id": "strategy-001", "title": "Saved", "status": "draft",
+        "definition": {"kind": "factor_blend", "future_evidence": {"unknown": None}},
+        "additional_evidence": {"source": "existing_saved_record", "values": [1.2, None]},
+    }
+    monkeypatch.setattr(strategy_library.service, "list_strategies", lambda _: {
+        "items": [stale, available],
+    })
+    client = TestClient(create_app(output_dir=tmp_path))
+    result = client.get("/api/strategy-library")
+    assert result.status_code == 200
+    assert result.json()["items"] == [stale, available]
+
+
 def test_owner_and_workspace_routes_publish_named_response_contracts(tmp_path) -> None:
     client = TestClient(create_app(output_dir=tmp_path))
 
@@ -147,6 +191,7 @@ def test_read_only_market_routes_publish_response_models(tmp_path) -> None:
     assert "positions" in components["PaperAccountResponse"]["properties"]
     assert "reserved_cash" in components["PaperAccountResponse"]["properties"]
     assert "available_cash" in components["PaperAccountResponse"]["properties"]
+    assert "manual_available_cash" in components["PaperAccountResponse"]["properties"]
     props = components["PaperAccountResponse"]["properties"]
     assert "storage_mode" in props
     assert "stale" in props
@@ -369,7 +414,9 @@ def test_brief_archive_routes_publish_response_models(tmp_path) -> None:
     assert "payload" in components["BriefSnapshotResponse"]["properties"]
 
 
-def test_options_radar_post_routes_publish_response_models(tmp_path) -> None:
+def test_options_radar_post_routes_publish_refresh_and_async_scan_models(
+    tmp_path,
+) -> None:
     client = TestClient(create_app(output_dir=tmp_path))
 
     openapi = client.get("/openapi.json").json()
@@ -378,7 +425,6 @@ def test_options_radar_post_routes_publish_response_models(tmp_path) -> None:
         "/api/options/refresh/universe": "OptionsRefreshResponse",
         "/api/options/refresh/earnings": "OptionsRefreshResponse",
         "/api/options/refresh/vix": "OptionsRefreshResponse",
-        "/api/options/daily-scan/run": "OptionsDailyScanRunResponse",
     }
     for path, model_name in expected.items():
         response_schema = openapi["paths"][path]["post"]["responses"]["200"]["content"][
@@ -389,8 +435,28 @@ def test_options_radar_post_routes_publish_response_models(tmp_path) -> None:
     components = openapi["components"]["schemas"]
     assert "row_count" in components["OptionsRefreshResponse"]["properties"]
     assert "output_path" in components["OptionsRefreshResponse"]["properties"]
-    assert "candidate_count" in components["OptionsDailyScanRunResponse"]["properties"]
-    assert "data_path" in components["OptionsDailyScanRunResponse"]["properties"]
+    scan_operation = openapi["paths"]["/api/options/daily-scan/run"]["post"]
+    scan_responses = scan_operation["responses"]
+    assert "requestBody" not in scan_operation
+    assert "200" not in scan_responses
+    assert "422" not in scan_responses
+    assert scan_responses["202"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/OptionsDailyScanTaskStateResponse"
+    }
+    assert scan_responses["409"]["description"] == (
+        "An options scan is already running."
+    )
+    task_properties = components["OptionsDailyScanTaskStateResponse"]["properties"]
+    assert {
+        "status",
+        "terminal",
+        "current_step",
+        "target_session",
+        "trigger",
+        "scanned_tickers",
+        "total_tickers",
+    }.issubset(task_properties)
+    assert "OptionsDailyScanRunResponse" not in components
 
 
 def test_options_screener_post_route_publishes_response_model(tmp_path) -> None:

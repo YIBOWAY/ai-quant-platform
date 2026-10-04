@@ -69,6 +69,26 @@ export type MarketCrossSectionBasketLabelResponse = NonNullable<
 >;
 export type MarketCrossSectionResponse = MarketCrossSectionApiResponse;
 
+// Keep backend response names discoverable at the shared API boundary while
+// their generated schemas remain the source of truth for these newer features.
+export type CollectionResponse = GeneratedApiComponents["schemas"]["CollectionResponse"];
+export type CompanyResearchResponse = GeneratedApiComponents["schemas"]["CompanyResearchResponse"];
+export type CompanyResearchCompareResponse = GeneratedApiComponents["schemas"]["CompanyResearchCompareResponse"];
+export type DataSourcesResponse = GeneratedApiComponents["schemas"]["DataSourcesResponse"];
+export type DailyBackupResponse = GeneratedApiComponents["schemas"]["DailyBackupResponse"];
+export type MarketAssessmentResponse = GeneratedApiComponents["schemas"]["MarketAssessmentResponse"];
+export type MarketRiskObservationResponse = GeneratedApiComponents["schemas"]["MarketRiskObservationResponse"];
+export type MarketRiskResponse = GeneratedApiComponents["schemas"]["MarketRiskResponse"];
+export type ResearchEvaluationResponse = GeneratedApiComponents["schemas"]["ResearchEvaluationResponse"];
+export type PaperEvaluationResponse = GeneratedApiComponents["schemas"]["PaperEvaluationResponse"];
+export type FactorScorecardsResponse = GeneratedApiComponents["schemas"]["FactorScorecardsResponse"];
+export type SecuritySearchResponse = GeneratedApiComponents["schemas"]["SecuritySearchResponse"];
+export type StrategyStudiesResponse = GeneratedApiComponents["schemas"]["StrategyStudiesResponse"];
+export type StrategyStudyProfileResponse = GeneratedApiComponents["schemas"]["StrategyStudyProfileResponse"];
+export type StrategyLibraryEntryResponse = GeneratedApiComponents["schemas"]["StrategyLibraryEntryResponse"];
+export type StrategyLibraryResponse = GeneratedApiComponents["schemas"]["StrategyLibraryResponse"];
+export type StrategyFactorOptionsResponse = GeneratedApiComponents["schemas"]["StrategyFactorOptionsResponse"];
+
 export type SafetyFooter = {
   dry_run: boolean;
   paper_trading: boolean;
@@ -436,6 +456,8 @@ export type StrategyMetadata = {
   run_endpoint: string;
   result_type: string;
   supports_account_rebalance?: boolean;
+  runnable?: boolean;
+  execution_blocker?: string | null;
   parameter_schema: {
     fields?: Record<string, Record<string, unknown>>;
   };
@@ -675,7 +697,12 @@ export type PaperAccountResponse = ApiEnvelope & {
   cash: number;
   reserved_cash: number;
   available_cash: number;
+  manual_available_cash: number;
   equity: number;
+  valuation_status?: "complete" | "incomplete";
+  market_equity?: number | null;
+  cost_basis_reference_equity?: number | null;
+  unpriced_symbols?: string[];
   realized_pnl: number;
   unrealized_pnl: number;
   pnl_abs: number;
@@ -761,6 +788,8 @@ export type PaperStrategyConfigResponse = {
   archived: boolean;
   tags: string[];
   metadata: Record<string, unknown>;
+  source_status?: "compatible" | "historical_mismatch";
+  source_error?: string | null;
 };
 
 export type PaperStrategyConfigMutationResponse = ApiEnvelope & {
@@ -769,6 +798,11 @@ export type PaperStrategyConfigMutationResponse = ApiEnvelope & {
 
 export type PaperStrategyConfigsResponse = ApiEnvelope & {
   configs: PaperStrategyConfigResponse[];
+  unavailable_configs?: {
+    strategy_config_id: string;
+    version: number | null;
+    reason: string;
+  }[];
 };
 
 export type PaperStrategySleeveMode = "signal_only" | "allocated";
@@ -799,6 +833,16 @@ export type PaperStrategySleeveMutationResponse = ApiEnvelope & {
 export type PaperStrategySleevesResponse = ApiEnvelope & {
   sleeves: PaperStrategySleeveResponse[];
 };
+
+export type HungSleeveEffectPointResponse =
+  GeneratedApiComponents["schemas"]["HungSleeveEffectPoint"];
+export type HungSleeveEffectResponse = ApiEnvelope &
+  GeneratedApiComponents["schemas"]["HungSleeveEffectResponse"];
+
+export type ObservationCalendarResponse =
+  GeneratedApiComponents["schemas"]["ObservationCalendarResponse"];
+export type ObservationYesterdayPayload =
+  GeneratedApiComponents["schemas"]["ObservationYesterdayPayload"];
 
 export type PaperStrategySleeveLotResponse = {
   lot_id: string;
@@ -905,6 +949,22 @@ export type PaperStrategySleeveDetailResponse = ApiEnvelope & {
   lots: PaperStrategySleeveLotResponse[];
   signals: PaperStrategySignalResponse[];
   executions: PaperStrategyExecutionPlanResponse[];
+  runtime_status?: PaperRuntimeStatus | null;
+};
+
+export type PaperRuntimeStatus = {
+  checked_at: string;
+  sleeve_id: string;
+  config_id: string;
+  config_version: number;
+  enabled: boolean;
+  configuration: { status: string; reason?: string | null };
+  signal: {
+    status: string; reason?: string | null; signal_id?: string; signal_date?: string;
+    generated_at?: string; target_count?: number; order_count?: number;
+  };
+  fills: { status: string; count: number | null; days: number | null; reason?: string | null; last_fill_date?: string | null; scope?: string };
+  valuation: { status: string; reason?: string | null };
 };
 
 export type PaperStrategyOpsStatus = {
@@ -1321,30 +1381,20 @@ export type PredictionMarketTimeseriesBacktestResultResponse = ApiEnvelope & {
 export type PredictionMarketTimeseriesDetailResponse =
   PredictionMarketTimeseriesBacktestResultResponse;
 
-export type OptionsRadarCandidateResponse = {
-  ticker: string;
-  sector: string | null;
-  strategy: "sell_put" | "covered_call";
-  symbol: string;
-  expiry: string;
-  strike: number;
-  mid: number | null;
-  annualized_yield: number | null;
-  implied_volatility: number | null;
-  iv_rank: number | null;
-  delta: number | null;
-  open_interest: number | null;
-  spread_pct: number | null;
-  earnings_date: string | null;
-  earnings_in_window: boolean;
-  global_score: number;
-  rating: string;
-  notes: string[];
-  market_regime?: string | null;
-  market_regime_penalty?: number | null;
-};
+export type OptionsRadarCandidateResponse =
+  GeneratedApiComponents["schemas"]["OptionsRadarCandidateResponse"];
 
 export type OptionsRadarCandidate = OptionsRadarCandidateResponse;
+
+export type SellerScoreBreakdown = {
+  yield_score?: number | null;
+  liquidity_score?: number | null;
+  delta_safety_score?: number | null;
+  iv_edge_score?: number | null;
+  iv_rank_score?: number | null;
+  composite: number;
+  weights_used: Record<string, number>;
+};
 
 export type OptionsScreenerCandidate = {
   symbol: string;
@@ -1367,6 +1417,13 @@ export type OptionsScreenerCandidate = {
   theta?: number | null;
   vega?: number | null;
   premium_per_contract?: number | null;
+  bid_premium_per_contract?: number | null;
+  bid_annualized_yield?: number | null;
+  fee_adjusted_bid_annualized_yield?: number | null;
+  estimated_round_trip_fee_per_contract?: number | null;
+  screen_passed?: boolean;
+  preference_rejection_reasons?: string[];
+  quote_as_of?: string | null;
   moneyness?: number | null;
   distance_pct?: number | null;
   days_to_expiry?: number | null;
@@ -1378,10 +1435,29 @@ export type OptionsScreenerCandidate = {
   market_cap?: number | null;
   iv_rank?: number | null;
   earnings_date?: string | null;
+  earnings_in_window: boolean;
+  ex_dividend_date?: string | null;
+  ex_dividend_in_window: boolean;
+  dividend_per_share?: number | null;
+  extrinsic_value?: number | null;
+  gross_annualized_yield?: number | null;
+  pop?: number | null;
+  otm_pct?: number | null;
+  breakeven?: number | null;
+  take_profit_50_price?: number | null;
+  manage_at_21_dte?: string | null;
+  expected_value?: number | null;
+  excess_annualized_ev?: number | null;
+  liquidity_factor?: number | null;
+  recommendation_score?: number | null;
+  recommendation_score_model?: string | null;
+  hard_gate_passed: boolean;
+  recommendation_rejection_reasons: string[];
   market_regime?: "Normal" | "Elevated" | "Panic" | "Unknown" | null;
   market_regime_penalty: number;
   rating: "Strong" | "Watch" | "Avoid";
   notes: string[];
+  seller_score?: SellerScoreBreakdown | null;
 };
 
 export type OptionsScreenerResult = ApiEnvelope & {
@@ -1409,6 +1485,14 @@ export type OptionsScreenerResult = ApiEnvelope & {
   candidates: OptionsScreenerCandidate[];
   rejected_count: number;
   rejection_summary: Record<string, number>;
+  scanned_contract_count?: number;
+  identity_rejected_count?: number;
+  hard_gate_rejected_count?: number;
+  preference_rejected_count?: number;
+  eligible_count?: number;
+  watch_candidates?: OptionsScreenerCandidate[];
+  requested_min_apr?: number;
+  apr_alternative_max_percent?: number | null;
   assumptions: string[];
 };
 
@@ -1472,6 +1556,7 @@ export type BuySideDecisionThesis = {
   expected_iv_change_vol_points?: number | null;
   preferred_dte_range?: [number, number] | null;
   iv_rank?: number | null;
+  iv_measure: "atm30_straddle_iv_v1";
   historical_volatility?: number | null;
   as_of_date?: string | null;
   user_scenarios?: BuySideUserScenarioPnL[];
@@ -1550,8 +1635,10 @@ export type BuySideRecommendation = {
   break_even?: number | null;
   required_move_pct?: number | null;
   theta_burn_7d_pct?: number | null;
-  estimated_iv_crush_loss_pct?: number | null;
+  estimated_iv_change_pct?: number | null;
   liquidity_score?: number | null;
+  theta_safety_score?: number | null;
+  greek_efficiency_score?: number | null;
   risk_reward?: number | null;
   expected_move_pct?: number | null;
   target_vs_expected_move_ratio?: number | null;
@@ -1563,6 +1650,7 @@ export type BuySideRecommendation = {
   market_regime_penalty?: number | null;
   warnings: string[];
   scenario_summary?: BuySideScenarioSummary | null;
+  scenario_approximation_reliability?: "high" | "medium" | "low" | null;
   scenario_ev?: BuySideScenarioEv | null;
   demotion_badge?: string | null;
   demotion_reason?: string | null;
@@ -1598,6 +1686,7 @@ export type OptionsSnapshotResponse = ApiEnvelope & {
   source: string;
   price: number;
   nearest_expiry: string;
+  iv_expiry: string;
   atm_iv?: number | null;
   hv_30d?: number | null;
   iv_rank?: number | null;
@@ -1619,6 +1708,7 @@ export type OptionsChainResponse = ApiEnvelope & {
   source: string;
   expiration: string;
   option_type: string;
+  implied_volatility_unit?: "percent";
   contracts: OptionContract[];
 };
 
@@ -1772,7 +1862,12 @@ export type OptionsBullPutSignalResponse = ApiEnvelope & {
 
 export type OptionsFearScoreResponse = ApiEnvelope & {
   success: boolean;
-  fear_score: number;
+  fear_score: number | null;
+  partial_score: number | null;
+  status: string;
+  available_inputs: number;
+  total_inputs: number;
+  missing_inputs: string[];
   tier: string;
   components: Record<string, unknown>;
   bull_put_spread_signal: boolean;
@@ -1781,7 +1876,12 @@ export type OptionsFearScoreResponse = ApiEnvelope & {
 
 export type OptionsMarketSentimentResponse = ApiEnvelope & {
   success: boolean;
-  sentiment_score: number;
+  sentiment_score: number | null;
+  partial_score: number | null;
+  status: string;
+  available_inputs: number;
+  total_inputs: number;
+  missing_inputs: string[];
   regime: string;
   components: Record<string, unknown>;
   assumptions: string[];
@@ -1802,6 +1902,8 @@ export type OptionsEarningsCrushResponse = ApiEnvelope & {
   success: boolean;
   ticker: string;
   sample_count: number;
+  status: string;
+  reason: string | null;
   average_crush_pct?: number | null;
   expected_post_event_iv?: number | null;
   implied_move_pct?: number | null;
@@ -1812,8 +1914,9 @@ export type OptionsEarningsCrushResponse = ApiEnvelope & {
 export type OptionsHedgeAdvisorResponse = ApiEnvelope & {
   success: boolean;
   ticker: string;
-  situation: Record<string, unknown>;
+  situation: string;
   structures: Array<Record<string, unknown>>;
+  rejected_legs: Array<Record<string, unknown>>;
   assumptions: string[];
 };
 
@@ -1836,9 +1939,12 @@ export type OptionsAlertsEvaluationResponse = ApiEnvelope & {
 
 export type OptionsResearchHealthCheckResponse = ApiEnvelope & {
   success: boolean;
-  health_score: number;
+  health_score: number | null;
+  status: string;
+  profile_count: number;
   stale_profiles: string[];
   missing_thesis: string[];
+  missing_updated_at: string[];
   assumptions: string[];
 };
 
@@ -1869,11 +1975,18 @@ export type OptionsRadarDatesResponse = OptionsDailyScanDatesResponse;
 
 export type OptionsDailyTaskStatus = {
   status?: string | null;
+  terminal?: boolean | null;
+  current_step?: string | null;
+  target_session?: string | null;
+  trigger?: "manual" | "scheduled" | string | null;
   run_date?: string | null;
   provider?: string | null;
   strategies?: string[] | null;
+  queued_at?: string | null;
   started_at?: string | null;
   finished_at?: string | null;
+  scanned_tickers?: number | null;
+  total_tickers?: number | null;
   failed_step?: string | null;
   error?: string | null;
   steps?: Record<string, Record<string, unknown>>;
@@ -1886,33 +1999,18 @@ export type OptionsDailyScanStatusResponse = ApiEnvelope & {
   status: OptionsDailyTaskStatus | null;
 };
 
+export type OptionsDailyScanTaskStateResponse =
+  GeneratedApiComponents["schemas"]["OptionsDailyScanTaskStateResponse"];
+
+export type OptionsDailyScanRunResponse = ApiEnvelope &
+  OptionsDailyScanTaskStateResponse;
+
 export type OptionsDailyTaskStatusResponse = OptionsDailyScanStatusResponse;
 
-export type OptionsDailyScanResponse = ApiEnvelope & {
-  run_date: string;
-  universe_size: number;
-  scanned_tickers: number;
-  failed_tickers: Array<[string, string]>;
-  is_stale: boolean;
-  snapshot_age_days: number;
-  expired_candidate_count: number;
-  candidates: OptionsRadarCandidate[];
-};
+export type OptionsDailyScanResponse = ApiEnvelope &
+  GeneratedApiComponents["schemas"]["OptionsDailyScanResponse"];
 
 export type OptionsRadarResponse = OptionsDailyScanResponse;
-
-export type OptionsDailyScanRunResponse = ApiEnvelope & {
-  run_date: string;
-  provider: "sample" | "futu";
-  universe_size: number;
-  scanned_tickers: number;
-  failed_tickers: Array<[string, string]>;
-  candidate_count: number;
-  data_path: string;
-  meta_path: string;
-};
-
-export type OptionsRadarRunResponse = OptionsDailyScanRunResponse;
 
 export type OptionsRefreshResponse = ApiEnvelope & {
   kind: "universe" | "earnings" | "vix";
@@ -1924,12 +2022,8 @@ export type OptionsRefreshResponse = ApiEnvelope & {
   warning?: string | null;
 };
 
-export type OptionsDailyScanSymbolResponse = ApiEnvelope & {
-  ticker: string;
-  run_date: string;
-  candidate_count: number;
-  candidates: OptionsRadarCandidate[];
-};
+export type OptionsDailyScanSymbolResponse = ApiEnvelope &
+  GeneratedApiComponents["schemas"]["OptionsDailyScanSymbolResponse"];
 
 export type OptionsRadarSymbolResponse = OptionsDailyScanSymbolResponse;
 
@@ -2095,10 +2189,6 @@ export type DurablePublicCutoverResponse =
 export type WorkspacePublicCutoverResponse = NonNullable<
   GeneratedApiComponents["schemas"]["WorkspaceSnapshotResponse"]["public_cutovers"]
 >[number];
-export type GateProjectionResponse =
-  GeneratedApiComponents["schemas"]["GateProjectionResponse"];
-export type Gate1SourceEvidenceResponse =
-  GeneratedApiComponents["schemas"]["Gate1SourceEvidenceResponse"];
 export type OptionsRequestResponse =
   GeneratedApiComponents["schemas"]["OptionsRequestResponse"];
 export type ManagedSessionProjectionResponse =
@@ -2113,30 +2203,14 @@ export type WorkspaceActionReceiptResponse =
   GeneratedApiComponents["schemas"]["WorkspaceActionReceiptResponse"];
 export type CompositeTurnReceiptResponse =
   GeneratedApiComponents["schemas"]["CompositeTurnReceiptResponse"];
-export type D34MandateResponse =
-  GeneratedApiComponents["schemas"]["D34MandateResponse"];
-export type D34MandateListResponse =
-  GeneratedApiComponents["schemas"]["D34MandateListResponse"];
-export type D34ExperimentJobResponse =
-  GeneratedApiComponents["schemas"]["D34ExperimentJobResponse"];
-export type D34ExperimentJobListResponse =
-  GeneratedApiComponents["schemas"]["D34ExperimentJobListResponse"];
-export type D34ArtifactResponse =
-  GeneratedApiComponents["schemas"]["D34ArtifactResponse"];
-export type D34ArtifactComparisonResponse =
-  GeneratedApiComponents["schemas"]["D34ArtifactComparisonResponse"];
-export type D34ArtifactListResponse =
-  GeneratedApiComponents["schemas"]["D34ArtifactListResponse"];
-export type D34CanaryResponse =
-  GeneratedApiComponents["schemas"]["D34CanaryResponse"];
-export type D34CanaryListResponse =
-  GeneratedApiComponents["schemas"]["D34CanaryListResponse"];
-export type D34RollbackResponse =
-  GeneratedApiComponents["schemas"]["D34RollbackResponse"];
-export type EffectiveD34SafetyResponse =
-  GeneratedApiComponents["schemas"]["EffectiveD34SafetyResponse"];
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_QUANT_API_BASE_URL ?? "http://127.0.0.1:8765";
+// Same base-URL policy as lib/apiClient.ts: explicit
+// NEXT_PUBLIC_QUANT_API_BASE_URL wins; browser callers fall back to the
+// same-origin /api rewrite; server-side reads keep the absolute local
+// backend address.
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_QUANT_API_BASE_URL ??
+  (typeof window === "undefined" ? "http://127.0.0.1:8765" : "");
 
 const FALLBACK_SAFETY: SafetyFooter = {
   dry_run: true,
@@ -2629,6 +2703,14 @@ export function getStrategies() {
   });
 }
 
+export type CollectionCatalogResponse = ApiEnvelope & GeneratedApiComponents["schemas"]["CollectionResponse"];
+
+export function getCollectionCatalog() {
+  return apiGet<CollectionCatalogResponse>("/api/collection", {
+    generated_at: "", items: [], errors: [], excluded_sample_runs: 0, safety: FALLBACK_SAFETY,
+  });
+}
+
 export function getUniverses() {
   return apiGet<UniverseCatalogResponse>("/api/universes", {
     universes: [],
@@ -2774,6 +2856,7 @@ const FALLBACK_ACCOUNT: PaperAccountResponse = {
   cash: 1_000_000,
   reserved_cash: 0,
   available_cash: 1_000_000,
+  manual_available_cash: 1_000_000,
   equity: 1_000_000,
   realized_pnl: 0,
   unrealized_pnl: 0,
@@ -2791,6 +2874,25 @@ const FALLBACK_ACCOUNT: PaperAccountResponse = {
 
 export function getPaperAccount() {
   return apiGet<PaperAccountResponse>("/api/paper/account", FALLBACK_ACCOUNT, true);
+}
+
+export type RemoteBookResponse = {
+  contract?: string;
+  candidates?: unknown[];
+  requests?: unknown[];
+  verified_count?: number;
+  hung_count?: number;
+  fossil_count?: number;
+  fossils?: unknown[];
+  apiError?: string;
+};
+
+export function getRemoteBook() {
+  return apiGet<RemoteBookResponse>(
+    "/api/assistant/remote/book",
+    { hung_count: undefined, verified_count: undefined, apiError: "remote book unavailable" },
+    true,
+  );
 }
 
 export function getPaperAccountLedger(limit = 50, offset = 0) {
@@ -2882,6 +2984,33 @@ export function getPaperStrategySleeves() {
     sleeves: [],
     safety: FALLBACK_SAFETY,
   });
+}
+
+export function getHungSleeveEffect() {
+  return apiGet<HungSleeveEffectResponse>(
+    "/api/paper/strategy-sleeves/hung-effect",
+    {
+      hung_count: 0,
+      observation_day_count: 0,
+      valuation_day_count: 0,
+      valuation_status: "unavailable",
+      return_method: "unavailable",
+      empty: true,
+      empty_label_zh: "已挂 0 条 · 观察日 0 · 等第一个观察夜",
+      sleeve_return_pct: null,
+      spy_return_pct: null,
+      sleeve_equity: null,
+      sleeve_equity_status: "empty",
+      sleeve_equity_reason: null,
+      spy_status: "empty",
+      spy_reason: null,
+      price_source: null,
+      turnover: null,
+      cost_drag_pct: null,
+      series: [],
+    },
+    true,
+  );
 }
 
 export function getPaperStrategySleeveDetail(sleeveId: string) {
@@ -3192,12 +3321,19 @@ export function getOptionsDailyScan(params: {
   }
   return apiGet<OptionsRadarResponse>(`/api/options/daily-scan?${query.toString()}`, {
     run_date: params.date ?? "",
+    status: "unavailable",
+    provider: null,
+    as_of: null,
+    risk_free_rate: null,
+    shortfall_count: 20,
+    shortfall_reasons: { api_unavailable: 20 },
     universe_size: 0,
     scanned_tickers: 0,
     failed_tickers: [],
     is_stale: false,
     snapshot_age_days: 0,
     expired_candidate_count: 0,
+    candidate_count: 0,
     candidates: [],
     safety: FALLBACK_SAFETY,
   });
@@ -3213,6 +3349,16 @@ export function getOptionsDailyScanSymbol(ticker: string, date?: string) {
     {
       ticker: ticker.toUpperCase(),
       run_date: date ?? "",
+      provider: null,
+      as_of: null,
+      status: "unavailable",
+      shortfall_count: 20,
+      shortfall_reasons: { api_unavailable: 1 },
+      universe_size: 0,
+      scanned_tickers: 0,
+      failed_tickers: [],
+      is_stale: true,
+      snapshot_age_days: 0,
       candidate_count: 0,
       candidates: [],
       safety: FALLBACK_SAFETY,

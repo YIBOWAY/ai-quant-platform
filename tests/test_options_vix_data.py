@@ -156,25 +156,22 @@ def test_fetch_cboe_index_history_parses_csv() -> None:
     ]
 
 
-def test_fetch_vix_history_falls_back_to_cboe_when_yahoo_blocks() -> None:
+def test_fetch_vix_history_uses_cboe_for_both_even_when_yahoo_has_old_rows() -> None:
     calls: list[str] = []
-    csv_text = (
-        "DATE,OPEN,HIGH,LOW,CLOSE\n"
-        "04/30/2026,17.00,17.40,16.70,16.890000\n"
-        "05/01/2026,16.80,17.20,16.60,16.990000\n"
-    )
+    # Public Cboe closes fetched on 2026-09-05; different tenors stay distinct.
+    csv_text = "DATE,OPEN,HIGH,LOW,CLOSE\n09/04/2026,14.15,14.58,13.80,14.53\n"
+    three_month = "DATE,OPEN,HIGH,LOW,CLOSE\n09/04/2026,17.34,17.67,17.21,17.61\n"
 
     def fake_get(url, params=None, headers=None, timeout=None):
         calls.append(url)
         if "finance.yahoo.com" in url:
-            return _FakeResponse(403, None)
-        return _FakeTextResponse(200, csv_text)
+            return _FakeResponse(200, _payload([1784289600], [20.54]))
+        return _FakeTextResponse(200, three_month if "VIX3M" in url else csv_text)
 
-    vix, vix3m = fetch_vix_history(end=date(2026, 5, 3), http_get=fake_get)
-    assert any("finance.yahoo.com" in item for item in calls)
-    assert any("cdn.cboe.com" in item for item in calls)
-    assert list(vix.values) == pytest.approx([16.89, 16.99])
-    assert list(vix3m.values) == pytest.approx([16.89, 16.99])
+    vix, vix3m = fetch_vix_history(end=date(2026, 9, 4), http_get=fake_get)
+    assert len(calls) == 2 and all("cdn.cboe.com" in item for item in calls)
+    assert vix.index[-1] == vix3m.index[-1] == pd.Timestamp("2026-09-04")
+    assert vix.iloc[-1] == 14.53 and vix3m.iloc[-1] == 17.61
 
 
 def test_save_and_load_vix_history_round_trip(tmp_path: Path) -> None:
@@ -200,12 +197,12 @@ def test_fetch_vix_history_calls_both_tickers() -> None:
 
     def fake_get(url, params=None, headers=None, timeout=None):
         seen.append(url)
-        return _FakeResponse(200, _payload([1_700_000_000], [16.0]))
+        return _FakeTextResponse(200, "DATE,OPEN,HIGH,LOW,CLOSE\n12/31/2024,16,16,16,16\n")
 
     vix, vix3m = fetch_vix_history(end=date(2025, 1, 1), http_get=fake_get)
     joined = " ".join(seen)
-    assert "%5EVIX" in joined or "^VIX" in joined
-    assert "%5EVIX3M" in joined or "^VIX3M" in joined
+    assert "/VIX_History.csv" in joined
+    assert "/VIX3M_History.csv" in joined
     assert not vix.empty
     assert not vix3m.empty
 

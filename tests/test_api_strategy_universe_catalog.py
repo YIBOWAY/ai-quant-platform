@@ -21,6 +21,19 @@ def test_strategy_catalog_api_exposes_registered_strategies(tmp_path) -> None:
     assert payload["safety"]["live_trading_enabled"] is False
 
 
+def test_catalog_defaults_to_real_data_and_exposes_draft_execution_boundary(tmp_path):
+    client = TestClient(create_app(output_dir=tmp_path))
+    rows = client.get("/api/strategies").json()["strategies"]
+    for row in rows:
+        assert row["default_payload"]["provider"] == "futu"
+        assert row["parameter_schema"]["fields"]["provider"]["default"] == "futu"
+        if row["id"] == "drift_regime_reversal_top_n_v1":
+            assert row["runnable"] is False
+            assert row["execution_blocker"] == "strategy_executor_unavailable"
+        else:
+            assert row["runnable"] is True
+
+
 def test_universe_catalog_api_exposes_registered_universes(tmp_path) -> None:
     client = TestClient(create_app(output_dir=tmp_path))
 

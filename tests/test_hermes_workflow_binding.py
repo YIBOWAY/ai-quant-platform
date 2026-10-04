@@ -1368,8 +1368,6 @@ def test_legacy_event_append_only_function_drift_fails_closed_and_replay_restore
             "admission_mode": "closed",
             "admission_workspace_id": "ws-local-main",
             "configured_release_workspace_id": "ws-local-main",
-            "candidate_admission_id": None,
-            "candidate_admission_digest": None,
             "connector_liveness_ready": False,
             "connector_liveness_reason": "connector_liveness_unavailable",
             "connector_worker_id": None,
@@ -1380,6 +1378,8 @@ def test_legacy_event_append_only_function_drift_fails_closed_and_replay_restore
             "public_cutover_id": None,
             "release_event_cursor": 0,
         }
+        assert "candidate_admission_id" not in health_payload["hermes_command_ledger"]
+        assert "candidate_admission_digest" not in health_payload["hermes_command_ledger"]
         with pytest.raises(
             HermesCommandLedgerUnavailable,
             match="schema version is not ready",

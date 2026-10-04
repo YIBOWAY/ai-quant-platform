@@ -52,8 +52,6 @@ def test_health_returns_safety_snapshot(tmp_path) -> None:
         "admission_mode": "closed",
         "admission_workspace_id": "ws-local-main",
         "configured_release_workspace_id": "ws-local-main",
-        "candidate_admission_id": None,
-        "candidate_admission_digest": None,
         "connector_liveness_ready": False,
         "connector_liveness_reason": "connector_liveness_unavailable",
         "connector_worker_id": None,

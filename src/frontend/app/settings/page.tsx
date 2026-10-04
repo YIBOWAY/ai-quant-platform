@@ -1,9 +1,20 @@
 import { Languages, Lock, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import Link from "next/link";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { LocaleToggle } from "@/components/LocaleToggle";
 import { Card, PageHeader, SectionTitle, StatusPill } from "@/components/ui/primitives";
 import { getSettings } from "@/lib/api";
+import { localizePath } from "@/lib/locale";
 import { getServerLocale } from "@/lib/serverLocale";
+
+const labHrefs = [
+  ["labPolymarket", "/polymarket"],
+  ["labAgentStudio", "/agent-studio"],
+  ["labFactorLab", "/factor-lab"],
+  ["labBacktester", "/backtest"],
+  ["labExperiments", "/experiments"],
+  ["labStrategies", "/strategies"],
+] as const;
 
 const copy = {
   en: {
@@ -30,6 +41,14 @@ const copy = {
     interfaceTitle: "Interface",
     interfaceHint: "The only interface preference is the display language. It is stored in a cookie on this machine.",
     languageLabel: "Display language",
+    labTitle: "Lab pages",
+    labHint: "Deep routes kept off the default sidebar. Not part of the five daily jobs.",
+    labPolymarket: "Polymarket",
+    labAgentStudio: "Agent Studio",
+    labFactorLab: "Factor Lab",
+    labBacktester: "Backtester",
+    labExperiments: "Experiments",
+    labStrategies: "Strategy Catalog",
   },
   zh: {
     eyebrow: "本地设置",
@@ -55,6 +74,14 @@ const copy = {
     interfaceTitle: "界面",
     interfaceHint: "界面偏好仅有显示语言一项，保存在本机 Cookie 中。",
     languageLabel: "显示语言",
+    labTitle: "实验室深页",
+    labHint: "不进默认侧栏的深页，也不属于每天要做的五件事。",
+    labPolymarket: "Polymarket",
+    labAgentStudio: "智能体工作室",
+    labFactorLab: "因子实验室",
+    labBacktester: "回测器",
+    labExperiments: "实验管理",
+    labStrategies: "策略目录",
   },
 } as const;
 
@@ -149,6 +176,21 @@ export default async function SettingsPage() {
             </pre>
           </Card>
         </section>
+
+        <Card padded className="flex flex-col gap-3">
+          <SectionTitle title={text.labTitle} hint={text.labHint} />
+          <div className="flex flex-wrap gap-2">
+            {labHrefs.map(([key, href]) => (
+              <Link
+                className="rounded-lg border border-border-subtle px-3 py-1.5 font-body-sm text-text-secondary hover:bg-bg-surface-muted hover:text-text-primary"
+                href={localizePath(href, locale)}
+                key={href}
+              >
+                {text[key]}
+              </Link>
+            ))}
+          </div>
+        </Card>
       </div>
     </main>
   );

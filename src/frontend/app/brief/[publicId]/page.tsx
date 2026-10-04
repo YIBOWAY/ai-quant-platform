@@ -8,6 +8,7 @@ import {
   type BriefArchivePayload,
 } from "@/lib/briefArchive";
 import { selectBriefPerformanceSeries } from "@/lib/briefPerformance";
+import { accountValuation, hasMarketPrice, valuationWarning } from "@/lib/accountValuation";
 
 type Props = { params: Promise<{ publicId: string }> };
 
@@ -23,12 +24,14 @@ export default async function BriefIssueArchivePage({ params }: Props) {
   const isZh = archive.locale === "zh";
 
   return (
-    <div className="flex h-full bg-paper-ink text-ink">
+    <div className="flex h-full flex-col bg-paper-ink text-ink md:flex-row">
       <BriefArchiveSidebar
+        activeIssueDate={issue.issue_date || archive.issueDate}
         activePublicId={archive.publicId || publicId}
+        documentKind="daily"
         locale={isZh ? "zh" : "en"}
       />
-      <main className="h-full min-w-0 flex-1 overflow-y-auto">
+      <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">
       <article className="mx-auto flex min-h-full max-w-editorial-column flex-col gap-8 px-5 py-8 md:px-10 lg:px-14">
         <header className="border-b-[3px] border-double border-ink pb-6 text-center">
           <p className="font-editorial-caps text-ink-secondary">
@@ -149,10 +152,15 @@ function ArchiveDocument({
   const selectedPerformanceSeries = performance
     ? selectBriefPerformanceSeries(performance)
     : [];
+  const mark = accountValuation(account);
+  const warning = valuationWarning(account, isZh ? "zh" : "en");
   return (
     <>
       <section className="border-b border-editorial-rule pb-7 text-center">
-        <p className="font-editorial-body text-xl leading-9 text-ink">{lede}</p>
+        {mark.complete ? <p className="font-editorial-body text-xl leading-9 text-ink">{lede}</p> : <>
+          <p className="font-editorial-body text-lg leading-8 text-warning">{warning}</p>
+          <details className="mt-3 text-sm text-ink-secondary"><summary className="cursor-pointer">{isZh ? "查看当时保存的原文（含不完整估值）" : "Original text (includes incomplete valuation)"}</summary><p className="mt-2">{lede}</p></details>
+        </>}
         <p className="mt-3 font-data-mono text-xs text-ink-secondary">
           {isZh ? "生成于" : "Generated at"} {generatedAt}
         </p>
@@ -161,10 +169,10 @@ function ArchiveDocument({
       <section className="border-b border-editorial-rule pb-7">
         <SectionTitle zh="模拟账户" en="PAPER ACCOUNT" isZh={isZh} />
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Metric label={isZh ? "权益" : "Equity"} value={money(account.equity, account.base_currency)} />
+          <Metric label={isZh ? "权益" : "Equity"} value={mark.complete ? money(account.equity, account.base_currency) : "--"} />
           <Metric label={isZh ? "现金" : "Cash"} value={money(account.cash, account.base_currency)} />
-          <Metric label={isZh ? "盈亏" : "P&L"} value={money(account.pnl_abs, account.base_currency)} />
-          <Metric label={isZh ? "投入比例" : "Invested"} value={percent(account.invested_pct)} />
+          <Metric label={isZh ? "盈亏" : "P&L"} value={mark.complete ? money(account.pnl_abs, account.base_currency) : "--"} />
+          <Metric label={isZh ? "投入比例" : "Invested"} value={mark.complete ? percent(account.invested_pct) : "--"} />
         </div>
         <div className="mt-5 overflow-x-auto border border-editorial-rule">
           <table className="w-full min-w-[720px] border-collapse font-data-mono text-xs">
@@ -183,15 +191,15 @@ function ArchiveDocument({
               {account.positions.length ? (
                 account.positions.map((position) => (
                   <tr className="border-t border-editorial-rule" key={position.symbol}>
-                    <Td>{position.symbol}</Td>
+                    <Td>{position.symbol}{!hasMarketPrice(position) && <span className="block text-warning">{isZh ? "缺行情，成本不作现价" : "No quote; cost is not price"}</span>}</Td>
                     <Td>{number(position.quantity)}</Td>
                     <Td>{money(position.avg_cost, account.base_currency)}</Td>
-                    <Td>{money(position.last_price, account.base_currency)}</Td>
-                    <Td>{money(position.market_value, account.base_currency)}</Td>
+                    <Td>{hasMarketPrice(position) ? money(position.last_price, account.base_currency) : "--"}</Td>
+                    <Td>{hasMarketPrice(position) ? money(position.market_value, account.base_currency) : "--"}</Td>
                     <Td>
                       <BriefDailyChange value={position.day_change_ratio} />
                     </Td>
-                    <Td>{money(position.unrealized_pnl, account.base_currency)}</Td>
+                    <Td>{hasMarketPrice(position) ? money(position.unrealized_pnl, account.base_currency) : "--"}</Td>
                   </tr>
                 ))
               ) : (
@@ -226,6 +234,7 @@ function ArchiveDocument({
                   ? "归档中没有可对齐的收益数据"
                   : "No aligned performance data in this archive"
               }
+              locale={isZh ? "zh" : "en"}
               series={selectedPerformanceSeries}
             />
           </>
@@ -274,7 +283,7 @@ function ArchiveDocument({
       </section>
 
       <section className="border-b border-editorial-rule pb-7">
-        <SectionTitle zh="AI 情报摘要" en="AI INTELLIGENCE" isZh={isZh} />
+        <SectionTitle zh="AI 新闻摘要" en="AI INTELLIGENCE" isZh={isZh} />
         {aiNews.length ? (
           <div className="grid gap-5 md:grid-cols-2">
             {aiNews.map((item) => {

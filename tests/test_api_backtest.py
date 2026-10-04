@@ -1,9 +1,11 @@
+import hashlib
 import json
 import time
 from pathlib import Path
 from threading import Event
 
 import pandas as pd
+import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
@@ -11,6 +13,37 @@ from quant_system.api.server import create_app
 from quant_system.backtest.pipeline import BacktestCancelledError
 from quant_system.config.settings import ApiKeySettings, BacktestJobSettings, DataSettings, Settings
 from quant_system.data.schema import normalize_ohlcv_dataframe
+
+
+@pytest.mark.parametrize("jobs_enabled", [False, True])
+@pytest.mark.parametrize("start,end,reason", [
+    ("2024-02-01", "2024-01-01", "start must be on or before end"),
+    ("2024-02-30", "2024-03-01", "date must be YYYY-MM-DD"),
+    ("20240101", "2024-03-01", "date must be YYYY-MM-DD"),
+])
+def test_backtest_rejects_invalid_dates_before_provider_or_job_submission(
+    tmp_path, monkeypatch, jobs_enabled, start, end, reason,
+) -> None:
+    settings = Settings(
+        data=_isolated_data_settings(tmp_path),
+        backtest_jobs=BacktestJobSettings(enabled=jobs_enabled),
+    )
+    calls = []
+    monkeypatch.setattr(
+        "quant_system.api.routes.backtest.execute_backtest_run",
+        lambda **kwargs: calls.append(kwargs),
+    )
+    monkeypatch.setattr(
+        "quant_system.api.jobs.backtest_jobs.BacktestJobRunner.submit",
+        lambda self, request: calls.append(request),
+    )
+    response = TestClient(create_app(settings=settings, output_dir=tmp_path)).post(
+        "/api/backtests/run", json={"start": start, "end": end, "provider": "sample"},
+    )
+    assert response.status_code == 422
+    assert reason in response.text
+    assert calls == []
+    assert not (tmp_path / "api_runs" / "backtests").exists()
 
 
 def _isolated_data_settings(tmp_path) -> DataSettings:
@@ -78,7 +111,7 @@ def _wait_for_job_status(client: TestClient, run_id: str, statuses: set[str]) ->
 
 
 def test_backtest_run_accepts_async_job_when_enabled(tmp_path, monkeypatch) -> None:
-    settings = Settings(backtest_jobs=BacktestJobSettings(enabled=True))
+    settings = Settings(data=_isolated_data_settings(tmp_path), backtest_jobs=BacktestJobSettings(enabled=True))
     release = Event()
 
     def slow_backtest(*args, **kwargs):
@@ -118,7 +151,7 @@ def test_backtest_run_accepts_async_job_when_enabled(tmp_path, monkeypatch) -> N
 
 
 def test_backtest_async_job_polling_reaches_completed(tmp_path) -> None:
-    settings = Settings(backtest_jobs=BacktestJobSettings(enabled=True))
+    settings = Settings(data=_isolated_data_settings(tmp_path), backtest_jobs=BacktestJobSettings(enabled=True))
     with TestClient(create_app(settings=settings, output_dir=tmp_path)) as client:
         response = client.post(
             "/api/backtests/run",
@@ -143,7 +176,7 @@ def test_backtest_async_job_polling_reaches_completed(tmp_path) -> None:
 
 
 def test_backtest_async_job_can_cancel_queued_job(tmp_path, monkeypatch) -> None:
-    settings = Settings(backtest_jobs=BacktestJobSettings(enabled=True, max_workers=1))
+    settings = Settings(data=_isolated_data_settings(tmp_path), backtest_jobs=BacktestJobSettings(enabled=True, max_workers=1))
     release = Event()
 
     def blocking_backtest(*args, **kwargs):
@@ -190,7 +223,7 @@ def test_backtest_async_job_can_cancel_queued_job(tmp_path, monkeypatch) -> None
 
 
 def test_backtest_async_job_can_cancel_running_job(tmp_path, monkeypatch) -> None:
-    settings = Settings(backtest_jobs=BacktestJobSettings(enabled=True))
+    settings = Settings(data=_isolated_data_settings(tmp_path), backtest_jobs=BacktestJobSettings(enabled=True))
     started = Event()
 
     def cancellable_backtest(*args, **kwargs):
@@ -231,7 +264,7 @@ def test_backtest_async_job_can_cancel_running_job(tmp_path, monkeypatch) -> Non
 
 
 def test_backtest_async_job_records_failure_and_survives_restart(tmp_path, monkeypatch) -> None:
-    settings = Settings(backtest_jobs=BacktestJobSettings(enabled=True))
+    settings = Settings(data=_isolated_data_settings(tmp_path), backtest_jobs=BacktestJobSettings(enabled=True))
 
     def fail_backtest(*args, **kwargs):
         raise ValueError("bad async request")
@@ -263,7 +296,7 @@ def test_backtest_async_job_records_failure_and_survives_restart(tmp_path, monke
 
 
 def test_backtest_async_job_recovers_stale_running_metadata(tmp_path) -> None:
-    settings = Settings(backtest_jobs=BacktestJobSettings(enabled=True))
+    settings = Settings(data=_isolated_data_settings(tmp_path), backtest_jobs=BacktestJobSettings(enabled=True))
     app = create_app(settings=settings, output_dir=tmp_path)
     run_id = "backtest-20240101T000000Z-stalejob"
     run_dir = tmp_path / "api_runs" / "backtests" / run_id
@@ -284,7 +317,7 @@ def test_backtest_async_job_recovers_stale_running_metadata(tmp_path) -> None:
 
 
 def test_backtest_async_job_recovers_stale_running_metadata_when_jobs_disabled(tmp_path) -> None:
-    settings = Settings(backtest_jobs=BacktestJobSettings(enabled=False))
+    settings = Settings(data=_isolated_data_settings(tmp_path), backtest_jobs=BacktestJobSettings(enabled=False))
     run_id = "backtest-20240101T000000Z-stalejob"
     run_dir = tmp_path / "api_runs" / "backtests" / run_id
     run_dir.mkdir(parents=True)
@@ -302,7 +335,7 @@ def test_backtest_async_job_recovers_stale_running_metadata_when_jobs_disabled(t
     assert payload["error"]["code"] == "job_recovered_after_restart"
 
 def test_backtest_run_list_and_detail(tmp_path) -> None:
-    client = TestClient(create_app(output_dir=tmp_path))
+    client = TestClient(create_app(settings=Settings(data=_isolated_data_settings(tmp_path)), output_dir=tmp_path))
 
     run_response = client.post(
         "/api/backtests/run",
@@ -347,11 +380,16 @@ def test_backtest_run_list_and_detail(tmp_path) -> None:
     ).exists()
     assert "benchmark_curve" in detail["metadata"]["paths"]
     assert detail["orders"]
+    from quant_system.research.trials import TrialsLedger
+
+    trials = TrialsLedger(tmp_path / "data" / "trials").list()
+    assert len(trials) == 1
+    assert trials[0].metadata["run_id"] == run_id
 
 
 
 def test_backtest_list_excludes_active_async_jobs(tmp_path, monkeypatch) -> None:
-    settings = Settings(backtest_jobs=BacktestJobSettings(enabled=True))
+    settings = Settings(data=_isolated_data_settings(tmp_path), backtest_jobs=BacktestJobSettings(enabled=True))
     release = Event()
 
     def slow_backtest(*args, **kwargs):
@@ -384,7 +422,7 @@ def test_backtest_list_excludes_active_async_jobs(tmp_path, monkeypatch) -> None
 
 
 def test_backtest_detail_accepts_legacy_metadata_without_status(tmp_path) -> None:
-    client = TestClient(create_app(output_dir=tmp_path))
+    client = TestClient(create_app(settings=Settings(data=_isolated_data_settings(tmp_path)), output_dir=tmp_path))
 
     run_response = client.post(
         "/api/backtests/run",
@@ -411,7 +449,7 @@ def test_backtest_detail_accepts_legacy_metadata_without_status(tmp_path) -> Non
 
 
 def test_backtest_cancellation_does_not_mask_real_failure(tmp_path, monkeypatch) -> None:
-    settings = Settings(backtest_jobs=BacktestJobSettings(enabled=True))
+    settings = Settings(data=_isolated_data_settings(tmp_path), backtest_jobs=BacktestJobSettings(enabled=True))
     started = Event()
 
     def failing_after_cancel(*args, **kwargs):
@@ -450,7 +488,7 @@ def test_backtest_cancellation_does_not_mask_real_failure(tmp_path, monkeypatch)
 
 
 def test_backtest_shutdown_waits_for_running_jobs_to_finish(tmp_path, monkeypatch) -> None:
-    settings = Settings(backtest_jobs=BacktestJobSettings(enabled=True))
+    settings = Settings(data=_isolated_data_settings(tmp_path), backtest_jobs=BacktestJobSettings(enabled=True))
     started = Event()
 
     def cancellable_backtest(*args, **kwargs):
@@ -535,7 +573,7 @@ def test_backtest_shutdown_does_not_block_forever_on_non_cooperative_job(
 
 
 def test_backtest_run_does_not_create_per_run_duckdb(tmp_path) -> None:
-    client = TestClient(create_app(output_dir=tmp_path))
+    client = TestClient(create_app(settings=Settings(data=_isolated_data_settings(tmp_path)), output_dir=tmp_path))
 
     response = client.post(
         "/api/backtests/run",
@@ -613,7 +651,7 @@ def test_backtest_run_rejects_explicit_provider_fetch_failure(
 
 
 def test_backtest_run_records_single_symbol_no_trade_warning(tmp_path) -> None:
-    client = TestClient(create_app(output_dir=tmp_path))
+    client = TestClient(create_app(settings=Settings(data=_isolated_data_settings(tmp_path)), output_dir=tmp_path))
 
     response = client.post(
         "/api/backtests/run",
@@ -636,7 +674,7 @@ def test_backtest_run_records_single_symbol_no_trade_warning(tmp_path) -> None:
 
 
 def test_backtest_run_rejects_sector_cap_without_sector_map(tmp_path) -> None:
-    client = TestClient(create_app(output_dir=tmp_path))
+    client = TestClient(create_app(settings=Settings(data=_isolated_data_settings(tmp_path)), output_dir=tmp_path))
 
     response = client.post(
         "/api/backtests/run",
@@ -656,7 +694,7 @@ def test_backtest_run_rejects_sector_cap_without_sector_map(tmp_path) -> None:
 
 
 def test_benchmark_returns_equity_curve(tmp_path) -> None:
-    client = TestClient(create_app(output_dir=tmp_path))
+    client = TestClient(create_app(settings=Settings(data=_isolated_data_settings(tmp_path)), output_dir=tmp_path))
 
     response = client.get(
         "/api/benchmark",
@@ -677,7 +715,7 @@ def test_benchmark_returns_equity_curve(tmp_path) -> None:
 
 
 def test_benchmark_rejects_unknown_explicit_provider(tmp_path) -> None:
-    client = TestClient(create_app(output_dir=tmp_path))
+    client = TestClient(create_app(settings=Settings(data=_isolated_data_settings(tmp_path)), output_dir=tmp_path))
 
     response = client.get(
         "/api/benchmark",
@@ -696,7 +734,7 @@ def test_benchmark_rejects_unknown_explicit_provider(tmp_path) -> None:
 
 
 def test_backtest_detail_404_for_unknown_run(tmp_path) -> None:
-    client = TestClient(create_app(output_dir=tmp_path))
+    client = TestClient(create_app(settings=Settings(data=_isolated_data_settings(tmp_path)), output_dir=tmp_path))
 
     response = client.get("/api/backtests/does-not-exist")
 
@@ -705,7 +743,7 @@ def test_backtest_detail_404_for_unknown_run(tmp_path) -> None:
 
 
 def test_backtest_list_returns_latest_run_first(tmp_path) -> None:
-    client = TestClient(create_app(output_dir=tmp_path))
+    client = TestClient(create_app(settings=Settings(data=_isolated_data_settings(tmp_path)), output_dir=tmp_path))
 
     first = client.post(
         "/api/backtests/run",
@@ -742,7 +780,8 @@ def test_backtest_list_returns_latest_run_first(tmp_path) -> None:
 
 def test_backtest_run_uses_tiingo_when_requested(tmp_path, monkeypatch) -> None:
     settings = Settings(
-        api_keys=ApiKeySettings(tiingo_api_token=SecretStr("test-tiingo-token"))
+        data=_isolated_data_settings(tmp_path),
+        api_keys=ApiKeySettings(tiingo_api_token=SecretStr("test-tiingo-token")),
     )
 
     def fake_fetch(self, symbols, *, start, end, interval="1d"):
@@ -758,7 +797,8 @@ def test_backtest_run_uses_tiingo_when_requested(tmp_path, monkeypatch) -> None:
         "/api/backtests/run",
         json={
             "symbols": ["SPY", "QQQ"],
-            "start": "2024-01-02",
+            # The sealed provider includes one earlier initialization session.
+            "start": "2024-01-03",
             "end": "2024-01-09",
             "provider": "tiingo",
             "lookback": 3,
@@ -770,10 +810,24 @@ def test_backtest_run_uses_tiingo_when_requested(tmp_path, monkeypatch) -> None:
     payload = response.json()
     assert payload["source"] == "tiingo"
     assert payload["metrics"]["total_return"] is not None
+    run_dir = tmp_path / "api_runs" / "backtests" / payload["run_id"]
+    metadata = json.loads((run_dir / "metadata.json").read_text())
+    snapshot_path = Path(metadata["paths"]["input_prices"])
+    assert snapshot_path == run_dir / "backtests" / "input_prices.parquet"
+    assert metadata["input_prices_sha256"] == hashlib.sha256(snapshot_path.read_bytes()).hexdigest()
+    snapshot = (
+        pd.read_parquet(snapshot_path).sort_values(["timestamp", "symbol"]).reset_index(drop=True)
+    )
+    expected = _fake_tiingo_frame().sort_values(["timestamp", "symbol"]).reset_index(drop=True)
+    pd.testing.assert_frame_equal(snapshot, expected)
+    assert not snapshot.duplicated(["timestamp", "symbol"]).any()
+    assert set(snapshot.symbol) == {"SPY", "QQQ"}
+    assert metadata["history_start"] == "2024-01-02"
+    assert metadata["history_start"] != metadata["request"]["start"]
 
 
 def test_backtest_run_accepts_strategy_universe_factors_and_benchmark(tmp_path) -> None:
-    client = TestClient(create_app(output_dir=tmp_path))
+    client = TestClient(create_app(settings=Settings(data=_isolated_data_settings(tmp_path)), output_dir=tmp_path))
 
     response = client.post(
         "/api/backtests/run",
@@ -804,7 +858,7 @@ def test_backtest_run_accepts_strategy_universe_factors_and_benchmark(tmp_path) 
 
 
 def test_backtest_run_metadata_records_persisted_benchmark(tmp_path) -> None:
-    client = TestClient(create_app(output_dir=tmp_path))
+    client = TestClient(create_app(settings=Settings(data=_isolated_data_settings(tmp_path)), output_dir=tmp_path))
 
     response = client.post(
         "/api/backtests/run",
@@ -828,7 +882,7 @@ def test_backtest_run_metadata_records_persisted_benchmark(tmp_path) -> None:
 
 
 def test_backtest_benchmark_symbol_is_not_added_to_trading_universe(tmp_path) -> None:
-    client = TestClient(create_app(output_dir=tmp_path))
+    client = TestClient(create_app(settings=Settings(data=_isolated_data_settings(tmp_path)), output_dir=tmp_path))
 
     response = client.post(
         "/api/backtests/run",
@@ -856,7 +910,7 @@ def test_backtest_benchmark_symbol_is_not_added_to_trading_universe(tmp_path) ->
 
 
 def test_backtest_run_accepts_order_execution_constraints(tmp_path) -> None:
-    client = TestClient(create_app(output_dir=tmp_path))
+    client = TestClient(create_app(settings=Settings(data=_isolated_data_settings(tmp_path)), output_dir=tmp_path))
 
     response = client.post(
         "/api/backtests/run",

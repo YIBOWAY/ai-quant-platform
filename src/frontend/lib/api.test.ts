@@ -730,3 +730,38 @@ describe("getHermesResults", () => {
     });
   });
 });
+
+describe("browser API base default", () => {
+  const ENV_KEY = "NEXT_PUBLIC_QUANT_API_BASE_URL";
+  let originalEnv: string | undefined;
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    if (originalEnv === undefined) {
+      delete process.env[ENV_KEY];
+    } else {
+      process.env[ENV_KEY] = originalEnv;
+    }
+    vi.resetModules();
+  });
+
+  it("sends browser-side reads to the same-origin /api rewrite", async () => {
+    originalEnv = process.env[ENV_KEY];
+    delete process.env[ENV_KEY];
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ provider: "aihot", enabled: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("window", {});
+    vi.resetModules();
+
+    const browserApi = await import("./api");
+    await browserApi.getNewsStatus();
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/news/status");
+  });
+});

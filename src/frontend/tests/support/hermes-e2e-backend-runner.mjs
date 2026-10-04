@@ -74,6 +74,9 @@ async function main(argv) {
   };
 
   const child = spawn(payload.command, payload.args, {
+    // Settings loads a relative .env. Keep it away from the developer's
+    // checkout; every module/script in the payload is already absolute.
+    cwd: identity.dataRoot,
     env: process.env,
     stdio: "inherit",
   });

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import logging
 import sys
@@ -147,6 +148,8 @@ def test_account_show_json_matches_snapshot_api_business_view_without_writes(
     api_account = api_payload["account"]
     assert cli_account["cash"] == api_account["cash"] == pytest.approx(999_000.0)
     assert cli_account["equity"] == api_account["equity"] == pytest.approx(1_000_200.0)
+    assert api_account["valuation_status"] == "complete"
+    assert api_account["market_equity"] == pytest.approx(1_000_200.0)
     assert cli_account["storage_mode"] == api_account["storage_mode"] == "file"
     assert cli_account["stale"] is api_account["stale"] is False
     assert cli_account["warnings"] == api_account["warnings"] == []
@@ -213,6 +216,10 @@ def test_snapshot_price_failure_uses_explicit_cost_basis_fallback_without_writes
         assert account_payload["positions"][0]["last_price"] == pytest.approx(100.0)
         assert account_payload["positions"][0]["price_kind"] == "avg_cost_fallback"
         assert "paper_account_price_unavailable" in account_payload["warnings"]
+        assert account_payload["valuation_status"] == "incomplete"
+        assert account_payload["market_equity"] is None
+        assert account_payload["unpriced_symbols"] == ["AAPL"]
+        assert account_payload["cost_basis_reference_equity"] == pytest.approx(1_000_000.0)
     assert text_result.exit_code == 0
     assert "account=default cash=999000.00" in text_result.output
     assert "warning=paper_account_price_unavailable" in text_result.output
@@ -691,3 +698,38 @@ def test_canonical_snapshot_corrupt_row_is_stable_in_api_and_cli(
     assert text_result.exit_code == 1
     assert "paper_account_storage_corrupt" in text_result.output
     assert not (tmp_path / "api_runs" / "paper_account").exists()
+
+
+def test_account_show_json_guard_leaves_foreign_logger_handlers_alone(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    """The futu SDK marks FTConsoleLog non-propagating, so pytest's capture
+    handlers ride on the same logger; the JSON stdout guard must only retarget
+    the handler actually bound to sys.stdout."""
+    monkeypatch.setenv("QS_DATA_DIR", str(tmp_path))
+    reload_settings()
+
+    futu_logger = logging.getLogger("FTConsoleLog")
+    was_propagating = futu_logger.propagate
+    futu_logger.propagate = False
+    foreign_stream = io.StringIO()
+    foreign_handler = logging.StreamHandler(foreign_stream)
+    futu_logger.addHandler(foreign_handler)
+    try:
+        result = runner.invoke(
+            app,
+            ["paper", "account-show", "--account", "probe_missing", "--format", "json"],
+        )
+    finally:
+        futu_logger.removeHandler(foreign_handler)
+        futu_logger.propagate = was_propagating
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output) == {
+        "account": None,
+        "account_exists": False,
+        "account_id": "probe_missing",
+    }
+    assert foreign_handler.stream is foreign_stream
+    foreign_stream.getvalue()

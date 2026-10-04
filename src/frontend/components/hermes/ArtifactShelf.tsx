@@ -14,7 +14,7 @@ export type ArtifactShelfProps = {
 
 /**
  * Compatibility facade over focused artifact renderers.
- * Prefer HermesTodayView for the production hierarchy; this shelf remains for
+ * The Hermes desk owns the production hierarchy; this shelf remains for
  * direct envelope rendering and unit coverage until later callers migrate.
  */
 export function ArtifactShelf({ envelope, locale }: ArtifactShelfProps) {

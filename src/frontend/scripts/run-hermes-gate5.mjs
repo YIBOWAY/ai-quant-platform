@@ -4240,7 +4240,6 @@ export function buildGate5Matrix({
         "options-radar",
       ),
       QS_OPTIONS_RADAR_PROVIDER: "sample",
-      QS_OPTIONS_RADAR_STARTUP_CATCHUP_ENABLED: "false",
       QS_PAPER_ACCOUNT_AUTO_PROCESS_PENDING_ORDERS_ENABLED: "false",
       QS_PAPER_ACCOUNT_DB_MODE: "file",
       QS_PAPER_TRADING: "true",

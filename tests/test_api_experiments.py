@@ -88,9 +88,20 @@ def _write_experiment_fixture(output_dir, experiment_id: str) -> None:
     ).to_parquet(experiment_dir / "walk_forward_folds.parquet", index=False)
 
 
+from quant_system.config.settings import DataSettings
+
+
+def _isolated_data_settings(tmp_path) -> DataSettings:
+    return DataSettings(
+        data_dir=tmp_path / "data",
+        parquet_dir=tmp_path / "parquet",
+        duckdb_path=tmp_path / "quant_system.duckdb",
+        reports_dir=tmp_path / "reports",
+    )
+
 def test_experiment_list_includes_best_run_id(tmp_path) -> None:
     _write_experiment_fixture(tmp_path, "experiment-api-test")
-    client = TestClient(create_app(output_dir=tmp_path))
+    client = TestClient(create_app(settings=Settings(data=_isolated_data_settings(tmp_path)), output_dir=tmp_path))
 
     response = client.get("/api/experiments")
 
@@ -102,7 +113,7 @@ def test_experiment_list_includes_best_run_id(tmp_path) -> None:
 
 def test_experiment_detail_reads_phase4_artifact_names(tmp_path) -> None:
     _write_experiment_fixture(tmp_path, "experiment-api-test")
-    client = TestClient(create_app(output_dir=tmp_path))
+    client = TestClient(create_app(settings=Settings(data=_isolated_data_settings(tmp_path)), output_dir=tmp_path))
 
     response = client.get("/api/experiments/experiment-api-test")
 
@@ -115,7 +126,7 @@ def test_experiment_detail_reads_phase4_artifact_names(tmp_path) -> None:
 
 
 def test_experiment_run_api_creates_reviewable_experiment(tmp_path) -> None:
-    client = TestClient(create_app(output_dir=tmp_path))
+    client = TestClient(create_app(settings=Settings(data=_isolated_data_settings(tmp_path)), output_dir=tmp_path))
 
     response = client.post(
         "/api/experiments/run",
@@ -152,7 +163,7 @@ def test_experiment_run_api_creates_reviewable_experiment(tmp_path) -> None:
 
 
 def test_experiment_run_does_not_create_per_run_duckdb(tmp_path) -> None:
-    client = TestClient(create_app(output_dir=tmp_path))
+    client = TestClient(create_app(settings=Settings(data=_isolated_data_settings(tmp_path)), output_dir=tmp_path))
 
     response = client.post(
         "/api/experiments/run",
@@ -218,7 +229,7 @@ def test_experiment_run_uses_selected_provider_and_persists_source(
         "quant_system.api.routes.experiments.build_ohlcv_provider",
         fake_build_provider,
     )
-    client = TestClient(create_app(output_dir=tmp_path))
+    client = TestClient(create_app(settings=Settings(data=_isolated_data_settings(tmp_path)), output_dir=tmp_path))
 
     response = client.post(
         "/api/experiments/run",
@@ -241,7 +252,7 @@ def test_experiment_run_uses_selected_provider_and_persists_source(
 
 
 def test_experiment_run_can_generate_walk_forward_folds(tmp_path) -> None:
-    client = TestClient(create_app(output_dir=tmp_path))
+    client = TestClient(create_app(settings=Settings(data=_isolated_data_settings(tmp_path)), output_dir=tmp_path))
 
     response = client.post(
         "/api/experiments/run",

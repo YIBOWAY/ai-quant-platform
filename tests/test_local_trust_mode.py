@@ -52,9 +52,7 @@ def test_trust_mode_active_when_flag_set_and_red_lines_hold() -> None:
             {
                 "safety": {
                     "live_trading_enabled": True,
-                    "manual_live_trading_confirmation": (
-                        "I_UNDERSTAND_THIS_ENABLES_LIVE_TRADING"
-                    ),
+                    "manual_live_trading_confirmation": ("I_UNDERSTAND_THIS_ENABLES_LIVE_TRADING"),
                 }
             },
             "live_trading_enabled",
@@ -141,9 +139,7 @@ def test_trust_mode_still_closes_on_safety_flags(
     settings = _trust_settings(
         safety={
             "live_trading_enabled": True,
-            "manual_live_trading_confirmation": (
-                "I_UNDERSTAND_THIS_ENABLES_LIVE_TRADING"
-            ),
+            "manual_live_trading_confirmation": ("I_UNDERSTAND_THIS_ENABLES_LIVE_TRADING"),
         }
     )
 
@@ -215,18 +211,34 @@ def test_trust_mode_never_promotes_public_chat_write_ready(
     class _Liveness:
         def __init__(self, *_a, **_k) -> None: ...
 
-        def probe(self, **_kwargs) -> _Connector:
+        def probe(self, **kwargs) -> _Connector:
+            assert kwargs["expected_runtime_digest"] == trust_runtime_digest(settings)
             return _Connector()
 
     monkeypatch.setattr(
-        candidate_admission_gate,
+        composer_readiness,
         "ConnectorLivenessAuthority",
         _Liveness,
     )
     monkeypatch.setattr(
         composer_readiness,
         "current_release_decision",
-        lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("no release")),
+        lambda *_a, **_k: type(
+            "Release",
+            (),
+            {
+                "ready": True,
+                "blockers": (),
+                "release_stamp_id": "stamp-1",
+                "public_cutover_id": "cutover-1",
+                "event_cursor": 1,
+            },
+        )(),
+    )
+    monkeypatch.setattr(
+        composer_readiness,
+        "runtime_identity_observation",
+        lambda *_a, **_k: pytest.fail("local trust must not require a clean Git runtime identity"),
     )
     monkeypatch.setattr(
         composer_readiness,
@@ -257,12 +269,30 @@ def test_trust_mode_never_promotes_public_chat_write_ready(
     readiness = composer_readiness.authority_readiness(settings, fresh=True)
     assert readiness["chat_write_ready"] is True
     assert readiness["admission_mode"] == "local_trust"
-    assert readiness["candidate_admission_id"] is None
-    assert readiness["candidate_admission_digest"] is None
+    assert "candidate_admission_id" not in readiness
+    assert "candidate_admission_digest" not in readiness
     assert readiness["local_trust_mode"] is True
     assert readiness["public_chat_write_ready"] is False
     assert readiness["release_authorized"] is False
     assert readiness["public_write_authorized"] is False
+
+    for local_mutation, expected_blocker in (
+        (
+            {"enabled": False, "composer_open": True},
+            "local_mutation_disabled",
+        ),
+        (
+            {"enabled": True, "composer_open": False},
+            "local_composer_closed",
+        ),
+    ):
+        closed = composer_readiness.authority_readiness(
+            _trust_settings(local_mutation=local_mutation),
+            fresh=True,
+        )
+        assert closed["chat_write_ready"] is False
+        assert closed["composer_write_ready"] is False
+        assert expected_blocker in closed["release_blockers"]
 
 
 def test_trust_mode_still_requires_live_connector(
@@ -305,9 +335,7 @@ def test_trust_runtime_digest_is_stable_and_distinct() -> None:
         _runtime_digest_from_commit,
     )
 
-    assert digest != _runtime_digest_from_commit(
-        "platform", "0" * 40
-    )
+    assert digest != _runtime_digest_from_commit("platform", "0" * 40)
 
 
 def test_trust_mode_refusal_is_surfaced_in_platform_delivery_blockers(
@@ -318,9 +346,7 @@ def test_trust_mode_refusal_is_surfaced_in_platform_delivery_blockers(
     settings = _trust_settings(
         safety={
             "live_trading_enabled": True,
-            "manual_live_trading_confirmation": (
-                "I_UNDERSTAND_THIS_ENABLES_LIVE_TRADING"
-            ),
+            "manual_live_trading_confirmation": ("I_UNDERSTAND_THIS_ENABLES_LIVE_TRADING"),
         }
     )
     monkeypatch.setattr(
@@ -334,16 +360,13 @@ def test_trust_mode_refusal_is_surfaced_in_platform_delivery_blockers(
 
     closed = _EffectiveAdmission(
         release_ready=False,
-        candidate_ready=False,
         connector_ready=False,
         ready=False,
         admission_mode="closed",
-        blockers=("candidate_admission_missing",),
+        blockers=("effective_release_gate_unavailable",),
         final_release_blockers=(),
         release_stamp_id=None,
         public_cutover_id=None,
-        candidate_admission_id=None,
-        candidate_admission_digest=None,
         release_event_cursor=0,
         connector_reason="connector_liveness_unavailable",
         connector_worker_id=None,
@@ -383,7 +406,4 @@ def test_trust_mode_refusal_is_surfaced_in_platform_delivery_blockers(
 
     snapshot = composer_readiness.composer_readiness_snapshot(settings)
     assert snapshot["composer_open"] is False
-    assert (
-        "local_trust_refused_live_trading_enabled"
-        in snapshot["platform_delivery_blockers"]
-    )
+    assert "local_trust_refused_live_trading_enabled" in snapshot["platform_delivery_blockers"]

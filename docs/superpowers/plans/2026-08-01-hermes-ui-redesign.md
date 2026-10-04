@@ -1,5 +1,11 @@
 # Hermes UI Redesign Implementation Plan（方案 A：呈现层原地重构）
 
+> 本地路径说明（公开版）：文中未随本版提供的 `artifacts/`、`evidence/` 和运行目录是本地证据坐标或路径示例，原件未公开；不能把路径存在当作公开证据。详见[公开范围说明](../../publication-20261004.md)。
+
+> **历史冻结（2026-08-26）：**这是 2026-08-01 的 UI 实施计划，不是当前任务
+> 队列。不得从复选框、旧组件名或旧验收命令推断 NEXT。统一边界见
+> [`../README.md`](../README.md)。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 把 /hermes 重塑为现代 AI 助手风全屏对话界面（右侧 6 面板收进按需抽屉），并焕新全局壳与设计 token，数据层零改动。

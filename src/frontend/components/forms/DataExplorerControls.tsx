@@ -7,6 +7,7 @@ import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { TerminalToolbarButton, terminalFilterInputClass } from "@/components/ui/primitives";
 import { localizePath } from "@/lib/locale";
+import { SecuritySearchInput } from "@/components/SecuritySearchInput";
 
 const controlSchema = z
   .object({
@@ -45,7 +46,7 @@ const labels = {
     symbolRequired: "请输入标的代码",
     rangeInvalid: "开始日期不能晚于结束日期",
     intradayHint: "盘中周期仅 futu 数据源支持（需 OpenD 在线）。",
-    presets: { "1月": 30, "3月": 90, "6月": 180, "1年": 365 } as Record<string, number>,
+    presets: { "1个月": 30, "3个月": 90, "6个月": 180, "1年": 365 } as Record<string, number>,
   },
 };
 
@@ -56,11 +57,9 @@ function isoDate(date: Date) {
 }
 
 export function DataExplorerControls({
-  symbols,
   initial,
   locale = "en",
 }: {
-  symbols: string[];
   initial: ControlValues;
   locale?: "en" | "zh";
 }) {
@@ -74,6 +73,7 @@ export function DataExplorerControls({
   const errors = form.formState.errors;
   const freq = useWatch({ control: form.control, name: "freq" });
   const provider = useWatch({ control: form.control, name: "provider" });
+  const symbol = useWatch({ control: form.control, name: "symbol" });
   // sample/tiingo only deliver daily bars; intraday over them would be
   // silently mislabeled, so constrain the combination in the UI.
   const intradayBlocked = freq !== "1d" && provider !== "futu";
@@ -95,18 +95,14 @@ export function DataExplorerControls({
           symbol: values.symbol.trim().toUpperCase(),
         });
         startTransition(() => {
-          router.push(localizePath(`/data-explorer?${params.toString()}`, locale));
+          params.set("pane", "quotes");
+          router.push(localizePath(`/watch?${params.toString()}`, locale));
         });
       })}
     >
       <label className="flex min-w-[150px] flex-col gap-1 font-body-sm text-text-primary">
         {text.ticker}
-        <input className={`${fieldClass} uppercase`} list="market-data-symbols" {...form.register("symbol")} />
-        <datalist id="market-data-symbols">
-          {symbols.map((symbol) => (
-            <option key={symbol} value={symbol} />
-          ))}
-        </datalist>
+        <SecuritySearchInput label={text.ticker} name="symbol" className={fieldClass} locale={locale} value={symbol} onChange={value => form.setValue("symbol", value, { shouldValidate: true })} />
         {errors.symbol ? <span className="text-danger">{text.symbolRequired}</span> : null}
       </label>
       <label className="flex flex-col gap-1 font-body-sm text-text-primary">
@@ -144,8 +140,8 @@ export function DataExplorerControls({
       <label className="flex flex-col gap-1 font-body-sm text-text-primary">
         {text.source}
         <select className={fieldClass} {...form.register("provider")}>
+          {initial.provider === "sample" ? <option value="sample" disabled>{locale === "zh" ? "样例数据（仅测试）" : "Sample data (tests only)"}</option> : null}
           <option>futu</option>
-          <option>sample</option>
           <option>tiingo</option>
         </select>
       </label>

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import uuid
+from pathlib import Path
+
 from pydantic import BaseModel, Field
 
 from quant_system.prediction_market.data.base import PredictionMarketDataProvider
@@ -63,6 +66,8 @@ def run_prediction_market_quasi_backtest(
     *,
     provider: PredictionMarketDataProvider,
     config: PredictionMarketBacktestConfig,
+    run_id: str | None = None,
+    trials_root: str | Path | None = None,
 ) -> PredictionMarketBacktestResult:
     markets = provider.list_markets(limit=config.max_markets)
     market_ids = {market.market_id for market in markets}
@@ -119,12 +124,61 @@ def run_prediction_market_quasi_backtest(
         total_estimated_edge=total_estimated_edge,
         max_drawdown=_max_drawdown([item.cumulative_estimated_edge for item in equity_curve]),
     )
-    return PredictionMarketBacktestResult(
+    result = PredictionMarketBacktestResult(
         config=config,
         metrics=metrics,
         opportunities=opportunities,
         equity_curve=equity_curve,
         assumptions=assumptions,
+    )
+    _persist_quasi_backtest_trial(
+        result,
+        run_id=run_id or f"pm-backtest-{uuid.uuid4().hex}",
+        trials_root=trials_root,
+    )
+    return result
+
+
+def _persist_quasi_backtest_trial(
+    result: PredictionMarketBacktestResult,
+    *,
+    run_id: str,
+    trials_root: str | Path | None,
+) -> None:
+    from quant_system.config.settings import load_settings
+    from quant_system.research.trials import ResearchTrial, TrialsLedger
+
+    capital = float(result.config.capital_limit) if result.config.capital_limit else 1.0
+    daily_returns = [float(point.estimated_edge) / capital for point in result.equity_curve]
+    markets = sorted({item.market_id for item in result.opportunities})
+    metadata = {"run_id": run_id, "mode": "quasi"}
+    ledger_root = (
+        Path(trials_root)
+        if trials_root is not None
+        else Path(load_settings().data.data_dir) / "trials"
+    )
+    ledger = TrialsLedger(ledger_root)
+    if len(daily_returns) >= 2:
+        ledger.append(
+            ResearchTrial.record(
+                kind="prediction_market",
+                subject="quasi_backtest",
+                universe=markets or ["prediction_market"],
+                daily_returns=daily_returns,
+                source="quasi",
+                metadata=metadata,
+            )
+        )
+        return
+    ledger.append(
+        ResearchTrial.skipped(
+            kind="prediction_market",
+            subject="quasi_backtest",
+            universe=markets or ["prediction_market"],
+            reason="prediction_market_insufficient_daily_returns",
+            source="quasi",
+            metadata=metadata,
+        )
     )
 
 

@@ -11,6 +11,8 @@ import type {
   PendingAccountOrderView,
 } from "@/lib/api";
 import { QuickTradeDrawer, type QuickTradeRequest } from "./QuickTradeDrawer";
+import { accountValuation, hasMarketPrice, valuationWarning } from "@/lib/accountValuation";
+import { TableScrollHint, tableScrollHintText } from "@/components/ui/primitives";
 
 type Locale = "en" | "zh";
 type AccountTab = "positions" | "orders" | "order-history" | "balance-history" | "trade-log";
@@ -59,7 +61,7 @@ const copy = {
     frozen: "kill_switch",
     netInflow: "Net inflow",
     sinceOpen: "since account opened",
-    fillCount: "Fills",
+    fillCount: "Order records",
     systemEvents: "System events",
     lastActivity: "Last activity",
     filterTitle: "Filter by event",
@@ -108,6 +110,7 @@ const copy = {
       price: "Price",
     },
     accountUnavailable: "Account unreachable — values hidden until the backend responds.",
+    tableScrollHint: tableScrollHintText.en,
   },
   zh: {
     positionsTab: "持仓",
@@ -151,7 +154,7 @@ const copy = {
     frozen: "kill_switch",
     netInflow: "净流入",
     sinceOpen: "开户以来",
-    fillCount: "成交笔数",
+    fillCount: "订单记录数",
     systemEvents: "系统事件",
     lastActivity: "最近活动",
     filterTitle: "按事件筛选",
@@ -200,6 +203,7 @@ const copy = {
       price: "价格",
     },
     accountUnavailable: "账户接口不可达——在后端恢复前隐藏数值，避免误读。",
+    tableScrollHint: tableScrollHintText.zh,
   },
 } as const;
 
@@ -245,6 +249,8 @@ export function PositionMapWorkspace({
   const [tab, setTab] = useState<AccountTab>(initialTab);
   const [kindFilter, setKindFilter] = useState<string>("all");
   const [tradeRequest, setTradeRequest] = useState<QuickTradeRequest | null>(null);
+  const valuationComplete = accountValuation(account).complete;
+  const valuationMessage = accountDown ? null : valuationWarning(account, locale);
 
   const grossInvested = useMemo(
     () => positions.reduce((sum, row) => sum + Math.abs(row.market_value), 0),
@@ -271,8 +277,14 @@ export function PositionMapWorkspace({
 
   function switchTab(next: AccountTab) {
     setTab(next);
-    const url = next === "positions" ? window.location.pathname : `?tab=${next}`;
-    window.history.replaceState(null, "", url);
+    const params = new URLSearchParams(window.location.search);
+    params.set("view", "map");
+    params.set("tab", next);
+    window.history.replaceState(
+      null,
+      "",
+      `${window.location.pathname}?${params.toString()}`,
+    );
   }
 
   const tabs: { id: AccountTab; label: string; count: number }[] = [
@@ -319,6 +331,7 @@ export function PositionMapWorkspace({
             <>
               <PositionsBlock
                 accountDown={accountDown}
+                valuationComplete={valuationComplete}
                 grossInvested={grossInvested}
                 onTrade={(symbol, side) => setTradeRequest({ symbol, side })}
                 positions={positions}
@@ -326,7 +339,8 @@ export function PositionMapWorkspace({
                 text={text}
                 tradingDisabled={accountFrozen}
               />
-              <ExposureBlock grossInvested={grossInvested} positions={positions} text={text} />
+              {valuationMessage ? <p role="status" className="font-body-sm text-warning">{valuationMessage}</p> : null}
+              {valuationComplete ? <ExposureBlock grossInvested={grossInvested} positions={positions} text={text} /> : null}
               {backtestExposure.length ? (
                 <details className="group border-t border-border-subtle pt-4">
                   <summary className="flex cursor-pointer list-none items-center gap-1.5 font-label-caps text-text-secondary transition-colors hover:text-text-primary [&::-webkit-details-marker]:hidden">
@@ -525,6 +539,7 @@ function BlockTitle({ hint, title }: { hint?: string; title: string }) {
 
 function PositionsBlock({
   accountDown,
+  valuationComplete,
   grossInvested,
   onTrade,
   positions,
@@ -533,6 +548,7 @@ function PositionsBlock({
   tradingDisabled,
 }: {
   accountDown: boolean;
+  valuationComplete: boolean;
   grossInvested: number;
   onTrade: (symbol: string, side: "buy" | "sell") => void;
   positions: AccountPositionView[];
@@ -548,7 +564,8 @@ function PositionsBlock({
       ) : positions.length === 0 ? (
         <EmptyBox>{text.noPositions}</EmptyBox>
       ) : (
-        <div className="overflow-x-auto" data-position-table-scroll="true">
+        <>
+        <div aria-label={text.positionsTitle} className="overflow-x-auto" data-position-table-scroll="true" role="region" tabIndex={0}>
           <table className="w-full min-w-[960px] border-collapse text-left">
             <thead>
               <tr className="border-b border-border-subtle">
@@ -569,12 +586,14 @@ function PositionsBlock({
                   position={position}
                   text={text}
                   tradingDisabled={tradingDisabled}
-                  weight={grossInvested > 0 ? Math.abs(position.market_value) / grossInvested : 0}
+                  weight={valuationComplete ? grossInvested > 0 ? Math.abs(position.market_value) / grossInvested : 0 : null}
                 />
               ))}
             </tbody>
           </table>
         </div>
+        <TableScrollHint label={text.tableScrollHint} />
+        </>
       )}
     </section>
   );
@@ -591,8 +610,9 @@ function PositionRow({
   position: AccountPositionView;
   text: Text;
   tradingDisabled: boolean;
-  weight: number;
+  weight: number | null;
 }) {
+  const priceAvailable = hasMarketPrice(position);
   const isLong = position.quantity >= 0;
   const costBasis = Math.abs(position.quantity) * position.avg_cost;
   const pnlPct = costBasis > 0 ? position.unrealized_pnl / costBasis : 0;
@@ -611,19 +631,19 @@ function PositionRow({
       </Td>
       <Td className="text-right">{formatQuantity(position.quantity)}</Td>
       <Td className="text-right">{formatPrice(position.avg_cost)}</Td>
-      <Td className="text-right">{formatPrice(position.last_price)}</Td>
-      <Td className={`text-right ${toneClass(position.unrealized_pnl)}`}>
-        <span className="block">{signedMoney(position.unrealized_pnl)}</span>
-        <span className="block text-[11px] opacity-65">{signedPct(pnlPct)}</span>
+      <Td className="text-right">{priceAvailable ? formatPrice(position.last_price) : "—"}</Td>
+      <Td className={`text-right ${priceAvailable ? toneClass(position.unrealized_pnl) : "text-text-secondary"}`}>
+        <span className="block">{priceAvailable ? signedMoney(position.unrealized_pnl) : "—"}</span>
+        {priceAvailable ? <span className="block text-[11px] opacity-65">{signedPct(pnlPct)}</span> : null}
       </Td>
-      <Td className="text-right">{formatMoney(Math.abs(position.market_value))}</Td>
+      <Td className="text-right">{priceAvailable ? formatMoney(Math.abs(position.market_value)) : "—"}</Td>
       <Td className="text-right">
-        <div className="flex items-center justify-end gap-2">
+        {weight !== null ? <div className="flex items-center justify-end gap-2">
           <div className="h-1.5 w-[74px] flex-none overflow-hidden rounded-full bg-bg-surface-muted">
             <div className="h-full rounded-full bg-info" style={{ width: `${Math.max(weight * 100, 2)}%` }} />
           </div>
           <span className="min-w-[40px] text-right text-[11px]">{(weight * 100).toFixed(1)}%</span>
-        </div>
+        </div> : "—"}
       </Td>
       <Td>
         <span className="inline-flex items-center gap-1.5 font-body-sm text-[11px] text-text-secondary">
@@ -762,7 +782,8 @@ function OrdersBlock({
           </button>
         </EmptyBox>
       ) : (
-        <div className="overflow-x-auto">
+        <>
+        <div aria-label={text.ordersTitle} className="overflow-x-auto" role="region" tabIndex={0}>
           <table className="w-full min-w-[900px] border-collapse text-left">
             <thead>
               <tr className="border-b border-border-subtle">
@@ -795,6 +816,8 @@ function OrdersBlock({
             </tbody>
           </table>
         </div>
+        <TableScrollHint label={text.tableScrollHint} />
+        </>
       )}
     </section>
   );
@@ -817,7 +840,8 @@ function OrderHistoryBlock({
       ) : rows.length === 0 ? (
         <EmptyBox>{text.orderHistoryHint(0)}</EmptyBox>
       ) : (
-        <div className="overflow-x-auto">
+        <>
+        <div aria-label={text.orderHistoryTitle} className="overflow-x-auto" role="region" tabIndex={0}>
           <table className="w-full min-w-[960px] border-collapse text-left">
             <thead>
               <tr className="border-b border-border-subtle">
@@ -855,6 +879,8 @@ function OrderHistoryBlock({
             </tbody>
           </table>
         </div>
+        <TableScrollHint label={text.tableScrollHint} />
+        </>
       )}
     </section>
   );
@@ -879,7 +905,8 @@ function BalanceHistoryBlock({
       ) : rows.length === 0 ? (
         <EmptyBox>{text.balanceHistoryHint(0, total)}</EmptyBox>
       ) : (
-        <div className="overflow-x-auto">
+        <>
+        <div aria-label={text.balanceHistoryTitle} className="overflow-x-auto" role="region" tabIndex={0}>
           <table className="w-full min-w-[860px] border-collapse text-left">
             <thead>
               <tr className="border-b border-border-subtle">
@@ -907,6 +934,8 @@ function BalanceHistoryBlock({
             </tbody>
           </table>
         </div>
+        <TableScrollHint label={text.tableScrollHint} />
+        </>
       )}
     </section>
   );
@@ -931,7 +960,8 @@ function TradeLogBlock({
       ) : rows.length === 0 ? (
         <EmptyBox>{text.tradeLogHint(0, total)}</EmptyBox>
       ) : (
-        <div className="overflow-x-auto">
+        <>
+        <div aria-label={text.tradeLogTitle} className="overflow-x-auto" role="region" tabIndex={0}>
           <table className="w-full min-w-[960px] border-collapse text-left">
             <thead>
               <tr className="border-b border-border-subtle">
@@ -969,6 +999,8 @@ function TradeLogBlock({
             </tbody>
           </table>
         </div>
+        <TableScrollHint label={text.tableScrollHint} />
+        </>
       )}
     </section>
   );

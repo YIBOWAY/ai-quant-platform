@@ -17,13 +17,13 @@ export function HermesSessionDeepLinkBinder({
 }) {
   const activeSession = useOptionalActiveHermesSession();
   const bindSession = activeSession?.setActiveHermesSession;
-  const activeSessionId = activeSession?.hermesSessionId;
-
   useEffect(() => {
     if (!isUsableHermesApiSessionId(hermesSessionId)) return;
-    if (activeSessionId === hermesSessionId) return;
     bindSession?.({ hermesSessionId });
-  }, [activeSessionId, bindSession, hermesSessionId]);
+    // Bind a new route selection once. During a client navigation the previous
+    // route can remain mounted; reacting to active-session changes would undo
+    // an explicit New chat selection by restoring that previous route's id.
+  }, [bindSession, hermesSessionId]);
 
   if (!isUsableHermesApiSessionId(hermesSessionId)) {
     return null;

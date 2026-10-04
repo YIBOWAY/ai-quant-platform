@@ -32,7 +32,7 @@ export function buildAsiaRadarNote(
   const laggards = summary.laggard_symbols.join("/");
   const spreadText = formatPercentPoints(Math.abs(spread));
   if (zh) {
-    return `亚洲雷达（截至 ${summary.as_of}）：${winners} 领跑、${laggards} 落后，YTD 前三后三篮子分化 ${spreadText}。`;
+    return `亚洲市场截至 ${summary.as_of}，${winners} 年初至今涨幅靠前，${laggards} 涨幅靠后，涨幅前三名与后三名的平均收益差为 ${spreadText}。`;
   }
   return `Asia Radar (as of ${summary.as_of}): ${winners} lead while ${laggards} lag, with a ${spreadText} YTD spread between the top-three and bottom-three baskets.`;
 }

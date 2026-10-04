@@ -2,7 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -42,6 +42,9 @@ const copy = {
     totalEdge: "Total est. edge",
     cacheStatus: "Cache status",
     report: "Report",
+    errorInvalidNumber: "Enter a valid number",
+    errorPositiveInteger: "Enter a positive integer",
+    errorNonNegativeNumber: "Enter a non-negative number",
   },
   zh: {
     title: "只读扫描器",
@@ -66,21 +69,41 @@ const copy = {
     totalEdge: "预计总价差",
     cacheStatus: "缓存状态",
     report: "报告",
+    errorInvalidNumber: "请输入有效数字",
+    errorPositiveInteger: "请输入正整数",
+    errorNonNegativeNumber: "请输入不小于 0 的数字",
   },
 } as const;
 
-const pmSchema = z.object({
-  provider: z.enum(["sample", "polymarket"]),
-  cache_mode: z.enum(["prefer_cache", "refresh", "network_only"]),
-  min_edge_bps: z.coerce.number().nonnegative(),
-  max_capital_per_leg: z.coerce.number().nonnegative(),
-  capital_limit: z.coerce.number().nonnegative(),
-  max_legs: z.coerce.number().int().positive(),
-  max_markets: z.coerce.number().int().positive(),
-  fee_bps: z.coerce.number().nonnegative(),
-});
+export function buildPmSchema(locale: "en" | "zh") {
+  const text = copy[locale];
+  return z.object({
+    provider: z.enum(["sample", "polymarket"]),
+    cache_mode: z.enum(["prefer_cache", "refresh", "network_only"]),
+    min_edge_bps: z.coerce
+      .number({ invalid_type_error: text.errorInvalidNumber })
+      .nonnegative(text.errorNonNegativeNumber),
+    max_capital_per_leg: z.coerce
+      .number({ invalid_type_error: text.errorInvalidNumber })
+      .nonnegative(text.errorNonNegativeNumber),
+    capital_limit: z.coerce
+      .number({ invalid_type_error: text.errorInvalidNumber })
+      .nonnegative(text.errorNonNegativeNumber),
+    max_legs: z.coerce
+      .number({ invalid_type_error: text.errorInvalidNumber })
+      .int(text.errorPositiveInteger)
+      .positive(text.errorPositiveInteger),
+    max_markets: z.coerce
+      .number({ invalid_type_error: text.errorInvalidNumber })
+      .int(text.errorPositiveInteger)
+      .positive(text.errorPositiveInteger),
+    fee_bps: z.coerce
+      .number({ invalid_type_error: text.errorInvalidNumber })
+      .nonnegative(text.errorNonNegativeNumber),
+  });
+}
 
-type PMFormValues = z.infer<typeof pmSchema>;
+type PMFormValues = z.infer<ReturnType<typeof buildPmSchema>>;
 type PMAction = "scan" | "dry-arbitrage" | "backtest";
 
 export function PMRunForm({ locale = "en" }: { locale?: "en" | "zh" }) {
@@ -89,7 +112,7 @@ export function PMRunForm({ locale = "en" }: { locale?: "en" | "zh" }) {
   const [backtestResult, setBacktestResult] = useState<PredictionMarketBacktestRunResponse | null>(null);
   const isHydrated = useIsHydrated();
   const form = useForm<PMFormValues>({
-    resolver: zodResolver(pmSchema),
+    resolver: useMemo(() => zodResolver(buildPmSchema(locale)), [locale]),
     defaultValues: {
       provider: "polymarket",
       cache_mode: "prefer_cache",

@@ -2,9 +2,6 @@ import { localizePath, type Locale } from "@/lib/locale";
 
 export const hermesRoutes = {
   today: "/hermes",
-  sessions: "/hermes/sessions",
-  tasks: "/hermes/tasks",
-  approvals: "/hermes/approvals",
   results: "/hermes/results",
 } as const;
 

@@ -180,7 +180,7 @@ function automationAttention(
       kind,
       title: `Automation job ${exception.jobId}`,
       summary: exception.reason,
-      href: hermesRoutes.tasks,
+      href: hermesRoutes.today,
     };
   });
 }
@@ -201,27 +201,6 @@ function candidateAttention(
     const candidate = raw;
     const id = candidate.candidate_id;
     const integrity = candidate.integrity_state ?? null;
-    const approvalEnabled = candidate.approval_enabled === true;
-    const pending =
-      candidate.status === "pending" ||
-      candidate.approval_binding === "pending";
-
-    if (
-      integrity === "verified" &&
-      approvalEnabled &&
-      pending &&
-      candidate.manifest_digest
-    ) {
-      items.push({
-        id,
-        kind: "approval",
-        title: "Research approval item",
-        summary: candidate.goal ?? id,
-        href: hermesRoutes.approvals,
-      });
-      continue;
-    }
-
     if (
       integrity === "migration_required" ||
       integrity === "corrupt" ||
@@ -361,7 +340,10 @@ export function buildUnifiedResultsPreview(
         boundedProjectionText(projection.display_title, 256) ??
         `${item.kind} · ${item.resource_id}`,
       summary: boundedProjectionText(projection.summary, 1_000),
+      displayTitleZh: boundedProjectionText(projection.display_title_zh, 256),
+      summaryZh: boundedProjectionText(projection.summary_zh, 1_000),
       status: item.status,
+      freshness: item.freshness,
       occurredAt: item.occurred_at,
       source: item.source,
     };

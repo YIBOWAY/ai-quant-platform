@@ -2,7 +2,7 @@
  * L4b-SSE-Follow-M1: shared durable workspace follow spine.
  *
  * Prefer EventSource on GET …/follow/stream; fall back to GET …/follow poll.
- * Command lifecycle + V7d approvals + V7e gates + V7f results + V7g vertical
+ * Command lifecycle + approvals + results + vertical state
  * + Plan-V6 transcript **hints** (no assistant bodies on this spine).
  * On resync: snapshot then continue. No dual private approval poll.
  * Text authority for assistant text: messages BFF (spine-refetch).
@@ -15,7 +15,6 @@ import {
   type WorkspaceApprovalProjection,
   type WorkspaceCommandProjection,
   type WorkspaceFollowEvent,
-  type WorkspaceGateProjection,
   type WorkspacePublicCutoverResponse,
   type WorkspaceResultProjection,
   type WorkspaceSnapshot,
@@ -33,8 +32,6 @@ export type FollowSpineState = {
   commands: WorkspaceCommandProjection[];
   /** L5a/V7a: Hermes command-approval challenges from snapshot. */
   approvals: WorkspaceApprovalProjection[];
-  /** V7e: Domain Gate 1/2/3 surfaces from snapshot (never in approvals[]). */
-  gates: WorkspaceGateProjection[];
   /** Canonical PG release rows (or explicit legacy test rows) from the spine. */
   publicCutovers: WorkspacePublicCutoverResponse[];
   /** L5b: authority id slots from snapshot (honest empty until projectors). */
@@ -45,7 +42,7 @@ export type FollowSpineState = {
   results: WorkspaceResultProjection[];
   /** L5b: snapshot authority_health carry-through (optional keys). */
   authorityHealth: Record<string, string>;
-  /** V7a: snapshot mutation_enabled — gates approval decide controls. */
+  /** V7a: snapshot mutation-enabled state. */
   mutationEnabled: boolean;
   lastEvents: WorkspaceFollowEvent[];
   transport: FollowTransport;
@@ -97,7 +94,6 @@ function emptyState(): FollowSpineState {
     cursor: 0,
     commands: [],
     approvals: [],
-    gates: [],
     publicCutovers: [],
     tasks: [],
     attempts: [],
@@ -393,37 +389,7 @@ export function createWorkspaceFollowSpine(
       };
     }
     setState(patch);
-  };
-
-  const applyGatesProjection = (
-    gates: WorkspaceGateProjection[] | undefined,
-    authorityHealth?: Record<string, string> | undefined,
-  ) => {
-    if (!Array.isArray(gates)) return;
-    const patch: Partial<FollowSpineState> = {
-      gates: [...gates],
-      error: null,
-    };
-    if (authorityHealth && typeof authorityHealth === "object") {
-      patch.authorityHealth = {
-        ...state.authorityHealth,
-        ...authorityHealth,
-      };
-    } else {
-      const nextHealth = { ...state.authorityHealth };
-      let touched = false;
-      for (const key of ["gate_1", "gate_2", "gate_3"] as const) {
-        if (!nextHealth[key] || nextHealth[key] === "unavailable") {
-          nextHealth[key] = "ready";
-          touched = true;
-        }
-      }
-      if (touched) patch.authorityHealth = nextHealth;
-    }
-    setState(patch);
-  };
-
-  const applyResultsProjection = (
+  };const applyResultsProjection = (
     results: WorkspaceResultProjection[] | undefined,
     authorityHealth?: Record<string, string> | undefined,
   ) => {
@@ -512,7 +478,6 @@ export function createWorkspaceFollowSpine(
     const snap = await fetchWorkspaceSnapshot(workspaceId, signal);
     const commands = mergeSnapshotCommands(snap);
     const approvals = Array.isArray(snap.approvals) ? [...snap.approvals] : [];
-    const gates = Array.isArray(snap.gates) ? [...snap.gates] : [];
     const publicCutovers = Array.isArray(snap.public_cutovers)
       ? [...snap.public_cutovers]
       : [];
@@ -531,7 +496,6 @@ export function createWorkspaceFollowSpine(
     setState({
       commands,
       approvals,
-      gates,
       publicCutovers,
       tasks,
       attempts,
@@ -586,9 +550,8 @@ export function createWorkspaceFollowSpine(
       if (events.length) {
         applyEvents(events);
       }
-      // V7d–V7g: follow pages may carry approvals + gates + results + vertical ids.
+      // Follow pages may carry approvals, results and vertical ids.
       applyApprovalsProjection(page.approvals, page.authority_health);
-      applyGatesProjection(page.gates, page.authority_health);
       applyPublicCutoversProjection(
         page.public_cutovers,
         page.authority_health,
@@ -673,7 +636,7 @@ export function createWorkspaceFollowSpine(
       return;
     }
     sse = es;
-    setState({ transport: "sse", error: null });
+    setState({ transport: "idle" });
 
     const onReady = () => {
       sseFailures = 0;
@@ -700,19 +663,7 @@ export function createWorkspaceFollowSpine(
       } catch {
         /* ignore malformed */
       }
-    };
-    const onGates = (ev: MessageEvent) => {
-      try {
-        const data = JSON.parse(String(ev.data)) as {
-          gates?: WorkspaceGateProjection[];
-          authority_health?: Record<string, string>;
-        };
-        applyGatesProjection(data.gates, data.authority_health);
-      } catch {
-        /* ignore malformed */
-      }
-    };
-    const onResults = (ev: MessageEvent) => {
+    };const onResults = (ev: MessageEvent) => {
       try {
         const data = JSON.parse(String(ev.data)) as {
           results?: WorkspaceResultProjection[];
@@ -786,6 +737,7 @@ export function createWorkspaceFollowSpine(
     };
     const onEsError = () => {
       sseFailures += 1;
+      setState({ transport: "idle", error: "sse_reconnecting" });
       closeSse();
       if (sseFailures >= maxSseFailures) {
         startPoll();
@@ -799,7 +751,6 @@ export function createWorkspaceFollowSpine(
     es.addEventListener("ready", onReady);
     es.addEventListener("command", onCommand);
     es.addEventListener("approvals", onApprovals);
-    es.addEventListener("gates", onGates);
     es.addEventListener("results", onResults);
     es.addEventListener("vertical", onVertical);
     es.addEventListener("transcript", onTranscript);

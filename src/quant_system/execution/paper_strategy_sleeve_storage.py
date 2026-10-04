@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+from pydantic import ValidationError
 
 from quant_system.execution.paper_strategy_sleeves import (
     SleeveLot,
@@ -174,6 +175,20 @@ class PaperStrategySleeveStorage:
         path = self.strategy_config_path(strategy_config_id, version)
         return StrategyConfig.model_validate(json.loads(path.read_text(encoding="utf-8")))
 
+    def load_frozen_strategy_config(
+        self, strategy_config_id: str, *, version: int | None = None,
+    ) -> StrategyConfig:
+        """Historical identity only; signal/execution must use the strict loader."""
+        if version is None:
+            path = self.strategy_config_metadata_path(strategy_config_id)
+            metadata = json.loads(path.read_text())
+            version = int(metadata["latest_version"])
+        path = self.strategy_config_path(strategy_config_id, version)
+        config = StrategyConfig.frozen_for_replacement(json.loads(path.read_text()))
+        if config.strategy_config_id != strategy_config_id or config.version != version:
+            raise ValueError("replacement_config_path_identity_mismatch")
+        return config
+
     def list_strategy_configs(self) -> list[StrategyConfig]:
         if not self.strategy_configs_dir.exists():
             return []
@@ -187,6 +202,78 @@ class PaperStrategySleeveStorage:
                 )
             )
         return configs
+
+    def read_strategy_config_catalog(self) -> dict[str, list[dict[str, Any]]]:
+        """Read-only UI projection; never supplies configs to execution consumers.
+
+        Sealed historical recipes remain visible after source drift. Missing or
+        corrupt entries remain visible as errors beside healthy siblings.
+        """
+        result: dict[str, list[dict[str, Any]]] = {"configs": [], "unavailable_configs": []}
+        if not self.strategy_configs_dir.exists():
+            return result
+        for config_dir in sorted(self.strategy_configs_dir.iterdir()):
+            if not config_dir.is_dir():
+                continue
+            config_id = config_dir.name
+            version = None
+            try:
+                metadata = json.loads(
+                    self.strategy_config_metadata_path(config_id).read_text(encoding="utf-8")
+                )
+                if (not isinstance(metadata, dict)
+                        or metadata.get("strategy_config_id") != config_id):
+                    raise ValueError("strategy_config_metadata_identity_mismatch")
+                version = metadata.get("latest_version")
+                if type(version) is not int or version < 1:
+                    version = None
+                    raise ValueError("strategy_config_version_invalid")
+                source_error = None
+                try:
+                    config = self.load_strategy_config(config_id, version=version)
+                except ValidationError as exc:
+                    if self._config_catalog_error(exc) != "strategy_algorithm_source_mismatch":
+                        raise
+                    # Verify the historical seal, fields and path identity;
+                    # never rewrite its digest for current code.
+                    config = self.load_frozen_strategy_config(config_id, version=version)
+                    source_error = "strategy_algorithm_source_mismatch"
+                if config.strategy_config_id != config_id or config.version != version:
+                    raise ValueError("strategy_config_path_identity_mismatch")
+                result["configs"].append({
+                    **config.model_dump(mode="json"),
+                    "source_status": "historical_mismatch" if source_error else "compatible",
+                    "source_error": source_error,
+                })
+            except (OSError, ValueError, TypeError, KeyError) as exc:
+                result["unavailable_configs"].append({
+                    "strategy_config_id": config_id,
+                    "version": version,
+                    "reason": self._config_catalog_error(exc),
+                })
+        return result
+
+    @staticmethod
+    def _config_catalog_error(exc: Exception) -> str:
+        if isinstance(exc, FileNotFoundError):
+            return "strategy_config_file_missing"
+        if isinstance(exc, (json.JSONDecodeError, UnicodeError)):
+            return "strategy_config_file_corrupt"
+        if isinstance(exc, ValidationError):
+            messages = [error["msg"].removeprefix("Value error, ") for error in exc.errors()]
+            if messages == ["strategy_algorithm_source_mismatch"]:
+                return messages[0]
+            return "strategy_config_validation_failed"
+        if isinstance(exc, OSError):
+            return "strategy_config_file_unreadable"
+        if isinstance(exc, ValueError) and str(exc) in {
+            "strategy_config_metadata_identity_mismatch",
+            "strategy_config_path_identity_mismatch",
+            "replacement_config_path_identity_mismatch",
+            "strategy_config_version_invalid",
+        }:
+            return str(exc)
+        return "strategy_config_validation_failed"
 
     def save_sleeve(self, sleeve: StrategySleeve) -> Path:
         path = self.sleeve_path(sleeve.sleeve_id)

@@ -13,6 +13,8 @@ def test_paper_trading_panels_distinguish_offline_from_empty() -> None:
 
 
 def test_position_map_uses_activity_api_error_for_account_down_state() -> None:
-    page = Path("src/frontend/app/position-map/page.tsx").read_text(encoding="utf-8")
+    page = Path("src/frontend/components/position-map/PositionMapPageContent.tsx").read_text(
+        encoding="utf-8"
+    )
 
     assert "const accountDown = Boolean(activity.apiError || account.apiError);" in page

@@ -17,6 +17,7 @@ worktrees/
 /data/
 /reports/
 /output/
+artifacts/
 
 # Reference PDFs (kept locally, not committed)
 *.pdf
@@ -60,3 +61,10 @@ src/quantum-core-algorithmic-trading-platform.zip
 
 # TypeScript incremental build cache
 *.tsbuildinfo
+
+# Public snapshot: local runtime and raw evidence stay private.
+/.superpowers/
+/.understand-anything/
+/artifacts/
+/evidence/
+/output/

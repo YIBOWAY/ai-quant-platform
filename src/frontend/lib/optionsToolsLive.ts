@@ -68,7 +68,7 @@ export async function rankLiveStrategies(ticker: string): Promise<OptionsStrateg
     spot: context.spot,
     expiry_days: context.dte,
     strikes: liveStrikes(context),
-    iv: context.atmIv ?? 0.3,
+    iv: normalizeIv(context.atmIv),
     symbol: context.ticker,
   });
 }
@@ -160,6 +160,9 @@ export async function liveBullPutSignal(ticker: string): Promise<OptionsBullPutS
   const fear = await apiPost<OptionsFearScoreResponse>("/api/options/tools/fear-score", {
     iv_rank: context.ivRank,
   });
+  if (fear.fear_score === null || fear.status !== "complete") {
+    throw new Error("insufficient_fear_inputs");
+  }
   return apiPost<OptionsBullPutSignalResponse>("/api/options/tools/bull-put-signal", {
     contracts: context.contracts,
     spot: context.spot,
@@ -177,7 +180,6 @@ export async function liveEarningsCrush(ticker: string): Promise<OptionsEarnings
   return apiPost<OptionsEarningsCrushResponse>("/api/options/tools/earnings-crush", {
     ticker: context.ticker,
     current_iv: currentIv,
-    historical_pre_post_iv: [],
   });
 }
 
@@ -194,9 +196,9 @@ export async function liveHedgeAdvisor(
   ticker: string,
   input: HedgeAdvisorInput,
 ): Promise<OptionsHedgeAdvisorResponse> {
-  const shares = Math.trunc(input.shares);
-  if (!Number.isFinite(shares) || shares <= 0) {
-    throw new Error("Shares must be a positive number.");
+  const shares = input.shares;
+  if (!Number.isSafeInteger(shares) || shares <= 0) {
+    throw new Error("positive_integer_shares_required");
   }
   if (!Number.isFinite(input.costBasis) || input.costBasis <= 0) {
     throw new Error("Cost basis must be a positive number.");
@@ -225,7 +227,7 @@ export async function liveBuildStrategy(ticker: string): Promise<OptionsStrategy
     spot: context.spot,
     expiry_days: context.dte,
     strikes: liveStrikes(context),
-    iv: context.atmIv ?? 0.3,
+    iv: normalizeIv(context.atmIv),
     symbol: context.ticker,
   });
 }
@@ -273,13 +275,7 @@ export async function liveResearchHealthCheck(ticker: string): Promise<OptionsRe
     throw new Error("Ticker is required.");
   }
   return apiPost<OptionsResearchHealthCheckResponse>("/api/options/tools/health-check", {
-    profiles: [
-      {
-        ticker: normalized,
-        updated_at: new Date().toISOString().slice(0, 10),
-        thesis: "local research watch",
-      },
-    ],
+    ticker: normalized,
   });
 }
 
@@ -307,10 +303,13 @@ async function loadLiveContext(ticker: string): Promise<LiveContext> {
     dte: daysToExpiry(expiry),
     atmIv: normalizeOptionalIv(snapshot.atm_iv),
     hv30d: snapshot.hv_30d ?? null,
-    ivRank: snapshot.iv_rank ?? null,
+    ivRank: snapshot.iv_rank_source === "local_hv_proxy" ? null : snapshot.iv_rank ?? null,
     contracts: chain.contracts.map((contract) => ({
       ...contract,
       expiry: contract.expiry ?? chain.expiration,
+      // /options/chain is a Futu-only surface: percent, not a decimal ratio.
+      implied_volatility: typeof contract.implied_volatility === "number"
+        ? normalizeOptionalIv(contract.implied_volatility / 100) : null,
     })),
   };
 }
@@ -386,11 +385,13 @@ function normalizeOptionalIv(value: number | null | undefined) {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
     return null;
   }
-  return value > 5 ? value / 100 : value;
+  return value;
 }
 
 function normalizeIv(value: number | null | undefined) {
-  return normalizeOptionalIv(value) ?? 0.3;
+  const iv = normalizeOptionalIv(value);
+  if (iv === null) throw new Error("implied_volatility_missing");
+  return iv;
 }
 
 function midPrice(contract: LiveContract) {

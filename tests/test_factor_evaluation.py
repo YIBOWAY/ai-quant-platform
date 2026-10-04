@@ -50,7 +50,11 @@ def _factor_results() -> pd.DataFrame:
 
 
 def test_information_coefficients_compare_signal_to_future_return() -> None:
-    ic = calculate_information_coefficients(_factor_results(), _evaluation_frame(), horizon=1)
+    # Legacy seal: this panel runs the close-to-close basis explicitly; the open default
+    # would move the entry to the next session. Assertions stay byte-for-byte unchanged.
+    ic = calculate_information_coefficients(
+        _factor_results(), _evaluation_frame(), horizon=1, price_basis="close_to_close"
+    )
 
     assert len(ic) == 1
     assert ic.loc[0, "ic"] > 0.95
@@ -64,6 +68,7 @@ def test_quantile_returns_sort_future_returns_by_factor_value() -> None:
         _evaluation_frame(),
         quantiles=3,
         horizon=1,
+        price_basis="close_to_close",
     )
 
     top = quantiles[quantiles["quantile"] == 3].iloc[0]

@@ -42,6 +42,7 @@ class CompiledExpr:
     pandas_body: str
     node_count: int
     depth: int
+    lookback: int
 
 
 _TOKEN_RE = re.compile(
@@ -68,7 +69,24 @@ def compile_qlib_expr(raw: str) -> CompiledExpr:
     qlib, pandas_body, nodes, depth = _compile_node(tree.body, depth=1)
     if nodes > MAX_NODES or depth > MAX_DEPTH:
         raise QlibExprError("d34_qlib_expr_too_complex", "expression exceeds node or depth bounds")
-    return CompiledExpr(qlib=qlib, pandas_body=pandas_body, node_count=nodes, depth=depth)
+    return CompiledExpr(
+        qlib=qlib, pandas_body=pandas_body, node_count=nodes, depth=depth,
+        lookback=_lookback(tree.body),
+    )
+
+
+def _lookback(node: ast.AST) -> int:
+    if isinstance(node, ast.UnaryOp):
+        return _lookback(node.operand)
+    if isinstance(node, ast.BinOp):
+        return max(_lookback(node.left), _lookback(node.right))
+    if isinstance(node, ast.Call):
+        inner = _lookback(node.args[0])
+        if len(node.args) == 2:
+            window = int(node.args[1].value)
+            return inner + window - (0 if node.func.id in {"Ref", "Delta"} else 1)
+        return inner
+    return 1
 
 
 def _to_python_expr(source: str) -> str:
@@ -113,7 +131,11 @@ def _compile_node(node: ast.AST, *, depth: int) -> tuple[str, str, int, int]:
             raise QlibExprError("d34_qlib_expr_invalid", f"unknown name {node.id}")
         field = node.id[6:]
         return f"${field}", f'frame["{field}"]', 1, depth
-    if isinstance(node, ast.Constant) and isinstance(node.value, int) and not isinstance(node.value, bool):
+    if (
+        isinstance(node, ast.Constant)
+        and isinstance(node.value, int)
+        and not isinstance(node.value, bool)
+    ):
         if not MIN_WINDOW <= node.value <= MAX_WINDOW:
             raise QlibExprError("d34_qlib_expr_window_invalid", "window is out of bounds")
         return str(node.value), str(node.value), 1, depth
@@ -160,18 +182,18 @@ def _pandas_window(name: str, inner: str, window: int) -> str:
         return f"{grouped}.shift({window})"
     if name == "Delta":
         return f"{grouped}.diff({window})"
-    if name == "Rank":
+    if name == "EMA":
         return (
-            f'({inner}).groupby(frame["date"] if "date" in frame.columns else '
-            f'frame.index, sort=False).rank(pct=True)'
+            f"{grouped}.transform(lambda values: "
+            f"values.ewm(span={window}, min_periods=1).mean())"
         )
-    rolling = f"{grouped}.transform(lambda values: values.rolling({window}, min_periods={window})"
+    rolling = f"{grouped}.transform(lambda values: values.rolling({window}, min_periods=1)"
     method = {
         "Mean": ".mean())",
-        "Std": ".std(ddof=0))",
+        "Std": ".std(ddof=1))",
         "Sum": ".sum())",
         "Max": ".max())",
         "Min": ".min())",
-        "EMA": f".ewm(span={window}, adjust=False).mean())",
+        "Rank": ".rank(pct=True))",
     }[name]
     return rolling + method

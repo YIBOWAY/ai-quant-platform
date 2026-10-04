@@ -466,10 +466,6 @@ describe("Hermes Gate 5 release authority", () => {
       assert.equal(row.env.QS_OPTIONS_RADAR_ENABLED, "false");
       assert.equal(row.env.QS_OPTIONS_RADAR_PROVIDER, "sample");
       assert.equal(
-        row.env.QS_OPTIONS_RADAR_STARTUP_CATCHUP_ENABLED,
-        "false",
-      );
-      assert.equal(
         row.env.QS_PAPER_ACCOUNT_AUTO_PROCESS_PENDING_ORDERS_ENABLED,
         "false",
       );
@@ -518,6 +514,14 @@ describe("Hermes Gate 5 release authority", () => {
     assert.equal(rollback.env.PW_HERMES_WORKBENCH_FIXTURE, "normal");
     assert.equal(rollback.env.PW_HERMES_ROLLBACK_E2E, "1");
     assert.equal(rollback.env.PW_HERMES_ROLLBACK_PORT, String(rollback.rollbackPort));
+    const source = fs.readFileSync(
+      path.join(FRONTEND_ROOT, "scripts", "run-hermes-gate5.mjs"),
+      "utf8",
+    );
+    assert.equal(
+      source.includes("QS_OPTIONS_RADAR_STARTUP_CATCHUP_ENABLED"),
+      false,
+    );
   });
 
   it("rejects a Playwright report that discovered zero tests", () => {

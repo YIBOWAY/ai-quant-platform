@@ -33,9 +33,7 @@ def _small_expectation() -> FocusedSafetyExpectation:
     return FocusedSafetyExpectation(
         collection_count=len(node_ids),
         collection_sha256=collection_sha256(node_ids),
-        skip_reasons=(
-            ("tests/test_two.py::test_skip", "database intentionally unavailable"),
-        ),
+        skip_reasons=(("tests/test_two.py::test_skip", "database intentionally unavailable"),),
         xfail_reasons=(),
     )
 
@@ -81,9 +79,10 @@ def test_focused_safety_evidence_is_canonical_and_identity_complete() -> None:
         "xfailed": 0,
         "xpassed": 0,
     }
-    assert document["authority"]["implementation_sha256"] == hashlib.sha256(
-        Path(authority_module.__file__).read_bytes()
-    ).hexdigest()
+    assert (
+        document["authority"]["implementation_sha256"]
+        == hashlib.sha256(Path(authority_module.__file__).read_bytes()).hexdigest()
+    )
     assert document["node_outcomes"] == [
         {
             "node_id": "tests/test_one.py::test_pass",
@@ -106,8 +105,7 @@ def test_focused_safety_evidence_is_canonical_and_identity_complete() -> None:
         "xpassed": "0",
     }
     assert [
-        (case.attrib["node_id"], case.attrib["outcome"])
-        for case in root.findall("testcase")
+        (case.attrib["node_id"], case.attrib["outcome"]) for case in root.findall("testcase")
     ] == [
         ("tests/test_one.py::test_pass", "passed"),
         ("tests/test_two.py::test_skip", "skipped"),
@@ -291,14 +289,14 @@ def test_focused_safety_authority_rejects_population_or_outcome_drift(
     assert captured.value.code == code
 
 
-def test_production_focused_safety_authority_freezes_all_39_skip_identities() -> None:
+def test_production_focused_safety_authority_freezes_current_skip_identities() -> None:
     assert EXPECTED_COLLECTION_COUNT == 178
     assert (
         EXPECTED_COLLECTION_SHA256
         == "9552b35a38c2a22081cc2dc5e48397ee88b6c470b66033dc22828a84b8633a1e"
     )
-    assert len(AUTHORIZED_SKIP_REASONS) == 39
-    assert len(set(AUTHORIZED_SKIP_REASONS)) == 39
+    assert len(AUTHORIZED_SKIP_REASONS) == 19
+    assert len(set(AUTHORIZED_SKIP_REASONS)) == 19
     assert all(node_id.startswith("tests/") for node_id in AUTHORIZED_SKIP_REASONS)
     assert all("::" in node_id for node_id in AUTHORIZED_SKIP_REASONS)
     assert all(reason.strip() for reason in AUTHORIZED_SKIP_REASONS.values())

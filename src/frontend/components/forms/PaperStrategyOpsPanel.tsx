@@ -13,13 +13,14 @@ import {
 import { Card, MetricStat, StatusPill } from "@/components/ui/primitives";
 import type { StrategyOpsStatusResponse } from "@/lib/api";
 import { ApiClientError, apiRequest } from "@/lib/apiClient";
+import { strategyOpsNeedsAttention } from "@/lib/paperStrategyPresentation";
 
 type Locale = "en" | "zh";
 
 const copy = {
   en: {
-    title: "Automation Ops",
-    desc: "Read-only status for the local CLI / launchd workflow. It shows what is waiting; it does not create signals or execute plans.",
+    title: "Execution queue status",
+    desc: "Read-only execution and recovery queue status. An empty queue does not establish signal health or completed fills.",
     refresh: "Refresh",
     refreshing: "Refreshing",
     schedule: "scheduler",
@@ -30,11 +31,11 @@ const copy = {
     lastUpdated: "updated",
     never: "not yet",
     status: "status",
-    clear: "clear",
+    clear: "no due execution or recovery work",
     waiting: "waiting",
     review: "review",
     offline: "offline",
-    runningSleeves: "Running sleeves",
+    runningSleeves: "Enabled sleeves",
     pendingSleeves: "Pending sleeves",
     pendingPlans: "Pending plans",
     duePlans: "Due today",
@@ -57,8 +58,8 @@ const copy = {
       "Account API is unreachable; status remains read-only, but recovery and execution are unavailable.",
   },
   zh: {
-    title: "自动化运维",
-    desc: "本地 CLI / launchd 工作流的只读状态。这里展示等待处理的事项，不会创建信号，也不会执行计划。",
+    title: "执行队列状态",
+    desc: "只读显示执行队列中的待处理、阻塞或恢复事项。队列为空不代表信号正常或已经成交。",
     refresh: "刷新",
     refreshing: "刷新中",
     schedule: "调度",
@@ -69,11 +70,11 @@ const copy = {
     lastUpdated: "更新",
     never: "尚未",
     status: "状态",
-    clear: "正常",
+    clear: "无到期执行或恢复事项",
     waiting: "等待",
     review: "查看",
     offline: "离线",
-    runningSleeves: "运行中策略仓",
+    runningSleeves: "已启用策略仓",
     pendingSleeves: "待恢复策略仓",
     pendingPlans: "待执行计划",
     duePlans: "今日待执行",
@@ -90,7 +91,7 @@ const copy = {
     journalHint:
       "本视图不会改写待提交日志；若只需恢复，请运行 paper strategies recover-pending，而不是显式执行处理器。",
     corruptJournalHint: "损坏的恢复日志已保留供人工检查；状态页不会隐藏它。",
-    unavailable: "自动化状态不可用",
+    unavailable: "执行队列状态不可用",
     accountDown: "账户 API 当前不可达；状态仍可只读查看，但恢复和执行暂不可用。",
   },
 } as const;
@@ -120,6 +121,7 @@ export function PaperStrategyOpsPanel({
         ? text.unavailable
         : null;
   const refreshing = statusQuery.isFetching;
+  const needsAttention = Boolean(error || accountDown || strategyOpsNeedsAttention(status));
 
   const healthTone = useMemo(() => {
     if (error) {
@@ -230,17 +232,22 @@ export function PaperStrategyOpsPanel({
     : text.never;
 
   return (
-    <Card padded className="overflow-hidden">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="flex items-center gap-2 font-label-caps text-text-primary">
-            <TerminalSquare className="text-accent-success" size={16} />
-            {text.title}
-          </h2>
-          <p className="mt-1 max-w-3xl font-body-sm text-text-secondary">{text.desc}</p>
-        </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
-          <StatusPill label={text.status} value={healthLabel} tone={healthTone} />
+    <Card padded={false} className="overflow-hidden">
+      <details data-paper-strategy-ops="exception-first" open={needsAttention}>
+        <summary className="cursor-pointer list-none p-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info">
+          <span className="flex flex-wrap items-start justify-between gap-3">
+            <span className="min-w-0">
+              <span className="flex items-center gap-2 font-label-caps text-text-primary">
+                <TerminalSquare className="text-accent-success" size={16} />
+                {text.title}
+              </span>
+              <span className="mt-1 block max-w-3xl font-body-sm text-text-secondary">{text.desc}</span>
+            </span>
+            <StatusPill label={text.status} value={healthLabel} tone={healthTone} />
+          </span>
+        </summary>
+        <div className="border-t border-border-subtle p-4">
+          <div className="flex justify-end">
           <button
             type="button"
             onClick={() => void statusQuery.refetch()}
@@ -250,8 +257,7 @@ export function PaperStrategyOpsPanel({
             <RefreshCw className={refreshing ? "animate-spin" : ""} size={14} />
             {refreshing ? text.refreshing : text.refresh}
           </button>
-        </div>
-      </div>
+          </div>
 
       <div className="mt-4 grid grid-cols-1 gap-2 border-y border-border-subtle py-2 md:grid-cols-4">
         <MetricStat
@@ -355,6 +361,8 @@ export function PaperStrategyOpsPanel({
           </div>
         )}
       </div>
+        </div>
+      </details>
     </Card>
   );
 }

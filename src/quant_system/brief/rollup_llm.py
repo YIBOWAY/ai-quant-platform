@@ -19,13 +19,34 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8645"
 DEFAULT_TOKEN = "local-d34-proxy"
-DEFAULT_MODEL = "grok-4.5"
-DEFAULT_TIMEOUT_SECONDS = 120.0
+DEFAULT_MODEL = "grok-4.6"
+DEFAULT_REASONING_EFFORT = "xhigh"
+DEFAULT_TIMEOUT_SECONDS = 300.0
 
 _ENV_BASE_URL = "QS_BRIEF_ROLLUP_LLM_BASE_URL"
 _ENV_TOKEN = "QS_BRIEF_ROLLUP_LLM_TOKEN"
 _ENV_MODEL = "QS_BRIEF_ROLLUP_LLM_MODEL"
 _ENV_TIMEOUT = "QS_BRIEF_ROLLUP_LLM_TIMEOUT"
+
+_NUMBER_STYLE_ZH = (
+    "数字排版：金额使用千位分隔并保留两位小数，比例显示百分号并保留两位小数。"
+    "account_summary 的 pnl_pct 和 invested_pct 是小数比例，例如 0.0325 应写 3.25%；"
+    "stats.period_change_pct 已经是百分数，例如 3.703168 应写 3.70%，不能再次乘100。"
+    "正文把 pnl_pct 写为账户盈亏比例、invested_pct 写为已投资比例，禁止直接输出字段名或长小数。"
+    "这些仅是既有数字的单位换算和四舍五入，不是新增数字；日期、新闻原始数字和模型版本不改。"
+    "缺少市场报价时 valuation_status=incomplete，equity/pnl_abs/pnl_pct/invested_pct 为空；"
+    "只能写尚不能计算市值和盈亏，cost_reference_equity 只是含成本价的参考金额，不能写成市值或收益。"
+    "现金仍可按给定金额描述。账户总资产变化不等于策略收益，不能忽略入金或不同估值口径。"
+)
+_NUMBER_STYLE_EN = (
+    "Financial formatting: amounts use thousands separators and two decimal places. "
+    "account_summary pnl_pct/invested_pct are ratios (0.0325 means 3.25%), while "
+    "stats.period_change_pct is already in percent units (3.703168 means 3.70%, never 370.32%). "
+    "Use readable labels, not JSON field names or long decimals. Rounding is allowed; "
+    "do not alter dates, original news figures or model versions. Incomplete valuation means "
+    "market equity/P&L are unknown; cost_reference_equity is not a market valuation or return. "
+    "Account equity change is not strategy performance."
+)
 
 _DRAFT_SYSTEM = {
     "zh": (
@@ -36,8 +57,15 @@ _DRAFT_SYSTEM = {
         "输出必须是一个 JSON 对象，schema 为 "
         "{{\"title\": str, \"main_storyline\": str, "
         "\"topics\": [{{\"title\": str, \"synthesis\": str, \"item_refs\": [str]}}]}}，"
-        "其中 topics 数量 3~7 个：main_storyline 概括本期主线，"
-        "每个 topic 是一条支线主题及其综合叙述。使用简体中文。"
+        "其中 topics 数量 3~7 个：main_storyline 概括本期重要变化，"
+        "每个 topic 说明一件具体事情及其依据。使用简体中文。"
+        "写给个人读者，用普通中文说明谁发生了什么变化、依据是什么、接下来值得观察什么；"
+        "条件不足时明确说尚不能判断，不把推测或关注建议写成事实。"
+        "stats.daily_count 是归档日报期数，应写几期日报，不能称作交易日数量。"
+        "保留必要的金融术语和原始引用，避免用篮子、抓手、赋能、基座、攻守切换、"
+        "资本叙事等借喻代替具体的市场、股票、指标、行为或变化。"
+        "例如把前三后三篮子分化写成涨幅前三名与后三名的平均收益差，"
+        "谈到算力时具体交代已有的订单、投资或业绩消息。不要写排印、化石等内部称呼。"
     ),
     "en": (
         "You are the editor of the Daily Morning Brief, summarizing a period of "
@@ -121,6 +149,10 @@ class RollupLlmClient:
         return self._model
 
     @property
+    def reasoning_effort(self) -> str:
+        return DEFAULT_REASONING_EFFORT
+
+    @property
     def critic_model(self) -> str:
         # The critique pass uses the same proxied model; kept as a separate
         # provenance field so a split-critic setup stays representable.
@@ -150,39 +182,41 @@ class RollupLlmClient:
         http = self._client or httpx.Client(
             base_url=self._base_url,
             timeout=self._timeout_seconds,
-            headers={"accept": "application/json"},
+            headers={"accept": "text/event-stream"},
         )
         try:
             try:
-                response = http.post(
+                # Long xhigh generations must start receiving upstream data
+                # before intermediate connections expire waiting for one JSON
+                # response. Collect only answer content, never reasoning text.
+                with http.stream(
+                    "POST",
                     "/v1/chat/completions",
                     json={
                         "model": self._model,
+                        "reasoning_effort": self.reasoning_effort,
                         "messages": messages,
                         "response_format": {"type": "json_object"},
+                        "stream": True,
                     },
                     # The token is only a transport header: it must never end
                     # up in logs, error messages, or the rollup payload.
                     headers={"Authorization": f"Bearer {self._token}"},
-                )
+                ) as response:
+                    if response.status_code != 200:
+                        # The body may echo request details; never include it.
+                        raise RollupLlmUnavailable(
+                            f"rollup LLM proxy returned HTTP {response.status_code}"
+                        )
+                    content = _stream_content(response)
             except httpx.HTTPError as exc:
                 raise RollupLlmUnavailable(
                     f"rollup LLM request failed: {type(exc).__name__}: {exc}"
                 ) from exc
-            if response.status_code != 200:
-                # Deliberately no response body: it may echo request details.
-                raise RollupLlmUnavailable(
-                    f"rollup LLM proxy returned HTTP {response.status_code}"
-                )
-            try:
-                envelope = response.json()
-            except ValueError as exc:
-                raise RollupLlmUnavailable("rollup LLM proxy returned invalid JSON") from exc
         finally:
             if owns_client:
                 http.close()
 
-        content = _message_content(envelope)
         try:
             payload = json.loads(content)
         except ValueError as exc:
@@ -208,14 +242,45 @@ def _env_timeout() -> float:
         return DEFAULT_TIMEOUT_SECONDS
 
 
-def _message_content(envelope: Any) -> str:
-    try:
-        content = envelope["choices"][0]["message"]["content"]
-    except (TypeError, KeyError, IndexError) as exc:
-        raise RollupLlmUnavailable(
-            "rollup LLM response is missing choices[0].message.content"
-        ) from exc
-    if not isinstance(content, str) or not content.strip():
+def _stream_content(response: httpx.Response) -> str:
+    chunks: list[str] = []
+    finish_reason = None
+    done = False
+    for line in response.iter_lines():
+        if not line.startswith("data:"):
+            continue  # SSE comments/keepalives and blank event separators.
+        raw = line[5:].strip()
+        if raw == "[DONE]":
+            done = True
+            break
+        try:
+            event = json.loads(raw)
+        except ValueError as exc:
+            raise RollupLlmUnavailable("rollup LLM stream returned invalid JSON") from exc
+        if not isinstance(event, dict):
+            raise RollupLlmUnavailable("rollup LLM stream event is not an object")
+        if "error" in event:
+            raise RollupLlmUnavailable("rollup LLM stream returned an error event")
+        choices = event.get("choices")
+        if not isinstance(choices, list):
+            raise RollupLlmUnavailable("rollup LLM stream is missing choices")
+        for choice in choices:
+            if not isinstance(choice, dict) or choice.get("index") != 0:
+                raise RollupLlmUnavailable("rollup LLM stream choice is invalid")
+            delta = choice.get("delta")
+            if not isinstance(delta, dict):
+                raise RollupLlmUnavailable("rollup LLM stream delta is invalid")
+            content = delta.get("content")
+            if content is not None:
+                if not isinstance(content, str):
+                    raise RollupLlmUnavailable("rollup LLM stream content is invalid")
+                chunks.append(content)
+            if choice.get("finish_reason") is not None:
+                finish_reason = choice["finish_reason"]
+    if not done or finish_reason != "stop":
+        raise RollupLlmUnavailable("rollup LLM stream generation is incomplete")
+    content = "".join(chunks)
+    if not content.strip():
         raise RollupLlmUnavailable("rollup LLM message content is empty")
     return content
 
@@ -232,7 +297,9 @@ def _draft_messages(facts: dict[str, Any]) -> list[dict[str, str]]:
     locale = _locale_of(facts)
     kind = str(facts.get("kind") or "weekly")
     kind_label = _KIND_LABEL[locale].get(kind, _KIND_LABEL[locale]["weekly"])
-    system = _DRAFT_SYSTEM[locale].format(kind_label=kind_label)
+    system = _DRAFT_SYSTEM[locale].format(kind_label=kind_label) + (
+        _NUMBER_STYLE_ZH if locale == "zh" else _NUMBER_STYLE_EN
+    )
     if locale == "en":
         user = (
             "Facts package (JSON). Draft the rollup now; answer with the JSON "
@@ -250,7 +317,9 @@ def _critique_messages(facts: dict[str, Any], draft: dict[str, Any]) -> list[dic
     locale = _locale_of(facts)
     kind = str(facts.get("kind") or "weekly")
     kind_label = _KIND_LABEL[locale].get(kind, _KIND_LABEL[locale]["weekly"])
-    system = _CRITIQUE_SYSTEM[locale].format(kind_label=kind_label)
+    system = _CRITIQUE_SYSTEM[locale].format(kind_label=kind_label) + (
+        _NUMBER_STYLE_ZH if locale == "zh" else _NUMBER_STYLE_EN
+    )
     if locale == "en":
         user = (
             "Facts package (JSON):\n"

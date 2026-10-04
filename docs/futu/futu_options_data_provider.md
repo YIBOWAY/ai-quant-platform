@@ -163,12 +163,22 @@ quant-system options prune-cache --apply
 
 ## Phase 13 期权雷达说明
 
-期权雷达使用相同的只读富途行情路径。它遵循富途文档规定的每 30 秒 10 次报价调用的节奏，并默认将快照批次保持在 200 个标的及以下。
+期权推荐使用相同的只读富途行情路径。正式任务固定加载 tracked exact 34 策展
+标的，遵循富途文档规定的每 30 秒 10 次报价调用节奏，并把快照批次保持在 200 个
+代码及以下。每次任务先刷新公开财报、除息日期/每股股息和 VIX，再逐标的扫描；
+页面「立即更新」与 22:00 Hermes cron 调用同一套后台任务。周六先写正式 34 标的，
+再把 top-100 宽池写入独立 `data/options_scans/wide`，宽池不进入正式推荐页。
+
+sample 的 universe、earnings、dividend、VIX、snapshot 和 IV history 必须全部写在
+隔离目录；Futu 正式推荐不接受 sample 输入。IVR 少于 30 个正式 session 时保持
+`warming`，但不阻断基于真实报价、事件证据、物理 EV 和流动性的推荐。
 
 2026-05-03 还对 `US.VIX` 和 `US.VIX3M` 测试了富途。本地 OpenD 会话对这两个代码均返回 "unknown stock"，而 `US.SPY` 的 K 线数据正常。由于富途不提供这些 CBOE 指数代码，期权雷达现在从由
 `scripts/refresh_vix_history.py` 维护的本地 CSV 缓存加载 `^VIX` / `^VIX3M`。该刷新脚本优先尝试 Yahoo Chart，并在 Yahoo 返回 403 时回退到 Cboe 的公开每日 CSV。随后的每日扫描会计算 VIX 状态 (regime)，并将 `market_regime` / `market_regime_penalty` 写入每个雷达候选项。
 
-富途 OpenAPI 条款不允许本项目将行情数据作为对外数据 API 进行再分发。雷达仅用于本地自用研究。
+富途 OpenAPI 条款不允许本项目将行情数据作为对外数据 API 进行再分发。推荐仅用于
+本地自用研究。完整用户与状态合同见
+[期权推荐指南](../guides/options-recommendations.md)。
 
 ## 人工验证
 
@@ -211,8 +221,9 @@ OpenD 对每个报价接口大致强制执行每 30 秒 10 次调用。单次期
 
 对于交互式页面，`FutuMarketDataProvider` 现在会检测常见的中英文限速消息，按已配置的重试间隔等待一次，然后重试同一只读请求。如果第二次尝试仍失败，API 会返回带类型的 `rate_limited` 响应，以便前端显示清晰的临时错误，而非原始的提供方消息。
 
-对于诸如 `quant-system options daily-scan --top 100` 或调度入口
-`quant-system options daily-task --top 100` 之类的大范围扫描，预期在富途节奏限制下运行会耗时较长。进行人工验证时，请先从较小的 `--top 10` 或 `--top 20` 开始。
+正式 `daily-task --top 34` 在富途节奏限制下会耗时较长。CLI `daily-scan` 只允许
+写非正式输出目录；可在隔离目录用较小的 `--top` 诊断连接，但小规模结果不能替代
+exact-34 正式覆盖率。
 
 ## 安全边界
 

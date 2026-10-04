@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import uuid
 from collections import defaultdict
 from dataclasses import dataclass
+from pathlib import Path
 from statistics import mean, median, pstdev
 from typing import Literal
 
@@ -222,6 +224,8 @@ def run_prediction_market_timeseries_backtest(
     *,
     store: PredictionMarketSnapshotStore,
     config: PredictionMarketTimeseriesBacktestConfig,
+    run_id: str | None = None,
+    trials_root: str | Path | None = None,
 ) -> PredictionMarketTimeseriesBacktestResult:
     records = store.load_history_records(
         provider=config.provider,
@@ -320,7 +324,7 @@ def run_prediction_market_timeseries_backtest(
         if len(daily_summary) > 1
         else 0.0,
     )
-    return PredictionMarketTimeseriesBacktestResult(
+    result = PredictionMarketTimeseriesBacktestResult(
         config=config,
         metrics=metrics,
         opportunities=opportunities,
@@ -345,6 +349,12 @@ def run_prediction_market_timeseries_backtest(
             ),
         ],
     )
+    _persist_prediction_market_trial(
+        result,
+        run_id=run_id or f"pm-timeseries-{uuid.uuid4().hex}",
+        trials_root=trials_root,
+    )
+    return result
 
 
 def _group_history_records(
@@ -441,6 +451,60 @@ def _max_drawdown(values: list[float]) -> float:
         peak = max(peak, value)
         max_drawdown = max(max_drawdown, peak - value)
     return max_drawdown
+
+
+def _persist_prediction_market_trial(
+    result: PredictionMarketTimeseriesBacktestResult,
+    *,
+    run_id: str,
+    trials_root: str | Path | None,
+) -> None:
+    from quant_system.config.settings import load_settings
+    from quant_system.research.trials import ResearchTrial, TrialsLedger
+
+    config = result.config
+    capital = float(config.capital_limit) if config.capital_limit else 1.0
+    daily_returns = [
+        float(item.estimated_profit) / capital for item in result.daily_summary
+    ]
+    markets = sorted({item.market_id for item in result.opportunities})
+    metadata = {
+        "run_id": run_id,
+        "provider": config.provider,
+        "simulated_trade_count": result.metrics.simulated_trade_count,
+    }
+    ledger_root = (
+        Path(trials_root)
+        if trials_root is not None
+        else Path(load_settings().data.data_dir) / "trials"
+    )
+    ledger = TrialsLedger(ledger_root)
+    if len(daily_returns) >= 2:
+        ledger.append(
+            ResearchTrial.record(
+                kind="prediction_market",
+                subject="timeseries_backtest",
+                universe=markets or [config.provider],
+                daily_returns=daily_returns,
+                window_start=config.start_time,
+                window_end=config.end_time,
+                source=config.provider,
+                metadata=metadata,
+            )
+        )
+        return
+    ledger.append(
+        ResearchTrial.skipped(
+            kind="prediction_market",
+            subject="timeseries_backtest",
+            universe=markets or [config.provider],
+            reason="prediction_market_insufficient_daily_returns",
+            window_start=config.start_time,
+            window_end=config.end_time,
+            source=config.provider,
+            metadata=metadata,
+        )
+    )
 
 
 class _HistoricalSnapshotProvider:

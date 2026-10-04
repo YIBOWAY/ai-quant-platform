@@ -1,5 +1,9 @@
 # 每日晨报双入口 — Design + Implementation Plan
 
+> **历史冻结（2026-08-26）：**这是 2026-07-19 的有界 UI 计划，不是当前待办。
+> 正文步骤与文件位置只作设计追溯；统一边界见
+> [`../README.md`](../README.md)。
+
 > **For agentic workers:** Implement task-by-task. Steps use checkbox syntax.
 
 **Goal:** Give the existing `/brief` (每日晨报 / Daily Morning Brief) page discoverable dual entry points: global sidebar + Hermes Today contextual CTA.
@@ -8,7 +12,7 @@
 
 **Tech Stack:** Next.js 15 App Router, React 19, TypeScript, Tailwind 4, lucide-react, Vitest.
 
-**Repo:** `/Users/sunyibo/programs/ai-quant-platform` (frontend at `src/frontend`). Not HQA.
+**Repo:** [ai-quant-platform](https://github.com/YIBOWAY/ai-quant-platform/tree/main/) (frontend at `src/frontend`). Not HQA.
 
 ## Global Constraints
 
@@ -87,7 +91,7 @@ In `keeps exact item routes…`, insert `{ id: "brief", href: "/brief" }` immedi
 - [ ] **Step 2: Run test — expect FAIL**
 
 ```bash
-cd /Users/sunyibo/programs/ai-quant-platform/src/frontend && npm test -- --run lib/navConfig.test.ts
+cd $HOME/programs/ai-quant-platform/src/frontend && npm test -- --run lib/navConfig.test.ts
 ```
 
 Expected: FAIL — research routes missing brief.
@@ -117,7 +121,7 @@ const researchItems: NavItem[] = shellEnabled
 - [ ] **Step 4: Run test — expect PASS**
 
 ```bash
-cd /Users/sunyibo/programs/ai-quant-platform/src/frontend && npm test -- --run lib/navConfig.test.ts
+cd $HOME/programs/ai-quant-platform/src/frontend && npm test -- --run lib/navConfig.test.ts
 ```
 
 ---
@@ -219,7 +223,7 @@ expect(html).toContain('aria-label="打开每日晨报"');
 - [ ] **Step 4: Run tests**
 
 ```bash
-cd /Users/sunyibo/programs/ai-quant-platform/src/frontend && npm test -- --run lib/navConfig.test.ts lib/hermesArtifactShelf.test.ts
+cd $HOME/programs/ai-quant-platform/src/frontend && npm test -- --run lib/navConfig.test.ts lib/hermesArtifactShelf.test.ts
 ```
 
 Expected: PASS.

@@ -1,5 +1,9 @@
 # Slice UI-A：/hermes 今日页方向 A 重设计（F0 定稿 → 实施）
 
+> **历史冻结（2026-08-26）：**这是 Direction A 的设计快照，不是当前 `/hermes`
+> 实施入口；正文“待实施”状态已经冻结。不得按旧 DOM 或任务序列继续施工。统一边界见
+> [`../README.md`](../README.md)。
+
 日期：2026-07-24　状态：**F0 定稿完成，待实施**
 关联：D-31 spec §1.3/§3.1/§4.1（五秒测试、双状态、三级信息分层）；
 `docs/superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md`（F0–F2 流程来源）。

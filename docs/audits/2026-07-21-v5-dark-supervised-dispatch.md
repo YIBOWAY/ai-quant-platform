@@ -34,7 +34,7 @@ claim without dispatch_started      → leased left for lease reconcile (no Herm
 ## Verification commands
 
 ```bash
-cd /Users/sunyibo/programs/ai-quant-platform
+cd $HOME/programs/ai-quant-platform
 export QS_TEST_DATABASE_URL='postgresql://quant:quantpass@127.0.0.1:5432/quantplatform_v4_tmp'
 .venv/bin/python -m pytest \
   tests/test_hermes_connector_dispatch.py \

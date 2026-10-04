@@ -116,3 +116,42 @@ def test_digest_less_automation_sleeve_is_not_hung_eligible() -> None:
     )()
 
     assert hung_sleeve_eligible(sleeve) is False
+
+
+def test_stopped_sleeve_is_not_hung_eligible() -> None:
+    sleeve = type(
+        "Sleeve",
+        (),
+        {
+            "mode": "allocated",
+            "status": "stopped",
+            "metadata": {
+                "automation_managed": True,
+                "promotion_scope": "paper_only",
+                "candidate_code_digest": "447141c1b769e8eeefc8f87148984f6b0e0f9fb94456a40f981e91362273af1c",
+            },
+        },
+    )()
+
+    assert hung_sleeve_eligible(sleeve) is False
+
+
+def test_not_book_bound_fossil_sleeve_is_not_hung_eligible() -> None:
+    sleeve = type(
+        "Sleeve",
+        (),
+        {
+            "mode": "allocated",
+            "status": "running",
+            "metadata": {
+                "automation_managed": True,
+                "promotion_scope": "paper_only",
+                "candidate_code_digest": "37f2a5b9caa7597813d2066c97dda32b196d42228339bd3e3d94a2cdcd8c9667",
+                "fossil": True,
+                "official_observation": False,
+                "fossil_reason": "not_book_bound",
+            },
+        },
+    )()
+
+    assert hung_sleeve_eligible(sleeve) is False

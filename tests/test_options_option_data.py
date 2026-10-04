@@ -24,7 +24,7 @@ def test_normalize_option_records_computes_mid_and_normalizes_iv() -> None:
                 "volume": 25,
                 "turnover": 1000,
                 "open_interest": 500,
-                "implied_volatility": 24.5,
+                "implied_volatility": 0.245,
                 "delta": 0.42,
                 "gamma": 0.08,
                 "theta": -0.03,

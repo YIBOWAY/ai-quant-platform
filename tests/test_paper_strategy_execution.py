@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import MappingProxyType
+
 import pandas as pd
 import pytest
 
@@ -20,6 +22,7 @@ from quant_system.execution.paper_strategy_sleeves import (
     StrategyExecutionStatus,
     StrategySignal,
     StrategySleeveMode,
+    StrategySleeveStatus,
 )
 from quant_system.execution.price_source import PricedQuote, PriceUnavailableError
 
@@ -121,6 +124,8 @@ def test_next_open_execution_fills_buy_and_updates_sleeve_account_and_lots(
     executed = PaperStrategyExecutionService(
         storage=storage,
         price_source=FakePriceSource({"AAPL": 100.0}),
+        commission_bps=0.0,
+        slippage_bps=0.0,
     ).execute_plan(account, sleeve=sleeve, plan=plan)
 
     assert executed.status == StrategyExecutionStatus.FILLED
@@ -141,7 +146,7 @@ def test_next_open_execution_fills_buy_and_updates_sleeve_account_and_lots(
     assert account.ledger[-1].kind == "sleeve_execution_fill"
 
 
-def test_next_open_execution_sell_reduces_only_the_sleeve_lot_source(tmp_path) -> None:
+def test_next_open_execution_sell_keeps_planned_quantity_when_price_moves(tmp_path) -> None:
     account = PaperAccount.open_new(initial_cash=100_000.0)
     storage = PaperStrategySleeveStorage(tmp_path)
     sleeve_service = PaperStrategySleeveService(storage)
@@ -183,10 +188,10 @@ def test_next_open_execution_sell_reduces_only_the_sleeve_lot_source(tmp_path) -
             {
                 "symbol": "AAPL",
                 "side": "sell",
-                "notional_delta": -200.0,
+                "notional_delta": -500.0,
                 "target_weight": 0.0,
                 "reference_price": 100.0,
-                "estimated_quantity": 2.0,
+                "estimated_quantity": 5.0,
             }
         ],
         status=SignalStatus.GENERATED,
@@ -200,18 +205,19 @@ def test_next_open_execution_sell_reduces_only_the_sleeve_lot_source(tmp_path) -
 
     PaperStrategyExecutionService(
         storage=storage,
-        price_source=FakePriceSource({"AAPL": 100.0}),
+        price_source=FakePriceSource({"AAPL": 50.0}),
+        commission_bps=0.0,
+        slippage_bps=0.0,
     ).execute_plan(account, sleeve=sleeve, plan=plan)
 
     position = account.positions["AAPL"]
-    assert position.quantity == pytest.approx(13.0)
+    assert position.quantity == pytest.approx(10.0)
     assert position.source_quantity["manual"] == pytest.approx(10.0)
-    assert position.source_quantity[f"strategy:{sleeve.sleeve_id}"] == pytest.approx(
-        3.0
-    )
-    assert storage.load_sleeve_lots(sleeve.sleeve_id)[0].quantity == pytest.approx(3.0)
-    assert sleeve.cash == pytest.approx(9_700.0)
-    assert account.sleeve_cash[sleeve.sleeve_id] == pytest.approx(9_700.0)
+    assert f"strategy:{sleeve.sleeve_id}" not in position.source_quantity
+    assert storage.load_sleeve_lots(sleeve.sleeve_id) == []
+    assert plan.fills[0].quantity == pytest.approx(5.0)
+    assert sleeve.cash == pytest.approx(9_750.0)
+    assert account.sleeve_cash[sleeve.sleeve_id] == pytest.approx(9_750.0)
 
 
 def test_next_open_execution_blocks_insufficient_sleeve_cash_without_mutation(
@@ -257,6 +263,8 @@ def test_next_open_execution_blocks_insufficient_sleeve_cash_without_mutation(
         PaperStrategyExecutionService(
             storage=storage,
             price_source=FakePriceSource({"AAPL": 100.0}),
+            commission_bps=0.0,
+            slippage_bps=0.0,
         ).execute_plan(account, sleeve=sleeve, plan=plan)
 
     reloaded = storage.load_executions(sleeve.sleeve_id)[0]
@@ -418,6 +426,8 @@ def test_next_open_execution_blocks_non_finite_order_quantity_without_mutation(
         PaperStrategyExecutionService(
             storage=storage,
             price_source=FakePriceSource({"AAPL": 100.0}),
+            commission_bps=0.0,
+            slippage_bps=0.0,
         ).execute_plan(account, sleeve=sleeve, plan=plan)
 
     assert account.cash == pytest.approx(100_000.0)
@@ -463,6 +473,8 @@ def test_next_open_execution_does_not_reprocess_filled_plan(tmp_path) -> None:
     processor = PaperStrategyExecutionService(
         storage=storage,
         price_source=FakePriceSource({"AAPL": 100.0}),
+        commission_bps=0.0,
+        slippage_bps=0.0,
     )
     processor.execute_plan(account, sleeve=sleeve, plan=plan)
 
@@ -517,6 +529,8 @@ def test_execution_journal_recovers_account_when_account_save_was_interrupted(
     processor = PaperStrategyExecutionService(
         storage=storage,
         price_source=FakePriceSource({"AAPL": 100.0}),
+        commission_bps=0.0,
+        slippage_bps=0.0,
     )
 
     processor.execute_plan(account, sleeve=sleeve, plan=plan)
@@ -640,6 +654,8 @@ def test_execution_journal_marks_mismatched_account_for_manual_recovery(
     processor = PaperStrategyExecutionService(
         storage=storage,
         price_source=FakePriceSource({"AAPL": 100.0}),
+        commission_bps=0.0,
+        slippage_bps=0.0,
     )
     processor.execute_plan(account, sleeve=sleeve, plan=plan)
     storage.save_sleeve(before_sleeve)
@@ -655,3 +671,595 @@ def test_execution_journal_marks_mismatched_account_for_manual_recovery(
     assert storage.load_sleeve(sleeve.sleeve_id).cash == pytest.approx(25_000.0)
     assert storage.load_sleeve_lots(sleeve.sleeve_id) == []
     assert storage.load_executions(sleeve.sleeve_id)[0].blocked_reason == "recovery_required"
+
+
+def _parity_plan(tmp_path, *, side: str = "buy", quantity: float = 250.0):
+    account = PaperAccount.open_new(initial_cash=100_000.0)
+    storage = PaperStrategySleeveStorage(tmp_path)
+    sleeve_service = PaperStrategySleeveService(storage)
+    config = _config()
+    storage.save_strategy_config(config)
+    sleeve = sleeve_service.create_sleeve(
+        account,
+        config=config,
+        mode=StrategySleeveMode.ALLOCATED,
+        allocated_cash=25_000.0,
+    )
+    storage.save_sleeve(sleeve)
+    signal = StrategySignal.create(
+        sleeve=sleeve,
+        signal_date="2026-06-26",
+        data_provider="futu",
+        target_weights={"AAPL": 1.0} if side == "buy" else {},
+        proposed_orders=[
+            {
+                "symbol": "AAPL",
+                "side": side,
+                "notional_delta": 25_000.0 if side == "buy" else -25_000.0,
+                "target_weight": 1.0 if side == "buy" else 0.0,
+                "reference_price": 100.0,
+                "estimated_quantity": quantity,
+            }
+        ],
+        status=SignalStatus.GENERATED,
+    )
+    plan = sleeve_service.create_execution_plan(
+        account,
+        sleeve=sleeve,
+        signal=signal,
+        target_date="2026-06-29",
+    )
+    return storage, account, sleeve, plan
+
+
+def test_execution_charges_backtest_parity_costs_by_default(tmp_path) -> None:
+    # Same defaults as the backtest engine: commission 1bp + slippage 5bp.
+    storage, account, sleeve, plan = _parity_plan(tmp_path, side="buy", quantity=250.0)
+    executed = PaperStrategyExecutionService(
+        storage=storage,
+        price_source=FakePriceSource({"AAPL": 100.0}),
+    ).execute_plan(account, sleeve=sleeve, plan=plan)
+
+    assert executed.status == StrategyExecutionStatus.FILLED
+    fill = executed.fills[0]
+    assert fill.price == pytest.approx(100.0 * (1 + 5.0 / 10_000))  # buy slippage
+    assert fill.gross_value == pytest.approx(250.0 * fill.price)
+    assert fill.metadata["commission_bps"] == pytest.approx(1.0)
+    assert fill.metadata["slippage_bps"] == pytest.approx(5.0)
+    assert fill.metadata["commission"] == pytest.approx(fill.gross_value * 1.0 / 10_000)
+    ledger_row = [row for row in account.ledger if row.kind == "sleeve_execution_fill"][-1]
+    assert ledger_row.commission == pytest.approx(fill.metadata["commission"])
+
+
+def test_execution_sell_applies_adverse_slippage(tmp_path) -> None:
+    # seed a lot to sell
+    from quant_system.execution.paper_strategy_sleeves import SleeveLot
+
+    storage, account, sleeve, plan = _parity_plan(tmp_path, side="sell", quantity=100.0)
+    storage.save_sleeve_lots(
+        sleeve.sleeve_id,
+        [
+            SleeveLot(
+                lot_id=f"lot-{sleeve.sleeve_id}-aapl",
+                account_id=account.account_id,
+                sleeve_id=sleeve.sleeve_id,
+                symbol="AAPL",
+                quantity=250.0,
+                avg_cost=90.0,
+                source=f"strategy:{sleeve.sleeve_id}",
+            )
+        ],
+    )
+    account.apply_fill(
+        _fill("AAPL", OrderSide.BUY, 250.0, 90.0),
+        source=f"strategy:{sleeve.sleeve_id}",
+    )
+    sleeve.cash = 0.0
+    executed = PaperStrategyExecutionService(
+        storage=storage,
+        price_source=FakePriceSource({"AAPL": 100.0}),
+    ).execute_plan(account, sleeve=sleeve, plan=plan)
+
+    fill = executed.fills[0]
+    assert fill.price == pytest.approx(100.0 * (1 - 5.0 / 10_000))
+
+
+def test_execution_zero_costs_when_overridden(tmp_path) -> None:
+    storage, account, sleeve, plan = _parity_plan(tmp_path, side="buy", quantity=250.0)
+    executed = PaperStrategyExecutionService(
+        storage=storage,
+        price_source=FakePriceSource({"AAPL": 100.0}),
+        commission_bps=0.0,
+        slippage_bps=0.0,
+    ).execute_plan(account, sleeve=sleeve, plan=plan)
+
+    assert executed.fills[0].price == pytest.approx(100.0)
+    assert executed.fills[0].metadata["commission"] == pytest.approx(0.0)
+
+
+class FlakyPriceSource:
+    """Sealed transient outage: raises until ``failures_left`` runs out."""
+
+    def __init__(self, prices: dict[str, float], *, failures_left: int) -> None:
+        self.prices = {symbol.upper(): price for symbol, price in prices.items()}
+        self.failures_left = failures_left
+        self.calls = 0
+
+    def get_prices(self, symbols: list[str], **_kwargs) -> dict[str, PricedQuote]:
+        self.calls += 1
+        if self.failures_left > 0:
+            self.failures_left -= 1
+            raise PriceUnavailableError("sealed transient outage")
+        return {
+            symbol.upper(): PricedQuote(
+                symbol=symbol.upper(),
+                price=self.prices[symbol.upper()],
+                price_kind="futu_snapshot",
+                as_of="2026-06-29T13:30:00Z",
+                source="fake",
+            )
+            for symbol in symbols
+            if symbol.upper() in self.prices
+        }
+
+
+def _pending_plan_fixture(tmp_path):
+    account = PaperAccount.open_new(initial_cash=100_000.0)
+    storage = PaperStrategySleeveStorage(tmp_path)
+    sleeve_service = PaperStrategySleeveService(storage)
+    config = _config()
+    storage.save_strategy_config(config)
+    sleeve = sleeve_service.create_sleeve(
+        account,
+        config=config,
+        mode=StrategySleeveMode.ALLOCATED,
+        allocated_cash=25_000.0,
+    )
+    storage.save_sleeve(sleeve)
+    signal = StrategySignal.create(
+        sleeve=sleeve,
+        signal_date="2026-06-26",
+        data_provider="futu",
+        target_weights={"AAPL": 1.0},
+        proposed_orders=[
+            {
+                "symbol": "AAPL",
+                "side": "buy",
+                "notional_delta": 25_000.0,
+                "target_weight": 1.0,
+                "reference_price": 100.0,
+                "estimated_quantity": 250.0,
+            }
+        ],
+        status=SignalStatus.GENERATED,
+    )
+    plan = sleeve_service.create_execution_plan(
+        account,
+        sleeve=sleeve,
+        signal=signal,
+        target_date="2026-06-29",
+    )
+    return storage, account, sleeve, plan
+
+
+def test_price_unavailable_retry_recovers_and_fills_with_recorded_attempts(tmp_path) -> None:
+    storage, account, sleeve, plan = _pending_plan_fixture(tmp_path)
+    source = FlakyPriceSource({"AAPL": 100.0}, failures_left=1)
+    sleeps: list[float] = []
+
+    executed = PaperStrategyExecutionService(
+        storage=storage,
+        price_source=source,
+        commission_bps=0.0,
+        slippage_bps=0.0,
+        price_retry_backoff_seconds=30.0,
+        sleep_func=sleeps.append,
+    ).execute_plan(account, sleeve=sleeve, plan=plan)
+
+    assert executed.status == StrategyExecutionStatus.FILLED
+    assert source.calls == 2
+    assert sleeps == [30.0]
+    retry = executed.metadata["price_unavailable_retry"]
+    assert retry["max_retries"] == 2
+    assert retry["backoff_seconds"] == 30.0
+    assert [(row["attempt"], row["code"]) for row in retry["attempts"]] == [
+        (1, "price_unavailable"),
+    ]
+    assert executed.fills[0].quantity == pytest.approx(250.0)
+    persisted = storage.load_executions(sleeve.sleeve_id)[0]
+    assert persisted.status == StrategyExecutionStatus.FILLED
+    assert persisted.metadata["price_unavailable_retry"]["attempts"][0]["code"] == (
+        "price_unavailable"
+    )
+
+
+def test_price_unavailable_retry_exhaustion_stays_blocked_without_mutation(tmp_path) -> None:
+    storage, account, sleeve, plan = _pending_plan_fixture(tmp_path)
+    source = FlakyPriceSource({"AAPL": 100.0}, failures_left=99)
+    sleeps: list[float] = []
+
+    with pytest.raises(PaperStrategyExecutionError, match="price_unavailable"):
+        PaperStrategyExecutionService(
+            storage=storage,
+            price_source=source,
+            price_retry_max_retries=2,
+            price_retry_backoff_seconds=30.0,
+            sleep_func=sleeps.append,
+        ).execute_plan(account, sleeve=sleeve, plan=plan)
+
+    # Bounded: 1 initial attempt + 2 recorded retries, then a terminal block.
+    assert source.calls == 3
+    assert sleeps == [30.0, 30.0]
+    reloaded = storage.load_executions(sleeve.sleeve_id)[0]
+    assert reloaded.status == StrategyExecutionStatus.BLOCKED
+    assert reloaded.blocked_reason == "price_unavailable"
+    assert reloaded.fills == []
+    retry = reloaded.metadata["price_unavailable_retry"]
+    assert [row["attempt"] for row in retry["attempts"]] == [1, 2]
+    assert all(row["code"] == "price_unavailable" for row in retry["attempts"])
+    assert sleeve.cash == pytest.approx(25_000.0)
+    assert account.cash == pytest.approx(100_000.0)
+    assert account.positions == {}
+    assert storage.load_sleeve_lots(sleeve.sleeve_id) == []
+    assert storage.load_pending_execution_journals() == []
+
+
+def test_price_retry_zero_bound_keeps_single_attempt_block_behavior(tmp_path) -> None:
+    storage, account, sleeve, plan = _pending_plan_fixture(tmp_path)
+    source = FlakyPriceSource({"AAPL": 100.0}, failures_left=99)
+    sleeps: list[float] = []
+
+    with pytest.raises(PaperStrategyExecutionError, match="price_unavailable"):
+        PaperStrategyExecutionService(
+            storage=storage,
+            price_source=source,
+            price_retry_max_retries=0,
+            sleep_func=sleeps.append,
+        ).execute_plan(account, sleeve=sleeve, plan=plan)
+
+    assert source.calls == 1
+    assert sleeps == []
+    reloaded = storage.load_executions(sleeve.sleeve_id)[0]
+    assert reloaded.status == StrategyExecutionStatus.BLOCKED
+    assert "price_unavailable_retry" not in reloaded.metadata
+
+
+def test_authority_blocks_never_trigger_price_retry(tmp_path) -> None:
+    storage, account, sleeve, plan = _pending_plan_fixture(tmp_path)
+    sleeve.cash = 100.0
+    account.sleeve_cash[sleeve.sleeve_id] = 100.0
+    storage.save_sleeve(sleeve)
+    source = FlakyPriceSource({"AAPL": 100.0}, failures_left=0)
+    sleeps: list[float] = []
+
+    with pytest.raises(PaperStrategyExecutionError, match="insufficient_sleeve_cash"):
+        PaperStrategyExecutionService(
+            storage=storage,
+            price_source=source,
+            price_retry_backoff_seconds=30.0,
+            sleep_func=sleeps.append,
+        ).execute_plan(account, sleeve=sleeve, plan=plan)
+
+    assert source.calls == 1
+    assert sleeps == []
+    reloaded = storage.load_executions(sleeve.sleeve_id)[0]
+    assert reloaded.status == StrategyExecutionStatus.BLOCKED
+    assert reloaded.blocked_reason == "insufficient_sleeve_cash"
+    assert "price_unavailable_retry" not in reloaded.metadata
+
+
+def _persist_plan(storage, sleeve, plan) -> None:
+    storage.save_executions(sleeve.sleeve_id, [plan])
+
+
+def test_mark_missed_window_expires_old_pending_plan_and_persists(tmp_path) -> None:
+    storage, account, sleeve, plan = _pending_plan_fixture(tmp_path)
+    service = PaperStrategyExecutionService(
+        storage=storage,
+        price_source=FlakyPriceSource({"AAPL": 100.0}, failures_left=0),
+    )
+
+    transitioned = service.mark_missed_window(plan, processing_date="2026-06-30")
+
+    assert transitioned is True
+    assert plan.status == StrategyExecutionStatus.MISSED_WINDOW
+    assert plan.blocked_reason is None
+    record = plan.metadata["missed_window"]
+    assert record["previous_status"] == "pending"
+    assert record["previous_blocked_reason"] is None
+    assert record["target_date"] == "2026-06-29"
+    assert record["processing_date"] == "2026-06-30"
+    persisted = storage.load_executions(sleeve.sleeve_id)[0]
+    assert persisted.status == StrategyExecutionStatus.MISSED_WINDOW
+    assert persisted.metadata["missed_window"]["previous_status"] == "pending"
+    assert plan.fills == []
+    assert account.positions == {}
+
+
+def test_mark_missed_window_expires_price_blocked_plan_preserving_reason(tmp_path) -> None:
+    storage, _account, sleeve, plan = _pending_plan_fixture(tmp_path)
+    service = PaperStrategyExecutionService(
+        storage=storage,
+        price_source=FlakyPriceSource({"AAPL": 100.0}, failures_left=99),
+        sleep_func=lambda _seconds: None,
+    )
+    with pytest.raises(PaperStrategyExecutionError, match="price_unavailable"):
+        service.execute_plan(_account, sleeve=sleeve, plan=plan)
+
+    assert service.mark_missed_window(plan, processing_date="2026-06-30") is True
+
+    assert plan.status == StrategyExecutionStatus.MISSED_WINDOW
+    assert plan.blocked_reason == "price_unavailable"
+    record = plan.metadata["missed_window"]
+    assert record["previous_status"] == "blocked"
+    assert record["previous_blocked_reason"] == "price_unavailable"
+    assert plan.metadata["price_unavailable_retry"]["attempts"]
+
+
+@pytest.mark.parametrize(
+    ("status", "blocked_reason"),
+    [
+        (StrategyExecutionStatus.BLOCKED, "insufficient_sleeve_cash"),
+        (StrategyExecutionStatus.BLOCKED, "account_frozen"),
+        (StrategyExecutionStatus.BLOCKED, "recovery_required"),
+        (StrategyExecutionStatus.FILLED, None),
+        (StrategyExecutionStatus.SKIPPED, None),
+        (StrategyExecutionStatus.CANCELLED, None),
+        (StrategyExecutionStatus.MISSED_WINDOW, None),
+    ],
+)
+def test_mark_missed_window_leaves_terminal_or_non_price_records_untouched(
+    tmp_path,
+    status,
+    blocked_reason,
+) -> None:
+    storage, _account, sleeve, plan = _pending_plan_fixture(tmp_path)
+    plan.status = status
+    plan.blocked_reason = blocked_reason
+    _persist_plan(storage, sleeve, plan)
+    service = PaperStrategyExecutionService(
+        storage=storage,
+        price_source=FlakyPriceSource({"AAPL": 100.0}, failures_left=0),
+    )
+
+    assert service.mark_missed_window(plan, processing_date="2026-06-30") is False
+    persisted = storage.load_executions(sleeve.sleeve_id)[0]
+    assert persisted.status == status
+    assert persisted.blocked_reason == blocked_reason
+    assert "missed_window" not in persisted.metadata
+
+
+@pytest.mark.parametrize(
+    ("target_date", "processing_date"),
+    [
+        ("2026-06-29", "2026-06-29"),  # same day: window still open
+        ("2026-06-30", "2026-06-29"),  # future target: not yet due
+        (None, "2026-06-30"),
+        ("not-a-date", "2026-06-30"),
+        ("2026-06-29", "not-a-date"),
+    ],
+)
+def test_mark_missed_window_fails_closed_on_open_or_unreadable_windows(
+    tmp_path,
+    target_date,
+    processing_date,
+) -> None:
+    storage, _account, sleeve, plan = _pending_plan_fixture(tmp_path)
+    plan.target_date = target_date
+    _persist_plan(storage, sleeve, plan)
+    service = PaperStrategyExecutionService(
+        storage=storage,
+        price_source=FlakyPriceSource({"AAPL": 100.0}, failures_left=0),
+    )
+
+    assert service.mark_missed_window(plan, processing_date=processing_date) is False
+    persisted = storage.load_executions(sleeve.sleeve_id)[0]
+    assert persisted.status == StrategyExecutionStatus.PENDING
+    assert "missed_window" not in persisted.metadata
+
+
+def test_prepared_execution_digest_detects_tamper(tmp_path) -> None:
+    storage, account, sleeve, plan = _pending_plan_fixture(tmp_path)
+    service = PaperStrategyExecutionService(
+        storage=storage,
+        price_source=FakePriceSource({"AAPL": 100.0}),
+        commission_bps=0.0,
+        slippage_bps=0.0,
+    )
+    prepared = service.prepare_with_retries(
+        sleeve=sleeve,
+        plan=plan,
+        account_id=account.account_id,
+    )
+
+    tampered = dict(prepared.quotes)
+    tampered["AAPL"] = prepared.quotes["AAPL"].model_copy(update={"price": 999.0})
+    object.__setattr__(prepared, "quotes", MappingProxyType(tampered))
+
+    with pytest.raises(
+        PaperStrategyExecutionError,
+        match="prepared_execution_integrity_violation",
+    ):
+        service.commit_execution(account, sleeve=sleeve, plan=plan, prepared=prepared)
+
+    assert account.cash == pytest.approx(100_000.0)
+    assert account.positions == {}
+    assert storage.load_sleeve_lots(sleeve.sleeve_id) == []
+    assert storage.load_pending_execution_journals() == []
+    blocked = storage.load_executions(sleeve.sleeve_id)[0]
+    assert blocked.status == StrategyExecutionStatus.BLOCKED
+    assert blocked.blocked_reason == "prepared_execution_integrity_violation"
+    assert blocked.fills == []
+
+
+def test_prepared_execution_digest_covers_prices(tmp_path) -> None:
+    """Tampering only ``prices`` (leaving ``quotes`` intact) must fail closed.
+
+    The definition path sizes orders from ``prepared.prices``; the digest must
+    therefore cover them, not just ``quotes`` -- otherwise a rewrite of only
+    ``prices`` would pass the recompute check and price orders off the forgery.
+    """
+    storage, account, sleeve, plan = _pending_plan_fixture(tmp_path)
+    service = PaperStrategyExecutionService(
+        storage=storage,
+        price_source=FakePriceSource({"AAPL": 100.0}),
+        commission_bps=0.0,
+        slippage_bps=0.0,
+    )
+    prepared = service.prepare_with_retries(
+        sleeve=sleeve,
+        plan=plan,
+        account_id=account.account_id,
+    )
+    assert set(prepared.prices) == {"AAPL"}
+    assert prepared.prices["AAPL"] == pytest.approx(100.0)
+
+    tampered = dict(prepared.prices)
+    tampered["AAPL"] = 999.0
+    object.__setattr__(prepared, "prices", MappingProxyType(tampered))
+
+    with pytest.raises(
+        PaperStrategyExecutionError,
+        match="prepared_execution_integrity_violation",
+    ):
+        service.commit_execution(account, sleeve=sleeve, plan=plan, prepared=prepared)
+
+    assert account.cash == pytest.approx(100_000.0)
+    assert account.positions == {}
+    assert storage.load_sleeve_lots(sleeve.sleeve_id) == []
+    assert storage.load_pending_execution_journals() == []
+    blocked = storage.load_executions(sleeve.sleeve_id)[0]
+    assert blocked.status == StrategyExecutionStatus.BLOCKED
+    assert blocked.blocked_reason == "prepared_execution_integrity_violation"
+    assert blocked.fills == []
+
+
+def test_structural_block_precedes_price_fetch_in_prepare(tmp_path) -> None:
+    """A structurally ineligible plan blocks with its own code, no price call.
+
+    Regression for the prepare/commit split: the account-free structural guards
+    (here ``sleeve_paused``) must run before any price fetch, so a price outage
+    cannot mask them, burn the retry budget (3 calls + 2 backoff sleeps) and
+    then roll the plan forward to MISSED_WINDOW with the wrong reason.
+    """
+    storage, account, sleeve, plan = _pending_plan_fixture(tmp_path)
+    sleeve.status = StrategySleeveStatus.PAUSED
+    storage.save_sleeve(sleeve)
+    source = FlakyPriceSource({"AAPL": 100.0}, failures_left=99)
+    sleeps: list[float] = []
+
+    with pytest.raises(PaperStrategyExecutionError, match="sleeve_paused"):
+        PaperStrategyExecutionService(
+            storage=storage,
+            price_source=source,
+            price_retry_backoff_seconds=30.0,
+            sleep_func=sleeps.append,
+        ).execute_plan(account, sleeve=sleeve, plan=plan)
+
+    assert source.calls == 0
+    assert sleeps == []
+    reloaded = storage.load_executions(sleeve.sleeve_id)[0]
+    assert reloaded.status == StrategyExecutionStatus.BLOCKED
+    assert reloaded.blocked_reason == "sleeve_paused"
+    assert "price_unavailable_retry" not in reloaded.metadata
+    assert reloaded.fills == []
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "unsupported_execution_window",
+        "signal_only_no_execution",
+        "sleeve_paused",
+        "sleeve_stopped",
+        "no_executable_orders",
+    ],
+)
+def test_structural_codes_block_before_any_price_fetch(tmp_path, case) -> None:
+    """Every account-free structural guard fails before the price call.
+
+    Pins the terminal code (and the zero-price/zero-sleep behaviour) for each
+    guard relocated to the prepare side, so the pre-split terminal reasons are
+    preserved verbatim across the prepare/commit split.
+    """
+    storage, account, sleeve, plan = _pending_plan_fixture(tmp_path)
+    if case == "unsupported_execution_window":
+        plan.execution_window = "close"
+    elif case == "signal_only_no_execution":
+        sleeve.mode = StrategySleeveMode.SIGNAL_ONLY
+    elif case == "sleeve_paused":
+        sleeve.status = StrategySleeveStatus.PAUSED
+    elif case == "sleeve_stopped":
+        sleeve.status = StrategySleeveStatus.STOPPED
+    else:
+        plan.orders = []
+    source = FlakyPriceSource({"AAPL": 100.0}, failures_left=99)
+    sleeps: list[float] = []
+
+    with pytest.raises(PaperStrategyExecutionError, match=case):
+        PaperStrategyExecutionService(
+            storage=storage,
+            price_source=source,
+            price_retry_backoff_seconds=30.0,
+            sleep_func=sleeps.append,
+        ).execute_plan(account, sleeve=sleeve, plan=plan)
+
+    assert source.calls == 0
+    assert sleeps == []
+    assert "price_unavailable_retry" not in plan.metadata
+    reloaded = storage.load_executions(sleeve.sleeve_id)[0]
+    assert reloaded.status == StrategyExecutionStatus.BLOCKED
+    assert reloaded.blocked_reason == case
+    assert reloaded.fills == []
+
+
+def test_prepared_execution_steps_drift_is_detected(tmp_path) -> None:
+    storage, account, sleeve, plan = _pending_plan_fixture(tmp_path)
+    service = PaperStrategyExecutionService(
+        storage=storage,
+        price_source=FakePriceSource({"AAPL": 100.0}),
+        commission_bps=0.0,
+        slippage_bps=0.0,
+    )
+    prepared = service.prepare_with_retries(
+        sleeve=sleeve,
+        plan=plan,
+        account_id=account.account_id,
+    )
+
+    object.__setattr__(prepared, "snapshot_steps", ())
+
+    with pytest.raises(PaperStrategyExecutionError, match="prepared_execution_steps_drift"):
+        service.commit_execution(account, sleeve=sleeve, plan=plan, prepared=prepared)
+
+    assert account.cash == pytest.approx(100_000.0)
+    assert account.positions == {}
+    assert storage.load_sleeve_lots(sleeve.sleeve_id) == []
+    assert storage.load_pending_execution_journals() == []
+    blocked = storage.load_executions(sleeve.sleeve_id)[0]
+    assert blocked.status == StrategyExecutionStatus.BLOCKED
+    assert blocked.blocked_reason == "prepared_execution_steps_drift"
+    assert blocked.fills == []
+
+
+def test_policy_guard_called_once_on_retry_recovery(tmp_path) -> None:
+    """The execution policy guard is evaluated once per run, not per attempt."""
+    storage, account, sleeve, plan = _pending_plan_fixture(tmp_path)
+    source = FlakyPriceSource({"AAPL": 100.0}, failures_left=1)
+    sleeps: list[float] = []
+    policy_calls: list[list[dict]] = []
+
+    executed = PaperStrategyExecutionService(
+        storage=storage,
+        price_source=source,
+        execution_policy_guard=lambda _account, _sleeve, _plan, orders: policy_calls.append(orders),
+        commission_bps=0.0,
+        slippage_bps=0.0,
+        price_retry_backoff_seconds=30.0,
+        sleep_func=sleeps.append,
+    ).execute_plan(account, sleeve=sleeve, plan=plan)
+
+    assert len(policy_calls) == 1
+    assert executed.status == StrategyExecutionStatus.FILLED
+    assert sleeps == [30.0]
+    assert source.calls == 2

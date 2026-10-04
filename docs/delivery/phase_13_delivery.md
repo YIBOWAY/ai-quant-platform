@@ -1,5 +1,13 @@
 # Phase 13 交付文档 — 期权雷达
 
+> **历史交付快照，已被现役合同替代。** 本文保留 2026-05 初始 Phase 13 的交付与
+> 当时验证原文，不再作为运行指南。尤其是页面刷新 universe、top-100 写正式目录、
+> sample 写正式路径、FastAPI startup catch-up 和旧 JSONL 形态都不是当前合同。
+> 物理 EV/除息修复的稳定代码锚点为 `a307b77`；可变 HEAD 必须现场重查。现役行为请读
+> [期权推荐用户指南](../guides/options-recommendations.md)、
+> [当前架构](../architecture/phase_13_architecture.md)与
+> [当前执行指南](../execution/phase_13_execution.md)。
+
 ## 已交付
 
 - 静态 `S&P 500 ∪ Nasdaq 100` 股票池 CSV。

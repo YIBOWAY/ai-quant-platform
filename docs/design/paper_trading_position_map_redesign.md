@@ -184,7 +184,7 @@ class PaperPriceSource:
 | `POST` | `/api/paper/account/reset` | 重置账户回初始资金（写一条 `kind="reset"` 账本，便于复盘） |
 | `GET` | `/api/health` | 不变；账户冻结状态从账户接口读，不再混用全局 flag |
 
-返回示例（`GET /api/paper/account`，示意）：
+返回示例（`GET /api/paper/account`，纯接口示意，不来自真实用户账户）：
 
 ```json
 {

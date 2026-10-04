@@ -16,7 +16,10 @@ import {
 } from "react";
 
 import { useActiveHermesSession } from "@/lib/hermes/activeSession";
-import { isTerminalCommandState } from "@/lib/hermes/workspaceClient";
+import {
+  getOwnerSession,
+  isTerminalCommandState,
+} from "@/lib/hermes/workspaceClient";
 import {
   createWorkspaceFollowSpine,
   EMPTY_AUTHORITY_HEALTH,
@@ -47,7 +50,6 @@ export function WorkspaceFollowProvider({
     cursor: 0,
     commands: [],
     approvals: [],
-    gates: [],
     publicCutovers: [],
     tasks: [],
     attempts: [],
@@ -85,12 +87,24 @@ export function WorkspaceFollowProvider({
 
   useEffect(() => {
     if (!spine) return;
-    if (enabled) {
-      spine.start();
-    } else {
+    if (!enabled) {
       spine.stop();
+      return;
     }
+
+    const controller = new AbortController();
+    const start = async () => {
+      try {
+        await getOwnerSession(controller.signal);
+      } catch {
+        // Follow preserves its existing honest unavailable/error reporting when
+        // the owner-session probe itself cannot complete.
+      }
+      if (!controller.signal.aborted) spine.start();
+    };
+    void start();
     return () => {
+      controller.abort();
       spine.stop();
     };
   }, [spine, enabled]);
@@ -147,7 +161,6 @@ export function useWorkspaceFollow(): WorkspaceFollowContextValue {
         cursor: 0,
         commands: [],
         approvals: [],
-        gates: [],
         publicCutovers: [],
         tasks: [],
         attempts: [],

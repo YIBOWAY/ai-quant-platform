@@ -4,13 +4,16 @@ import {
   Beaker,
   BookOpen,
   BriefcaseBusiness,
+  Building2,
   Database,
   FileText,
   FlaskConical,
   Globe2,
   Grid3X3,
   HelpCircle,
+  Layers,
   LayoutDashboard,
+  LayoutGrid,
   LineChart,
   ListFilter,
   Map,
@@ -30,6 +33,10 @@ export type NavItemId =
   | "dashboard"
   | "hermes"
   | "brief"
+  | "collection"
+  | "library"
+  | "watch"
+  | "companyResearch"
   | "dataExplorer"
   | "factorLab"
   | "backtester"
@@ -55,6 +62,7 @@ export type NavItem = {
   href: string;
   icon: LucideIcon;
   surfaces?: NavSurface[];
+  aliases?: string[];
 };
 
 export type NavSection = {
@@ -80,22 +88,50 @@ const briefItem: NavItem = {
   icon: Sunrise,
 };
 
+const collectionItem: NavItem = {
+  id: "collection",
+  href: "/collection",
+  icon: LayoutGrid,
+};
+
+const libraryItem: NavItem = {
+  id: "library",
+  href: "/library",
+  icon: Layers,
+  surfaces: [],
+};
+
+const watchItem: NavItem = {
+  id: "watch",
+  href: "/watch",
+  icon: LineChart,
+  aliases: ["/data-explorer", "/asia-radar", "/market-cross-section"],
+};
+
+const companyResearchItem: NavItem = {
+  id: "companyResearch",
+  href: "/company-research",
+  icon: Building2,
+};
+
 const researchTail: NavItem[] = [
-  { id: "dataExplorer", href: "/data-explorer", icon: Database },
-  // Factor Lab / Backtester / Experiments: routes stay reachable for audit,
-  // but the entries are hidden from every nav surface — Hermes drives the
-  // research pipeline, so these expert pages no longer earn sidebar slots.
+  { id: "dataExplorer", href: "/data-explorer", icon: Database, surfaces: [] },
   { id: "factorLab", href: "/factor-lab", icon: FlaskConical, surfaces: [] },
   { id: "backtester", href: "/backtest", icon: LineChart, surfaces: [] },
-  { id: "replications", href: "/strategies", icon: ScrollText },
+  { id: "replications", href: "/strategies", icon: ScrollText, surfaces: [] },
   { id: "experiments", href: "/experiments", icon: Beaker, surfaces: [] },
 ];
 
 const paperSection: NavSection = {
   id: "paper",
   items: [
-    { id: "paperTrading", href: "/paper-trading", icon: BriefcaseBusiness },
-    { id: "positionMap", href: "/position-map", icon: Map },
+    {
+      id: "paperTrading",
+      href: "/paper-trading",
+      icon: BriefcaseBusiness,
+      aliases: ["/position-map"],
+    },
+    { id: "positionMap", href: "/position-map", icon: Map, surfaces: [] },
   ],
 };
 
@@ -104,7 +140,7 @@ const optionsSection: NavSection = {
   items: [
     { id: "optionsScreener", href: "/options-screener", icon: ListFilter },
     { id: "optionsRadar", href: "/options-radar", icon: Radar },
-    { id: "optionsTools", href: "/options-tools", icon: Wrench },
+    { id: "optionsTools", href: "/options-tools", icon: Wrench, surfaces: [] },
     { id: "buySide", href: "/options-buyside", icon: BadgeDollarSign },
   ],
 };
@@ -112,10 +148,10 @@ const optionsSection: NavSection = {
 const marketsSection: NavSection = {
   id: "markets",
   items: [
-    { id: "asiaRadar", href: "/asia-radar", icon: Globe2 },
-    { id: "marketCrossSection", href: "/market-cross-section", icon: Grid3X3 },
+    { id: "asiaRadar", href: "/asia-radar", icon: Globe2, surfaces: [] },
+    { id: "marketCrossSection", href: "/market-cross-section", icon: Grid3X3, surfaces: [] },
     { id: "aiNews", href: "/ai-news", icon: Newspaper },
-    { id: "orderBook", href: "/polymarket", icon: BookOpen },
+    { id: "orderBook", href: "/polymarket", icon: BookOpen, surfaces: [] },
     { id: "agentStudio", href: "/agent-studio", icon: Zap, surfaces: [] },
   ],
 };
@@ -130,10 +166,9 @@ const systemSection: NavSection = {
 };
 
 /**
- * Build mode-specific navigation.
- * shellEnabled: Hermes is the sole research home (Dashboard omitted).
- * shellEnabled false: Dashboard is home; Hermes remains a separate read-only entry.
- * Factor Lab / Backtester / Experiments are surface-hidden (routes kept for audit).
+ * Build mode-specific navigation catalog.
+ * Default chrome is `sectionsForSurface(..., "sidebar")`: empty groups are dropped.
+ * Lab and select options/markets routes stay in the catalog with surfaces: [].
  */
 export function buildNavSections({
   shellEnabled,
@@ -143,8 +178,8 @@ export function buildNavSections({
   agentStudioRedirect?: boolean;
 }): NavSection[] {
   const researchItems: NavItem[] = shellEnabled
-    ? [hermesItem, briefItem, ...researchTail]
-    : [dashboardItem, hermesItem, briefItem, ...researchTail];
+    ? [hermesItem, watchItem, companyResearchItem, briefItem, collectionItem, libraryItem, ...researchTail]
+    : [dashboardItem, hermesItem, watchItem, companyResearchItem, briefItem, collectionItem, libraryItem, ...researchTail];
 
   const visibleMarkets = agentStudioRedirect
     ? { ...marketsSection, items: marketsSection.items.filter((item) => item.id !== "agentStudio") }
@@ -164,4 +199,16 @@ export const navSections: NavSection[] = buildNavSections({ shellEnabled: true }
 
 export function isVisibleOnSurface(item: NavItem, surface: NavSurface): boolean {
   return item.surfaces?.includes(surface) ?? true;
+}
+
+export function sectionsForSurface(
+  sections: NavSection[],
+  surface: NavSurface,
+): NavSection[] {
+  return sections
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => isVisibleOnSurface(item, surface)),
+    }))
+    .filter((section) => section.items.length > 0);
 }

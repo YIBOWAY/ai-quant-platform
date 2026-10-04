@@ -114,6 +114,15 @@ def test_alpha101_library_registers_explicitly_without_polluting_default_registr
     ]
     assert alpha_ids == [f"alpha101_{index:03d}" for index in range(1, 11)]
     assert len(ALPHA101_FACTORS) == 10
+    alpha_names = {
+        item.factor_id: item.display_name_zh
+        for item in default_registry.list_metadata()
+        if item.factor_id.startswith("alpha101_")
+    }
+    assert alpha_names == {
+        f"alpha101_{index:03d}": f"Alpha101 因子 {index:03d}"
+        for index in range(1, 11)
+    }
 
 
 def test_factor_register_library_cli_lists_alpha101_without_changing_default_list() -> None:

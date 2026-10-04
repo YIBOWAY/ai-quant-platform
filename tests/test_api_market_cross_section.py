@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi.testclient import TestClient
 
 from quant_system.api.routes.market_cross_section import (
@@ -7,6 +9,7 @@ from quant_system.api.routes.market_cross_section import (
 )
 from quant_system.api.server import create_app
 from quant_system.data.price_history import HistoricalPriceReadError
+from quant_system.factors.market_risk import build_market_risk
 
 
 def _payload() -> dict:
@@ -50,6 +53,23 @@ def test_cross_section_rejects_non_futu_provider(tmp_path) -> None:
 
     assert response.status_code == 400
     assert response.json()["detail"]["code"] == "market_cross_section_requires_futu"
+
+
+def test_cross_section_api_preserves_unavailable_risk_observations(tmp_path) -> None:
+    payload = _payload()
+    payload["risk_observations"] = build_market_risk(
+        {},
+        expected_session=date(2026, 3, 30),
+        price_source="futu",
+    )
+    app = create_app(output_dir=tmp_path)
+    app.dependency_overrides[get_market_cross_section_reader] = lambda: lambda **_: payload
+    response = TestClient(app).get("/api/market-cross-section?provider=futu")
+    assert response.status_code == 200
+    risk = response.json()["risk_observations"]
+    assert risk["status"] == "unavailable"
+    assert risk["unavailable_count"] == 7
+    assert all(item["value"] is None for item in risk["observations"])
 
 
 def test_cross_section_invalid_basket_is_400(tmp_path) -> None:

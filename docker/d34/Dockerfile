@@ -114,6 +114,13 @@ RUN python -m pip install --no-build-isolation --no-deps /opt/platform
 # source tree importable instead of silently replacing it with another release.
 ENV PYTHONPATH=/opt/rdagent
 
+# The pinned RD-Agent predates Grok 4.6's effort vocabulary and LiteLLM
+# needs explicit pass-through for Grok on the OpenAI-compatible proxy.
+COPY docker/d34/rdagent-grok-reasoning.patch /opt/d34/rdagent-grok-reasoning.patch
+COPY docker/d34/check_reasoning_wire.py /opt/d34/check_reasoning_wire.py
+RUN git -C /opt/rdagent apply /opt/d34/rdagent-grok-reasoning.patch \
+    && python /opt/d34/check_reasoning_wire.py
+
 COPY docker/d34/container_entrypoint.py /opt/d34/container_entrypoint.py
 RUN chmod 0755 /opt/d34/container_entrypoint.py \
     && mkdir -p /workspace/d34 /workspace/cache

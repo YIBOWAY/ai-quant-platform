@@ -479,7 +479,8 @@ describe("DriverBasketPanel", () => {
     );
 
     expect(html).toContain('data-driver-basket-state="available"');
-    expect(html).toContain("龙头篮子——非指数替代");
+    expect(html).toContain("相关龙头股票");
+    expect(html).not.toContain("篮子");
     expect(html).toContain("unweighted display; no point-in-time index weights");
     expect(html).toContain("腾讯控股");
     expect(html).toContain("HK.00700");
@@ -490,8 +491,8 @@ describe("DriverBasketPanel", () => {
     expect(html.match(/data-driver-basket-chart/g)).toHaveLength(2);
     expect(html.match(/data-driver-basket-leader="available"/g)).toHaveLength(2);
     // the not-an-index-substitute / never-blended discipline is stated
-    expect(html).toContain("不是指数替代");
-    expect(html).toContain("不与美元 ETF 代理混合计算任何指标");
+    expect(html).toContain("不与指数或 ETF 合并计算");
+    expect(html).toContain("每只股票标明来源、币种和交易日期");
   });
 
   it("renders the ADR lane with USD / US calendar badges (en)", () => {
@@ -526,7 +527,7 @@ describe("DriverBasketPanel", () => {
     );
 
     expect(html).toContain('data-driver-basket-state="pending"');
-    expect(html).toContain("龙头篮子待接入");
+    expect(html).toContain("相关股票数据待接入");
     expect(html).toContain("三星电子与 SK 海力士无流动性充足的美国上市凭证");
     expect(html).not.toContain("<polyline");
   });
@@ -559,10 +560,10 @@ describe("DriverBasketPanel", () => {
     );
 
     expect(html).toContain('data-driver-basket-state="provider_error"');
-    expect(html).toContain("龙头篮子暂不可用");
+    expect(html).toContain("相关股票数据暂不可用");
     expect(html).toContain("HK.00005");
     expect(html).toContain("opend_unavailable");
-    expect(html).toContain("未用替代篮子或 ETF 代理曲线冒充");
+    expect(html).toContain("当前无法读取相关股票数据，可以查看该市场的 ETF");
     expect(html).not.toContain("<polyline");
     expect(html.toLowerCase()).not.toContain("sample");
   });

@@ -96,6 +96,67 @@ function spawnCapture(command, args, env) {
 }
 
 describe("hermes-fixture-api", () => {
+  it("passes the CLI scenario into the desk instead of silently using normal", async () => {
+    const probe = http.createServer();
+    const port = await listenEphemeral(probe);
+    await closeServer(probe);
+    const child = spawn(process.execPath, [path.join(__dirname, "hermes-fixture-api.mjs"), String(port), "offline"], { cwd: frontendRoot, stdio: ["ignore", "pipe", "pipe"] });
+    const exited = new Promise(resolve => child.once("exit", resolve));
+    try {
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error("fixture CLI did not start")), 5000);
+        child.once("error", error => { clearTimeout(timeout); reject(error); });
+        child.stdout.on("data", chunk => { if (String(chunk).includes("listening")) { clearTimeout(timeout); resolve(); } });
+      });
+      const book = await request(port, "GET", "/api/assistant/remote/book");
+      assert.equal(book.status, 503);
+      assert.equal(JSON.parse(book.body).detail, "fixture_book_unavailable");
+      const sessions = await request(port, "GET", "/api/hermes/sessions");
+      assert.equal(JSON.parse(sessions.body).read_status, "unavailable");
+    } finally { child.kill("SIGTERM"); await exited; }
+  });
+  it("keeps normal, empty, offline, degraded and long-content desk states distinct", async () => {
+    for (const name of HERMES_WORKBENCH_FIXTURE_NAMES) {
+      const server = createFixtureServer(loadFixture(name), { deskScenario: name, includeFixtureGateway: true, includePersistedSession: name === "normal" });
+      const port = await listenEphemeral(server);
+      try {
+        const bookResponse = await request(port, "GET", "/api/assistant/remote/book");
+        const book = JSON.parse(bookResponse.body);
+        const sessions = JSON.parse((await request(port, "GET", "/api/hermes/sessions")).body);
+        const calendar = JSON.parse((await request(port, "GET", "/api/paper/strategy-sleeves/observation-calendar")).body);
+        if (name === "offline") {
+          assert.equal(bookResponse.status, 503); assert.equal(book.detail, "fixture_book_unavailable");
+          assert.equal(sessions.read_status, "unavailable");
+        } else {
+          assert.equal(bookResponse.status, 200); assert.equal(sessions.read_status, "available");
+          assert.equal(book.candidates.length, name === "empty" ? 0 : 1);
+          assert.equal(book.verified_count, name === "normal" || name === "long-content" ? 1 : 0);
+          assert.equal(book.hung_count, name === "degraded" ? 1 : 0);
+          assert.equal(calendar.yesterday.status, name === "degraded" ? "data_unavailable" : "not_scheduled");
+        }
+      } finally { await closeServer(server); }
+    }
+  });
+  it("supplies current desk reads without inventing prices or approved research", async () => {
+    const server = createFixtureServer(loadFixture("empty"), { deskScenario: "empty" });
+    const port = await listenEphemeral(server);
+    try {
+      const book = await request(port, "GET", "/api/assistant/remote/book");
+      assert.equal(book.status, 200);
+      assert.deepEqual(JSON.parse(book.body).candidates, []);
+      assert.equal(JSON.parse(book.body).hung_count, 0);
+      const calendar = await request(port, "GET", "/api/paper/strategy-sleeves/observation-calendar");
+      assert.equal(calendar.status, 200);
+      assert.equal(JSON.parse(calendar.body).observation_day_count, 0);
+      assert.deepEqual(JSON.parse(calendar.body).filled_nights, []);
+      const history = await request(port, "GET", "/api/market-data/history?ticker=QQQ&provider=futu");
+      assert.equal(history.status, 200);
+      assert.equal(JSON.parse(history.body).ticker, "QQQ");
+      assert.deepEqual(JSON.parse(history.body).rows, []);
+      const write = await request(port, "POST", "/api/assistant/remote/book", { body: "{}" });
+      assert.equal(write.status, 405);
+    } finally { await closeServer(server); }
+  });
   it("loads all five exact fixture names through the shared validator", () => {
     for (const name of HERMES_WORKBENCH_FIXTURE_NAMES) {
       const fixture = loadFixture(name);
@@ -120,6 +181,7 @@ describe("hermes-fixture-api", () => {
       const server = createFixtureServer(fixture, {
         includePersistedSession: name === "normal",
         includeFixtureGateway: true,
+        deskScenario: name,
       });
       const port = await listenEphemeral(server);
       try {
@@ -366,6 +428,7 @@ describe("hermes-fixture-api", () => {
     const fixture = loadFixture("offline");
     const server = createFixtureServer(fixture, {
       includeFixtureGateway: true,
+      deskScenario: "offline",
     });
     const port = await listenEphemeral(server);
     try {
@@ -390,7 +453,8 @@ describe("hermes-fixture-api", () => {
           warnings: [],
         },
       );
-      assert.equal(sessions.status, 404);
+      assert.equal(sessions.status, 200);
+      assert.equal(JSON.parse(sessions.body).read_status, "unavailable");
     } finally {
       await closeServer(server);
     }

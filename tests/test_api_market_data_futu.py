@@ -226,7 +226,7 @@ def test_market_data_history_does_not_fallback_to_sample_for_intraday_default(
     assert payload["safety"]["live_trading_enabled"] is False
 
 
-def test_market_data_history_falls_back_when_default_futu_provider_fails(
+def test_market_data_history_rejects_when_default_futu_provider_fails(
     tmp_path,
     monkeypatch,
 ) -> None:
@@ -252,8 +252,6 @@ def test_market_data_history_falls_back_when_default_futu_provider_fails(
         },
     )
 
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["source"].startswith("sample (futu failed: opend_unavailable)")
-    assert payload["metadata"]["requested_provider"] == "futu"
-    assert payload["rows"]
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "opend_unavailable"
+    assert "rows" not in response.json()

@@ -22,6 +22,8 @@ import type {
 } from "@/lib/api";
 import { ApiClientError, apiPost } from "@/lib/apiClient";
 import { buildBuySideOptionsPayload } from "@/lib/buySideOptionsPayload";
+import { formatBuySideScoreLine } from "@/lib/buySideScoreDisplay";
+import { optionsErrorMessage } from "@/lib/optionsErrorPresentation";
 import { InfoTip, type GlossaryKey } from "@/components/InfoTip";
 import {
   Card,
@@ -69,7 +71,6 @@ const copy = {
     dataSourceValue: "Backend Futu option chain",
     spot: "Spot",
     timestamp: "Timestamp",
-    earnings: "Next event",
     ivRank: "IV rank",
     regime: "Market regime",
     qualityWarnings: "Data warnings",
@@ -85,8 +86,10 @@ const copy = {
     expectedMove: "Expected move",
     rewardRisk: "Reward/risk",
     thetaBurn: "Theta burn 7D",
-    ivCrush: "IV crush loss",
+    ivChange: "Estimated IV change P&L",
     liquidity: "Liquidity",
+    thetaSafety: "Theta safety",
+    greekEfficiency: "Greek efficiency",
     primaryRisk: "Primary risk",
     reasons: "Reasons",
     risks: "Risks",
@@ -109,7 +112,7 @@ const copy = {
       "Req move",
       "Score",
       "Theta",
-      "IV crush",
+      "IV change",
       "Liquidity",
       "R/R",
       "Key warning",
@@ -131,6 +134,7 @@ const copy = {
     noWarning: "No core warning",
     scenarioGreekNote:
       "Greek approximation only. Reliability falls for large spot moves, long time passed, and near-expiration theta acceleration.",
+    scenarioReliability: "Approximation reliability",
     scenarioLabels: {
       best: "Best case",
       worst: "Worst case",
@@ -157,7 +161,6 @@ const copy = {
     viewType: "观点类型",
     targetPrice: "目标价格",
     targetDate: "目标日期",
-    maxLossBudget: "最大亏损预算",
     riskPreference: "风险偏好",
     allowCappedUpside: "允许收益封顶",
     avoidHighIv: "回避高 IV",
@@ -177,7 +180,6 @@ const copy = {
     dataSourceValue: "后端 Futu 期权链",
     spot: "现价",
     timestamp: "时间戳",
-    earnings: "最近事件",
     ivRank: "IV Rank",
     regime: "市场状态",
     qualityWarnings: "数据警告",
@@ -193,8 +195,10 @@ const copy = {
     expectedMove: "隐含波动",
     rewardRisk: "收益/风险",
     thetaBurn: "7 天 theta",
-    ivCrush: "IV 回落损失",
+    ivChange: "IV 变化损益",
     liquidity: "流动性",
+    thetaSafety: "Theta 安全度",
+    greekEfficiency: "希腊值效率",
     primaryRisk: "主要风险",
     reasons: "匹配原因",
     risks: "主要风险",
@@ -217,7 +221,7 @@ const copy = {
       "所需涨幅",
       "分数",
       "Theta",
-      "IV 回落",
+      "IV 变化",
       "流动性",
       "收益/风险",
       "关键警告",
@@ -239,6 +243,7 @@ const copy = {
     noWarning: "暂无核心警告",
     scenarioGreekNote:
       "仅为希腊字母近似估算。在价格大幅波动、时间推移较久、临近到期 theta 加速时可靠性下降。",
+    scenarioReliability: "近似可靠度",
     scenarioLabels: {
       best: "最好情形",
       worst: "最坏情形",
@@ -400,7 +405,7 @@ export function BuySideOptionsAssistant({ locale = "en" }: { locale?: "en" | "zh
         buildBuySideOptionsPayload(values),
       ),
     onSuccess: () => toast.success(locale === "zh" ? "买方期权分析完成" : "Buy-side analysis complete"),
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toast.error(optionsErrorMessage(error, locale)),
   });
 
   const result = mutation.data;
@@ -526,7 +531,7 @@ export function BuySideOptionsAssistant({ locale = "en" }: { locale?: "en" | "zh
           ) : null}
           {mutation.error ? (
             <div className="rounded-lg border border-danger/40 bg-danger/10 p-3 font-body-sm text-danger">
-              {text.error}: {mutation.error.message}
+              {text.error}: {optionsErrorMessage(mutation.error, locale)}
             </div>
           ) : null}
           <TerminalToolbarButton
@@ -540,17 +545,16 @@ export function BuySideOptionsAssistant({ locale = "en" }: { locale?: "en" | "zh
         </form>
       </aside>
 
-      <main className="min-w-0 overflow-y-auto p-5">
+      <section aria-label={locale === "zh" ? "买方分析结果" : "Buy-side analysis results"} className="min-w-0 overflow-y-auto p-5">
         <Card tone="warning" padded className="mb-4 flex items-center gap-2 font-body-sm text-warning">
           <ShieldCheck className="shrink-0" size={18} />
           {text.safety}
         </Card>
 
-        <section className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+        <section className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
           <MetricStat label={text.spot} value={money(result?.thesis.spot_price)} tone="neutral" />
           <MetricStat label={text.dataSource} value={result ? text.dataSourceValue : text.noMarketData} />
           <MetricStat label={text.timestamp} value={result?.generated_at ?? result?.thesis.as_of_date ?? text.noMarketData} />
-          <MetricStat label={text.earnings} value={text.noMarketData} />
           <SnapshotMetric label={text.ivRank} value={score(result?.thesis.iv_rank)} tip="ivRank" locale={locale} />
         </section>
 
@@ -602,7 +606,7 @@ export function BuySideOptionsAssistant({ locale = "en" }: { locale?: "en" | "zh
 
             <div>
               <SectionTitle title={text.comparison} />
-              <ComparisonTable recommendations={recommendations} text={text} />
+              <ComparisonTable locale={locale} recommendations={recommendations} text={text} />
             </div>
 
             <div>
@@ -621,7 +625,7 @@ export function BuySideOptionsAssistant({ locale = "en" }: { locale?: "en" | "zh
           <AlertTriangle className="mr-2 inline" size={18} />
           {text.disclaimer}
         </Card>
-      </main>
+      </section>
     </div>
   );
 }
@@ -677,6 +681,22 @@ function LoadingState() {
   );
 }
 
+export function leapsRollPrompt(
+  item: BuySideRecommendation,
+  locale: "en" | "zh",
+) {
+  if (!item.strategy_type.startsWith("leaps")) {
+    return null;
+  }
+  const remainingDte = minDte(item.legs);
+  if (remainingDte === null || remainingDte >= 90) {
+    return null;
+  }
+  return locale === "zh"
+    ? `LEAPS 剩余 ${remainingDte} 天，不足 90 天；继续该假设前必须复核滚动或退出。`
+    : `LEAPS has ${remainingDte} days remaining, under 90 days; a roll-or-close review is required before continuing the thesis.`;
+}
+
 function RecommendationCard({
   expanded,
   item,
@@ -691,12 +711,13 @@ function RecommendationCard({
   text: (typeof copy)["en"];
 }) {
   const primary = item.primary_risk_source;
+  const rollPrompt = leapsRollPrompt(item, locale);
   return (
     <Card padded className="flex flex-col">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <StatusPill label="#" value={item.rank} tone="neutral" />
-          <h3 className="mt-2 font-headline-lg text-text-primary">{strategyLabel(item.strategy_type)}</h3>
+          <h3 className="mt-2 font-headline-lg text-text-primary">{strategyLabel(item.strategy_type, locale)}</h3>
           <p className="mt-1 font-body-sm text-text-secondary">{item.one_line_summary}</p>
         </div>
         <div className="shrink-0 text-right">
@@ -704,7 +725,14 @@ function RecommendationCard({
           <div className="font-data-mono text-2xl font-bold text-accent-success">{num(item.score, 0)}</div>
         </div>
       </div>
+      <div className="mt-2 font-body-sm text-text-secondary">{formatBuySideScoreLine(item, locale)}</div>
       <SelectedContracts legs={item.legs ?? []} locale={locale} />
+      {rollPrompt ? (
+        <div className="mt-3 flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3 font-body-sm text-warning">
+          <AlertTriangle className="mt-0.5 shrink-0" size={16} />
+          <span>{rollPrompt}</span>
+        </div>
+      ) : null}
       <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <MiniMetric label={text.buyerScore} value={score(item.buyer_friendliness_score)} accent />
         <MiniMetric label={text.netDebit} value={money(item.net_debit)} />
@@ -717,8 +745,10 @@ function RecommendationCard({
       </div>
       <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-3">
         <MiniMetric label={text.thetaBurn} value={pct(item.theta_burn_7d_pct)} tip="thetaBurn" locale={locale} />
-        <MiniMetric label={text.ivCrush} value={pct(item.estimated_iv_crush_loss_pct)} tip="ivCrush" locale={locale} />
+        <MiniMetric label={text.ivChange} value={pct(item.estimated_iv_change_pct)} tip="ivChange" locale={locale} />
         <MiniMetric label={text.liquidity} value={score(item.liquidity_score)} />
+        <MiniMetric label={text.thetaSafety} value={score(item.theta_safety_score)} />
+        <MiniMetric label={text.greekEfficiency} value={score(item.greek_efficiency_score)} />
       </div>
       <div className="mt-4">
         <div className="mb-2 flex items-center justify-between font-body-sm">
@@ -796,9 +826,11 @@ function RiskBars({
 
 function ComparisonTable({
   recommendations,
+  locale,
   text,
 }: {
   recommendations: BuySideRecommendation[];
+  locale: "en" | "zh";
   text: (typeof copy)["en"];
 }) {
   return (
@@ -814,7 +846,7 @@ function ComparisonTable({
         <tbody className="font-data-mono text-data-mono text-text-primary">
           {recommendations.map((item, index) => (
             <tr className="border-b border-border-subtle/50 last:border-b-0 hover:bg-bg-surface-muted/30" key={`${item.strategy_type}-${index}`}>
-              <td className="whitespace-nowrap px-3 py-2">{strategyLabel(item.strategy_type)}</td>
+              <td className="whitespace-nowrap px-3 py-2">{strategyLabel(item.strategy_type, locale)}</td>
               <td className="px-3 py-2">{expirationLabel(item.legs)}</td>
               <td className="px-3 py-2">{strikeLabel(item.legs)}</td>
               <td className="px-3 py-2">{money(item.net_debit)}</td>
@@ -824,7 +856,7 @@ function ComparisonTable({
               <td className="px-3 py-2">{pct(item.required_move_pct)}</td>
               <td className="px-3 py-2">{num(item.score, 0)}</td>
               <td className="px-3 py-2">{pct(item.theta_burn_7d_pct)}</td>
-              <td className="px-3 py-2">{pct(item.estimated_iv_crush_loss_pct)}</td>
+              <td className="px-3 py-2">{pct(item.estimated_iv_change_pct)}</td>
               <td className="px-3 py-2">{score(item.liquidity_score)}</td>
               <td className="px-3 py-2">{ratio(item.risk_reward)}</td>
               <td className="px-3 py-2">{item.warnings[0] ?? "--"}</td>
@@ -881,6 +913,9 @@ function ScenarioLab({ item, text }: { item?: BuySideRecommendation; text: (type
         </div>
         <p className="mt-3 font-body-sm leading-relaxed text-text-secondary">
           {text.scenarioGreekNote}
+        </p>
+        <p className="mt-2 font-data-mono text-xs uppercase text-text-secondary">
+          {text.scenarioReliability}: {item?.scenario_approximation_reliability ?? "--"}
         </p>
       </Card>
       <Card padded>
@@ -1057,13 +1092,22 @@ function scenarioRowLabel(value: "bull" | "base" | "bear", locale: "en" | "zh") 
   return labels[locale][value];
 }
 
-function strategyLabel(strategy: string) {
-  return {
-    long_call: "Long Call",
-    bull_call_spread: "Bull Call Spread",
-    leaps_call: "LEAPS Call",
-    leaps_call_spread: "LEAPS Call Spread",
-  }[strategy] ?? strategy;
+export function strategyLabel(strategy: string, locale: "en" | "zh" = "en") {
+  const labels = {
+    en: {
+      long_call: "Long Call",
+      bull_call_spread: "Bull Call Spread",
+      leaps_call: "LEAPS Call",
+      leaps_call_spread: "LEAPS Call Spread",
+    },
+    zh: {
+      long_call: "买入看涨",
+      bull_call_spread: "牛市看涨价差",
+      leaps_call: "LEAPS 看涨",
+      leaps_call_spread: "LEAPS 看涨价差",
+    },
+  } as const;
+  return labels[locale][strategy as keyof (typeof labels)["en"]] ?? strategy;
 }
 
 function legActionLabel(leg: BuySideStrategyLeg, locale: "en" | "zh") {

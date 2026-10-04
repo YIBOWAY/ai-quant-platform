@@ -1,5 +1,9 @@
 # AI-Assisted Quant Research Platform
 
+> 本地路径说明（公开版）：文中未随本版提供的 `artifacts/`、`evidence/` 和运行目录是本地证据坐标或路径示例，原件未公开；不能把路径存在当作公开证据。详见[公开范围说明](docs/publication-20261004.md)。
+
+> **Public snapshot (2026-10-04):** Current source and tests are published with privacy-edited documentation. Operational originals remain local; historical failures and partial results are retained. See [publication scope](docs/publication-20261004.md).
+
 > 中文版：[README_zh.md](README_zh.md)
 
 Local-first quant research, backtesting, paper-trading, read-only market-data,
@@ -8,7 +12,7 @@ and options research platform.
 Historical Phase, Wave, and Workbench documents are delivery evidence, not the
 current implementation or operations queue. Start with
 [docs/INDEX.md](docs/INDEX.md). The cross-repo roadmap remains in
-`/Users/sunyibo/programs/Hermes-quant-agent`; this repository is its domain
+[Hermes-quant-agent](https://github.com/YIBOWAY/Hermes-quant-agent/tree/main/); this repository is its domain
 backend, not an independent Phase 15 track.
 
 Agent v0.2 now has a gated local single-user managed-session write path,
@@ -22,20 +26,44 @@ In solo-owner trust mode the runtime reports the distinct
 `admission_mode=local_trust`; it does not counterfeit a candidate identity.
 
 The only current product plan lives in HQA
-`docs/plans/2026-08-13-personal-quant-assistant.md`. Paper research and the daily
+`docs/plans/2026-09-14-alpha-research-reset.md` (v3.2). Paper research and the daily
 paper book are one assistant, not two D-xx product lines. New research is
-owner-ask only; there is no weekly slot. Hung strategies may run every day on
+owner-ask only; there is no weekly slot. Enabled simulated strategies may run every day on
 paper. `paper_only` never enters the live registry. GitHub is never auto-pushed.
 
-Historical notes:
-[architecture](docs/architecture/d34-autonomous-paper.md),
-[owner guide](docs/guides/d34-workbench.md),
-[operator runbook](docs/runbooks/d34-autonomous-paper.md).
+The stable physical-EV/dividend code anchor is `a307b77`; mutable source and
+deployment-mirror HEADs must be re-read from Git. The source verdict remains
+documented in HQA's `docs/receipts/2026-09-20-phase2-implementation.md`;
+source, real-data evaluation and deployment are separate acceptance states.
+Historical browser-workflow anchors are Platform `9d0efee`/`b0615fd` and HQA
+`d51e376`; dated scan and account values live only in the linked receipt.
+Re-read runtime state before use. Public/release/live remain closed; local
+Web-chat readiness is also a mutable runtime fact.
+
+Managed Hermes chat research is material-gated: missing note, executable formula,
+or ordered universe creates no request or job. Complete material has one stable
+operation identity and returns a provenance-bound Platform result to the originating
+session. Qualifying new same-chat results can use digest-bound automatic paper
+activation under the existing checks; external intake additionally obeys its
+owner policy (auto_enable is not inferred from this document). `/library` retains
+manual activation for historical candidates and explicit recovery; it requires owner/CSRF,
+the exact displayed source digest, current admission gates and USD 10,000 of
+unreserved manual paper cash. Page reads and polling are GET-only.
+An explicit `verify-from-registered` CLI accepts only a registered factor with
+an exact source adapter, generates current-session Qlib and Platform evidence,
+and adds it only after strict comparison, DSR, correlation and cost verification;
+it stops at the same verified book and never hangs by itself.
+
+Historical D-34 internals are recorded in the
+[architecture note](docs/architecture/d34-autonomous-paper.md). The retired
+Mandate/canary owner guide was deleted with the product surfaces it described.
 
 The normal local runtime is a persistent macOS stack: PostgreSQL in Docker plus
-the Hermes OAuth proxy, Hermes, backend, frontend, connector, factor automation,
-Asia Radar refresh, and D-34 worker LaunchAgents. It is not
-owned by a Codex, Claude Code, or terminal process. Historical migration and
+the Hermes OAuth proxy, Hermes, backend, frontend, connector and scheduled paper
+observation jobs. The research-only worker is a separate installed LaunchAgent;
+each invocation projects durable state and handles at most one research job,
+without calling the paper-cycle, canary, account or sleeve paths. The stack is
+not owned by a Codex, Claude Code, or terminal process. Historical migration and
 candidate windows remain evidence only; the sole migration, readiness,
 restart, E2E, and restore authority is the
 [Agent v0.2 local-stack runbook](docs/runbooks/agent-v0-2-local-stack.md).
@@ -47,11 +75,10 @@ restart, E2E, and restore authority is the
   strategy/universe
   registries, backtests, experiments, and paper-trading simulation.
 - Local FastAPI backend and Next.js frontend.
-- AI research assistant with a digest-bound candidate pool and human review
-  gates (Gate 2 CAS + isolated Gate 3 review worktree; never auto-commits).
-  Active Gate 3 status re-attests the exact patch, three-file dirty workspace,
-  and provenance. Experiment artifacts use exclusively reserved per-invocation
-  namespaces and never overwrite an existing experiment.
+- AI research assistant with a digest-bound verified candidate book. Managed
+  chat stops at verified; `/library` owns the separate simulated-run activation. Legacy
+  promotion/live qualification retains human Git review, while candidate-only
+  `verify-from-registered` adds no approval or live authority.
 - Read-only Polymarket research, snapshots, replay, and reports.
 - Futu read-only US stock and options data.
 - Options Income Screener, Options Radar, and Buy-Side Options Assistant.
@@ -83,8 +110,8 @@ bash scripts/local_mac_stack.sh status
 
 `start` opens Docker Desktop when needed, starts the existing
 `quantplatform-db` container, builds the Next.js production bundle, installs or
-refreshes the six user LaunchAgents, and waits for ports `8642`, `8765`, and
-`3001`. The services survive closing the terminal and switching between AI
+refreshes the six user LaunchAgents, and waits for the four HTTP endpoints on
+`8642`, authenticated OAuth proxy `8645`, `8765`, and `3001`. The services survive closing the terminal and switching between AI
 tools. Other supported operations are:
 
 ```bash
@@ -210,23 +237,29 @@ committed/installed runtime and then repeat `probe`.
 
 | Page | Purpose |
 |---|---|
-| `/hermes` | Reversible COO workbench with Today, managed-session conversation, Tasks, Approvals, Unified Results preview, and the deployed D-34 owner workbench for Mandate/job/Artifact/paper-canary operations. Its composer opens only inside explicit solo-owner local trust or an exact candidate/release window after every applicable local gate passes; public standing remains OFF. Provider-free health/capability/session reads submit no prompt. |
-| `/hermes/sessions` | GET-only list/detail view over real saved local-Hermes sessions. The bearer key remains server-side; historical/external transcripts stay read-only and continuing context requires an explicit fork into a new managed Session. |
+| `/` | Uses the Hermes shell as the default home when that local feature is enabled; otherwise renders the legacy dashboard. |
+| `/hermes` | Hermes Assistant: Today/watch/research/paper ledgers, the sole managed-session composer, recent-session list, lifecycle/connection/tool activity in plain language, and provenance-labelled Platform research results. Missing material stays in the same chat; complete research stops at verified. |
+| `/hermes/sessions/[sessionId]` | GET-only saved-session detail/fork deep link; the session index itself is part of `/hermes`. |
 | `/hermes/results` | Read-only unified catalog/detail projection over authoritative platform runs, experiments, candidate records, HQA artifacts, and exact run links. Preview is visible while `unifiedResultsCutoverAccepted=false`; no Hermes run is inferred from symbol/name similarity. |
+| `/hermes/results/[kind]/[resourceId]` | Read-only detail for one exact unified-result identity. |
 | `/brief` | Live UI-assembled factual daily-brief preview and PostgreSQL archive control; saving is disabled if the authoritative paper-account source is unavailable. Its AI HOT GET may contact that upstream and best-effort mirror news/cache-audit rows to PostgreSQL; merely viewing the live preview does not create a brief snapshot. The server validates the complete factual-v1 schema and watermarks, but does not independently refetch every upstream source. |
 | `/brief/[publicId]` | Immutable historical brief snapshot rendered from its stored payload and source watermarks. |
-| `/data-explorer` | US equity historical data viewer. |
-| `/asia-radar` | Read-only Asia 12-market radar: heatmap, ranking, and dynamic K-shape from 12 U.S.-listed country ETFs over strict Futu 1d QFQ bars. Its dedicated API requires `provider=futu` and fails closed (400/503) instead of falling back to sample; Phase 1 intentionally shows no PE/PB/ERP/crowding/risk-list figures. |
+| `/brief/rollup/[publicId]` | Immutable weekly/monthly brief rollup with same-kind previous/next navigation. |
+| `/watch` | Canonical watch surface with quotes, cross-section and Asia-radar panes. |
+| `/collection` | Read-only flip-card gallery over the strategy catalog and factor registry; metrics remain bound to completed backtest receipts. |
+| `/library` | Research-verified, unbound candidate library. Only gate-eligible rows expose the owner/CSRF and exact-digest-bound “Enable simulated running” action; review-only rows explain why activation is unavailable. |
 | `/factor-lab` | Current factor diagnostics surface; planned to become a run/detail analysis surface under the Hermes workbench. |
+| `/factor-lab/[runId]` | Persisted factor research-run detail. |
 | `/backtest` | Run strategy, universe, factor-weight, and benchmark backtests. |
+| `/backtest/[runId]` | Persisted backtest detail and artifacts. |
 | `/strategies` | Strategy Catalog for registered research strategies. |
 | `/strategies/[runId]` | Persisted reversal/momentum replication run detail. |
 | `/docs/reversal-momentum` | Frontend-readable notes for the paper replication. |
 | `/experiments` | Run provider-selectable experiment sweeps with optional walk-forward folds, inspect the fixed factor blend under test, and send best params with the same source to backtest. |
-| `/paper-trading` | Persistent paper account (manual orders + one-click strategy rebalance) plus historical replay. |
-| `/position-map` | Live paper-account position map (equity, cash, exposure, source attribution); backtest exposure shown as a comparison block. |
+| `/paper-trading` | Persistent paper account, `view=map` position/exposure ledger, manual controls, strategy sleeves and historical replay. |
+| `/paper-trading/[runId]` | Historical paper-replay run detail; it is not the persistent account. |
 | `/options-screener` | Single-ticker seller options screener. |
-| `/options-radar` | Daily seller options radar snapshot. |
+| `/options-radar` | Read-only seller-options recommendations; automatic 22:00 update plus an on-demand background refresh with progress. |
 | `/options-radar/[symbol]` | Single-ticker radar drilldown and live chain loader. |
 | `/options-tools` | Local AlphaGBM-style options toolbox. |
 | `/options-buyside` | Buy-side options strategy assistant. |
@@ -234,6 +267,19 @@ committed/installed runtime and then repeat `probe`.
 | `/polymarket` | Read-only prediction-market research page. |
 | `/agent-studio` | Transitional **read-only** candidate inspection surface. It shows source plus exact digest-bound review evidence (legacy/global unbound audit is excluded), has no task submission or approve/reject controls, and links back to Hermes. A page-scoped redirect gate exists but is default-off. Repository-unavailable is distinct from an empty pool. Canonical candidates live under repo-anchored `data/agent_run/agent/candidates` (override only via `QS_AGENT_OUTPUT_DIR`; `QS_DATA_DIR`/CWD do not relocate them). |
 | `/settings` | Masked local settings. |
+
+Compatibility page aliases are separate from the canonical table above. They
+also work under `/en` and `/zh` and preserve supported dynamic/query parts:
+
+| Old page path | Canonical destination |
+|---|---|
+| `/data-explorer` | `/watch?pane=quotes` |
+| `/market-cross-section` | `/watch?pane=cross` |
+| `/asia-radar` | `/watch?pane=radar` |
+| `/position-map` | `/paper-trading?view=map` |
+| `/hermes/sessions` | `/hermes` |
+| `/replications` / `/replications/[runId]` | `/strategies` / `/strategies/[runId]` |
+| `/order-book` | `/polymarket` |
 
 Equity data endpoints only accept explicit `provider=sample|futu|tiingo`.
 Unknown overrides, or explicitly requested real providers that are unavailable,
@@ -391,8 +437,8 @@ QS_DATABASE_AUTO_MIGRATE=false  # fail-closed: startup never auto-applies
 QS_PAPER_ACCOUNT_DB_MODE="file"  # file | mirror | canonical
 ```
 
-This is the general file-mode development example. The Agent v0.2 private
-candidate stack instead requires `canonical`; follow the local-stack runbook
+This is the general file-mode development example. The current owner-only
+local-trust managed stack instead requires `canonical`; follow the local-stack runbook
 and do not infer a live mode from this example.
 
 Startup does **not** auto-apply migrations. `QS_DATABASE_AUTO_MIGRATE` defaults
@@ -591,11 +637,11 @@ available:
   It is CLI-only and strictly read-only: there is no HTTP route, account/provider
   access, recovery, mutation, scheduler or missed-opportunity calculation.
 
-D-33 scheduled execution is implemented only for `automation_managed=true`
-running sleeves. The independent five-minute LaunchAgent creates at most one
-daily signal/next-weekday plan after the local research window and processes
-due paper plans after the local execution window. Manual sleeves remain
-one-shot and the FastAPI process still does not own a resident scheduler. The
+Formal natural observation for an enabled, digest-bound
+`automation_managed=true` sleeve is owned by `com.aiquant.d34-paper-cycle`:
+06:15 Tuesday–Saturday for signals and 22:25 Monday–Saturday for paper fills.
+Manual sleeves and generic `paper strategies` commands remain one-shot; the
+FastAPI process does not own a resident scheduler. The
 existing `POST /api/paper/account/rebalance` endpoint remains a full-account
 rebalance path, not a Strategy Sleeves entrypoint or liquidation shortcut; it is
 rejected when actual sleeve-owned lots exist. See
@@ -640,25 +686,31 @@ hide `Avoid` contracts by default; enable "Show Avoid contracts" /
 `include_rejected=true` when auditing rejected rows. The Notes column explains
 why a row was downgraded or filtered.
 
-Daily seller radar:
+Canonical daily seller recommendation task (exact tracked 34):
 
-```powershell
-.\ai-quant\Scripts\Activate.ps1
-quant-system options daily-scan --top 10
+```bash
+./ai-quant/bin/quant-system options daily-task \
+  --provider futu \
+  --top 34 \
+  --universe-source existing \
+  --earnings-source public \
+  --dividend-source public \
+  --vix-source public
 ```
 
-Scheduled refresh + radar task:
+Isolated `daily-scan` diagnostic (never the canonical output directory):
 
-```powershell
-.\ai-quant\Scripts\Activate.ps1
-quant-system options daily-task --top 100 --universe-source public --earnings-source public --vix-source public
+```bash
+options_verify_dir="$(mktemp -d /private/tmp/options-verify.XXXXXX)"
+./ai-quant/bin/quant-system options daily-scan \
+  --provider futu \
+  --top 34 \
+  --output-dir "$options_verify_dir"
 ```
 
-Register the Windows Task Scheduler entrypoint:
-
-```powershell
-.\scripts\register_options_radar_task.ps1
-```
+This narrow command scans existing inputs only; it does not refresh earnings,
+dividends, or VIX and is not the reproduction command for the dated 34/34
+full-`daily-task` receipt.
 
 Radar UI:
 
@@ -666,22 +718,21 @@ Radar UI:
 http://127.0.0.1:3001/options-radar
 ```
 
-The Radar page can run the current-date read-only scan and refresh the local
-universe, earnings, and VIX caches. Public sources are the default; the local
-sample source is only for explicit offline testing. Scheduled runs should use
-`daily-task`, which refreshes those local inputs before writing the daily
-snapshot and `daily_task_status.json`; the Radar page reads the same file
-through `GET /api/options/daily-scan/status` and shows the latest scheduled-task
-state. Startup catch-up is opt-in: set
-`QS_OPTIONS_RADAR_STARTUP_CATCHUP_ENABLED=true` only when OpenD/cache readiness
-is expected and you want API startup to refresh the local universe, earnings,
-and VIX inputs before running a background daily-scan catch-up if the latest
-regular US market session snapshot is missing. Weekend and regular full-day US
-market holidays target the prior session; ad-hoc exchange closures and half-days
-are still a scheduler/operator concern. CLI scans, API-triggered scans,
-scheduled `daily-task`, and startup catch-up share `options_radar_scan.lock` in
-the radar output directory; a locked startup catch-up skips without overwriting
-`daily_task_status.json`.
+The page can start the same canonical background task immediately. A successful
+start returns `202 queued`; overlap with the 22:00 task or another manual run
+returns `409 options_scan_already_running`. The page polls
+`GET /api/options/daily-scan/status`, preserves partial results, distinguishes a
+valid zero-recommendation snapshot from unavailable data, and shows IVR
+`warming n/30` without blocking otherwise valid recommendations. Its Advanced
+section can refresh earnings and VIX, but it does not replace the tracked
+34-symbol universe.
+
+The task refreshes earnings, dividend events, and VIX before scanning. HQA owns
+the active Hermes cron schedule at 22:00 Monday through Saturday; Saturday also
+writes a separate top-100 wide scan. API startup catch-up is retired. Sample
+inputs and all sample outputs/history must stay isolated. See the
+[options recommendations guide](docs/guides/options-recommendations.md) and the
+[HQA operations runbook](https://github.com/YIBOWAY/Hermes-quant-agent/blob/main/docs/runbooks/options-recommendations.md).
 
 Local options toolbox:
 
@@ -718,6 +769,13 @@ quant-system prediction-market timeseries-backtest --provider sample
 It does not sign, redeem, transfer, or submit real market orders.
 
 ## Validation
+
+For ordinary changes, select the smallest backend, frontend, contract, and real
+smoke checks that close the affected causal path. The commands below are broad
+repository checks, not a mandatory per-change bundle; reserve them for a batch or
+release boundary, or for changes whose shared impact cannot be bounded. A broad
+run with known failures proves only that the exact failure set did not expand,
+not that the suite passed.
 
 One-command local check:
 
@@ -782,15 +840,16 @@ Start here:
 `docs/SYSTEM_DESIGN_RESEARCH.md`, phase delivery records, and audits are
 historical design/evidence sources, not the current work queue.
 
-Current handoff: local managed-session write exists only behind the exact
-local-private gate set; external/history sessions remain read-only and public
-standing is OFF. Source includes 016–028, while the dated 2026-07-31 live check
-found 016–027 and not 028. Before any candidate E2E, finish the local-stack
-operator window, run the non-creating Keychain probe, and open one bounded
-candidate. Legacy-page cutover remains a separate decision.
+Current handoff: the physical-EV/dividend code anchor is `a307b77`; mutable
+source/deployment HEADs and runtime readiness must be rechecked. The cross-repo
+receipt is HQA plan §13.39. Local managed-session write is available only when
+local-trust readiness passes; external/history sessions stay read-only and
+public/release/live standing remains OFF. Mutable browser, provider and scan
+results remain dated evidence rather than permanent runtime state.
 
 Current options docs:
 
+- [docs/guides/options-recommendations.md](docs/guides/options-recommendations.md)
 - [docs/futu/futu_environment_setup.md](docs/futu/futu_environment_setup.md)
 - [docs/futu/futu_options_data_provider.md](docs/futu/futu_options_data_provider.md)
 - [docs/options/options_screener_learning.md](docs/options/options_screener_learning.md)

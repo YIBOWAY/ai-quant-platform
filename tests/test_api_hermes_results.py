@@ -135,8 +135,12 @@ def test_hermes_results_lists_run_references_without_copying_detail(tmp_path) ->
         {
             "kind": "backtest",
             "resource_id": "backtest-20260715T010000Z-aaaaaaaa",
-            "display_title": "cross_sectional_top_n · SPY, QQQ",
-            "summary": "2026-01-02 → 2026-06-30 · provider sample",
+                "display_title": "cross_sectional_top_n · SPY, QQQ",
+                "summary": "2026-01-02 → 2026-06-30 · provider sample",
+                "display_title_zh": None,
+                "summary_zh": None,
+            "data_provider": "sample",
+            "data_mode": "sample",
             "status": "completed",
             "occurred_at": "2026-07-15T01:00:00Z",
             "source": "platform_runs",
@@ -173,6 +177,59 @@ def test_hermes_results_searches_bounded_human_projection(tmp_path) -> None:
     item = response.json()["items"][0]
     assert item["display_title"] == "momentum_rotation · AAPL, MSFT, NVDA +1"
     assert item["summary"] == "2026-01-01 → 2026-07-01 · provider futu"
+
+
+def test_results_identifies_sample_in_list_and_detail_without_rewriting_run(tmp_path) -> None:
+    run_id = "backtest-sample-source-check"
+    _write_run(tmp_path / "api_runs", "backtests", run_id, kind="backtest")
+    metadata = tmp_path / "api_runs" / "backtests" / run_id / "metadata.json"
+    original = metadata.read_bytes()
+    client = _client(tmp_path)
+    listing = client.get("/api/hermes/results", params={"kind": "backtest"})
+    assert listing.status_code == 200
+    item = listing.json()["items"][0]
+    assert item["data_mode"] == "sample"
+    assert item["data_provider"] == "sample"
+    detail = client.get(f"/api/hermes/results/backtest/{run_id}")
+    assert detail.status_code == 200
+    assert detail.json()["item"]["data_mode"] == "sample"
+    assert metadata.read_bytes() == original
+
+
+def test_results_searches_chinese_automation_title_from_real_feed_contract(tmp_path) -> None:
+    fixture = (
+        Path(__file__).resolve().parents[1]
+        / "src/frontend/tests/fixtures/hermes-artifacts.v1.json"
+    )
+    settings = Settings(hermes_artifacts=HermesArtifactSettings(feed_path=fixture))
+    response = _client(tmp_path, settings=settings).get(
+        "/api/hermes/results", params={"search": "自动化状态"}
+    )
+    assert response.status_code == 200
+    assert [item["kind"] for item in response.json()["items"]] == ["automation_status"]
+
+
+def test_requested_provider_does_not_prove_actual_market_data(tmp_path) -> None:
+    run_id = "backtest-request-only"
+    _write_run(tmp_path / "api_runs", "backtests", run_id,
+               kind="backtest", status="failed", request={"provider": "futu"})
+    path = tmp_path / "api_runs/backtests" / run_id / "metadata.json"
+    metadata = json.loads(path.read_text())
+    metadata.pop("source")
+    path.write_text(json.dumps(metadata))
+    item = _client(tmp_path).get("/api/hermes/results").json()["items"][0]
+    assert item["data_mode"] == "unknown"
+    assert item["data_provider"] is None
+
+
+def test_experiment_sample_configuration_is_not_hidden_by_metadata(tmp_path) -> None:
+    root = tmp_path / "experiments/experiment-sample-conflict"
+    root.mkdir(parents=True)
+    (root / "metadata.json").write_text(json.dumps({"source": "futu", "status": "completed"}))
+    (root / "experiment_config.json").write_text(json.dumps({"source": "sample"}))
+    result = _client(tmp_path).get("/api/hermes/results", params={"source": "platform_experiments"})
+    assert result.status_code == 200
+    assert result.json()["items"][0]["data_mode"] == "sample"
 
 
 def test_hermes_results_bounds_projection_fields_without_losing_evidence(
@@ -431,6 +488,8 @@ def test_hermes_results_includes_verified_candidates_and_validated_detail(
     assert item["kind"] == "factor_candidate"
     assert item["resource_id"] == artifact.candidate_id
     assert item["status"] == "pending"
+    assert item["display_title_zh"] == "动量因子候选"
+    assert item["summary_zh"] == "标的范围：SPY、QQQ"
     assert item["authority"] == "platform_candidate_repository"
     assert item["freshness"] == "not_applicable"
     assert item["original_href"] == f"/api/agent/candidates/{artifact.candidate_id}"
@@ -520,6 +579,10 @@ def test_hermes_results_includes_hqa_artifacts_and_rereads_validated_feed(
     assert item["freshness"] == "fresh"
     assert item["authority"] == "hqa_artifact_manifest"
     assert item["original_href"] == "/api/hermes/artifacts"
+
+    chinese_search = client.get("/api/hermes/results", params={"search": "组合风险"})
+    assert chinese_search.status_code == 200
+    assert [row["resource_id"] for row in chinese_search.json()["items"]] == [artifact_id]
 
     manifest["items"][0]["status"] = "reviewed"
     feed_path.write_text(json.dumps(manifest), encoding="utf-8")

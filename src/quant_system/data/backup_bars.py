@@ -27,6 +27,11 @@ from quant_system.data.price_history import (
     _parse_window,
     read_historical_prices,
 )
+from quant_system.data.providers.longbridge import (
+    LongbridgeMarketDataProvider,
+    LongbridgeProviderError,
+    completed_longbridge_sessions,
+)
 from quant_system.data.providers.tiingo import TiingoEODProvider, TiingoProviderError
 from quant_system.data.providers.twelvedata import (
     TwelveDataDailyProvider,
@@ -37,6 +42,7 @@ from quant_system.data.providers.twelvedata import (
 # (the EquityBarCache primary key includes provider), so same-symbol futu and
 # backup rows can never contaminate each other.
 BACKUP_PROVIDER_ADJUSTMENTS: dict[str, str] = {
+    "longbridge": "forward",
     "twelvedata": "splits",
     "tiingo": "adjusted",
 }
@@ -84,8 +90,10 @@ def default_backup_window(
 
 
 def build_backup_provider(settings: Settings, name: str) -> Any:
-    """Build an explicit backup provider from env-configured keys only."""
+    """Build an explicit backup; Longbridge uses its CLI-managed login."""
     normalized = name.lower().strip()
+    if normalized == "longbridge":
+        return LongbridgeMarketDataProvider()
     if normalized == "twelvedata":
         api_key = settings.api_keys.twelvedata_api_key
         if api_key is None or not api_key.get_secret_value().strip():
@@ -132,8 +140,8 @@ def read_daily_bars_with_backup(
     result's ``fallbacks``. Every lane fails closed: if no lane serves, a
     ``historical_prices_backup_chain_exhausted`` error is raised.
 
-    ``as_of`` pins the cache-expiry clock (tests/replays); production callers
-    leave it unset.
+    ``as_of`` pins cache expiry and the completed-session coverage required of
+    Longbridge bars (tests/replays); production callers leave it unset.
     """
     if not backup_providers:
         raise _invalid_request(
@@ -249,6 +257,7 @@ def _read_backup_lane(
                     expected_provider=name,
                     expected_adjustment=adjustment,
                     source=f"{name}_cache",
+                    as_of=as_of,
                 )
             except HistoricalPriceReadError as exc:
                 fallbacks.append(
@@ -273,7 +282,7 @@ def _read_backup_lane(
 
     try:
         frame = provider.fetch_ohlcv(symbols, start=start, end=end, interval="1d")
-    except (TwelveDataProviderError, TiingoProviderError) as exc:
+    except (TwelveDataProviderError, TiingoProviderError, LongbridgeProviderError) as exc:
         fallbacks.append(
             {"provider": name, "code": exc.code, "message": exc.message}
         )
@@ -299,6 +308,7 @@ def _read_backup_lane(
             expected_provider=name,
             expected_adjustment=adjustment,
             source=name,
+            as_of=as_of,
         )
     except HistoricalPriceReadError as exc:
         fallbacks.append(
@@ -335,6 +345,7 @@ def _materialize_backup_snapshot(
     expected_provider: str,
     expected_adjustment: str,
     source: str,
+    as_of: pd.Timestamp | None = None,
 ) -> HistoricalPriceSnapshot:
     """Validate a backup frame with the same strictness as the Futu lane."""
     if not isinstance(frame, pd.DataFrame) or frame.empty:
@@ -405,6 +416,22 @@ def _materialize_backup_snapshot(
         )
     normalized["close"] = closes.astype(float)
     normalized = normalized.sort_values(["symbol", "date"], ignore_index=True)
+
+    if expected_provider == "longbridge":
+        coverage_clock = as_of if as_of is not None else pd.Timestamp.now(tz="UTC")
+        for symbol in symbols:
+            try:
+                expected_dates = set(completed_longbridge_sessions(
+                    symbol, start=start_date, end=end_date, as_of=coverage_clock,
+                ))
+            except LongbridgeProviderError as exc:
+                raise _contract_invalid(expected_provider, exc.message) from exc
+            actual_dates = set(normalized.loc[normalized["symbol"] == symbol, "date"])
+            if actual_dates != expected_dates:
+                raise _contract_invalid(
+                    expected_provider,
+                    "Longbridge daily bars do not exactly cover all completed requested sessions",
+                )
 
     series: list[dict[str, Any]] = []
     for symbol in symbols:

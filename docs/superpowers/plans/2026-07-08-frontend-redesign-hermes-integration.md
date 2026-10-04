@@ -1,5 +1,7 @@
 # 前端渐进改造与 Hermes 集成 Implementation Plan
 
+> 本地路径说明（公开版）：文中未随本版提供的 `artifacts/`、`evidence/` 和运行目录是本地证据坐标或路径示例，原件未公开；不能把路径存在当作公开证据。详见[公开范围说明](../../publication-20261004.md)。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 把 ai-quant-platform 前端从当前 QUANTUM_CORE 冷黑终端风,渐进改造到「B 暗色编辑式 + C Hermes 对话流」混合新视觉,同时新增 Hermes 一等公民页面、每日晨报归档入口、Postgres 业务事实持久化,并安全下线 factor-lab 与 agent-studio 两页,不破坏现有 22 页功能或任何交易安全闸门。
@@ -55,7 +57,7 @@ Longbridge 回退。HQA portfolio-risk v2 使用 previous UTC date 为 `end`、`
 
 ## Global Constraints
 
-- **项目路径:** ai-quant-platform 前端在 `/Users/sunyibo/programs/ai-quant-platform/src/frontend`,后端在 `/Users/sunyibo/programs/ai-quant-platform/src/quant_system`。本计划所有前端文件路径相对 `src/frontend/`,后端相对 `src/quant_system/`。
+- **项目路径:** ai-quant-platform 前端在 [src/frontend](https://github.com/YIBOWAY/ai-quant-platform/tree/main/src/frontend),后端在 [src/quant_system](https://github.com/YIBOWAY/ai-quant-platform/tree/main/src/quant_system)。本计划所有前端文件路径相对 `src/frontend/`,后端相对 `src/quant_system/`。
 - **不破坏现有功能红线:** 迁移期不改现有业务 getter 语义、不改 `lib/apiClient.ts`、不改各 form 的 `useQuery/useMutation` 调用点。视觉迁移只改 `className` + JSX 结构 + 原语替换。Hermes/brief getter 必须是 read-only additive wrapper;允许读取 `/api/paper/account/snapshot` 与 `/api/paper/account/equity-curve`,但不得触发策略、回测、paper account mutation、真实券商或任何交易链路。
 - **token 演进红线:** 不重命名或删除现有 `globals.css` token 与 Material-3 兼容别名。2026-07-08 已拍板把全局底色统一到 warm near-black (`--color-bg-base #12110E`) 并新增 sidebar rail token (`--color-bg-sidebar #1C1B20`, `--color-bg-sidebar-muted #25242A`);后续视觉改动只能通过语义 token 扩展或局部 class opt-in,不能散落硬编码色值。
 - **Postgres 持久化边界:** Docker Postgres 只承载可查询、可审计、需要稳定回看的业务事实:brief issues/snapshots/sources、AI HOT daily reports、paper account ledger/current positions/snapshots/root user。大体量 backtest artifact、OHLCV 宽表、DuckDB option cache、Prediction Market JSONL/HTTP cache 暂不迁入 Postgres。
@@ -271,7 +273,7 @@ describe("editorial design tokens", () => {
 
 Run:
 ```bash
-cd /Users/sunyibo/programs/ai-quant-platform/src/frontend
+cd $HOME/programs/ai-quant-platform/src/frontend
 npx vitest run lib/design-tokens.test.ts
 npm run type-check
 npm run lint
@@ -288,7 +290,7 @@ eslint exits 0
 
 Run:
 ```bash
-cd /Users/sunyibo/programs/ai-quant-platform
+cd $HOME/programs/ai-quant-platform
 jq '.positions.AAPL, .ledger[-3:]' data/api_runs/paper_account/default/account.json
 ls data/api_runs/paper_account/default/archive/account-*.json | tail -5
 ```
@@ -302,7 +304,7 @@ archive files still contain historical snapshots used for backfill
 - [x] **Step 4: 提交计划同步** — 由 2026-07-08 的 plan/foundation commits 覆盖。
 
 ```bash
-cd /Users/sunyibo/programs/ai-quant-platform
+cd $HOME/programs/ai-quant-platform
 git add docs/superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md src/frontend/lib/design-tokens.test.ts
 git commit -m "docs(frontend): align Hermes redesign plan with persistence slices"
 ```
@@ -347,7 +349,7 @@ DDL, and the composite latest-snapshot foreign key.
 
 Run:
 ```bash
-cd /Users/sunyibo/programs/ai-quant-platform
+cd $HOME/programs/ai-quant-platform
 ./.venv/bin/pytest tests/test_api_brief_persistence.py tests/test_database.py tests/test_database_connection.py tests/test_runs_repository_postgres.py -q -rs
 ./.venv/bin/ruff check tests/test_api_brief_persistence.py
 git diff --check -- scripts/sql/003_app_users_brief_ai_reports.sql tests/test_api_brief_persistence.py
@@ -368,7 +370,7 @@ diff check exits 0
 
 Run:
 ```bash
-cd /Users/sunyibo/programs/ai-quant-platform
+cd $HOME/programs/ai-quant-platform
 python - <<'PY'
 from quant_system.config.settings import load_settings
 from quant_system.storage.database import get_database, run_migrations
@@ -481,7 +483,7 @@ describe("brief archive API paths", () => {
 
 Run:
 ```bash
-cd /Users/sunyibo/programs/ai-quant-platform
+cd $HOME/programs/ai-quant-platform
 pytest tests/test_api_brief_persistence.py::test_generate_brief_issue_returns_stable_public_id -q
 cd src/frontend && npx vitest run lib/briefArchive.test.ts
 ```
@@ -596,7 +598,7 @@ export default async function ArchivedBriefPage({ params }: Props) {
 
 Run:
 ```bash
-cd /Users/sunyibo/programs/ai-quant-platform
+cd $HOME/programs/ai-quant-platform
 ./.venv/bin/pytest tests/test_api_brief_persistence.py tests/test_api_response_models.py -q -rs
 QS_TEST_DATABASE_URL='postgresql://quant:quantpass@127.0.0.1:5432/quantplatform_codex_tmp' ./.venv/bin/pytest tests/test_api_brief_persistence.py -q -m pg -rs
 ./.venv/bin/ruff check src/quant_system/brief src/quant_system/api/schemas/brief.py src/quant_system/api/routes/brief.py tests/test_api_brief_persistence.py tests/test_api_response_models.py
@@ -1190,7 +1192,7 @@ git commit -m "feat(paper): make Postgres canonical mode fail closed"
 **Goal:** 让用户从 `/brief` 进入已归档的 `/brief/{public_id}`,并用视觉测试锁定 direction B 日报布局、链接出处、侧栏底色协调。
 
 **Status 2026-07-10:** 归档入口代码已由 `fc85598` 提交；重启后的 current backend
-已生成并读取 `brf_20260710_3yz4rm`，浏览器完成 `/zh/brief` → archive、`/zh/hermes`
+已生成并读取 `<local-brief-id omitted>`，浏览器完成 `/zh/brief` → archive、`/zh/hermes`
 和 `/zh/paper-trading` smoke，未见 console warning/error。`brief-zh.png` 已在
 `QS_AIHOT_ENABLED=false` 的隔离 Playwright 环境生成并复跑通过。
 
@@ -1250,7 +1252,7 @@ browser test 触发真实外网。
 
 Run:
 ```bash
-cd /Users/sunyibo/programs/ai-quant-platform/src/frontend
+cd $HOME/programs/ai-quant-platform/src/frontend
 npx vitest run lib/design-tokens.test.ts lib/briefArchive.test.ts
 npm run type-check
 npm run lint
@@ -1357,7 +1359,7 @@ git commit -m "feat(frontend): link daily brief to archived snapshots"
 ### Slice 9A — Paper strategy read-model safety seam
 
 权威范围与后续顺序见
-`/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-10-phase-1a-4-v2.md`。
+[docs/superpowers/plans/2026-07-10-phase-1a-4-v2.md](https://github.com/YIBOWAY/Hermes-quant-agent/blob/main/docs/superpowers/plans/2026-07-10-phase-1a-4-v2.md)。
 本仓实现结果：
 
 - sleeve list/detail/status GET 与 CLI `ops-status` 走同一个

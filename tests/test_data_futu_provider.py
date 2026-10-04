@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from types import SimpleNamespace
 
@@ -75,6 +76,14 @@ def test_futu_provider_normalizes_plain_and_prefixed_symbols() -> None:
     assert FutuMarketDataProvider.normalize_symbol("US.NVDA") == ("NVDA", "US.NVDA")
 
 
+def test_futu_provider_normalizes_exact_brk_b_class_share_alias() -> None:
+    assert FutuMarketDataProvider.normalize_symbol("brk.b") == ("BRK.B", "US.BRK.B")
+    assert FutuMarketDataProvider.normalize_symbol("US.BRK.B") == (
+        "BRK.B",
+        "US.BRK.B",
+    )
+
+
 def test_futu_provider_rejects_non_us_symbol_format() -> None:
     with pytest.raises(FutuProviderError, match="expects plain US tickers"):
         FutuMarketDataProvider.normalize_symbol("HK.00700")
@@ -127,7 +136,7 @@ def test_futu_provider_us_prefix_rejects_dotted_remainder() -> None:
     # A US.-prefixed local-market code must never collapse onto the local
     # lane's cache key ('US.HK.800000' -> 'HK.800000' would read Slice 2A
     # index rows through the default US-only path).
-    for code in ("US.HK.800000", "US.JP..N225", "US.", "US.BRK.B"):
+    for code in ("US.HK.800000", "US.JP..N225", "US.", "US.BRK.A"):
         with pytest.raises(FutuProviderError, match="invalid Futu US symbol"):
             FutuMarketDataProvider.normalize_symbol(code)
         with pytest.raises(FutuProviderError, match="invalid Futu US symbol"):
@@ -298,6 +307,7 @@ def test_futu_provider_enforces_request_timeout_without_worker_thread() -> None:
         context_factory=lambda host, port: context,
         sdk_loader=_sdk,
         request_timeout_seconds=0.01,
+        sleep_func=lambda _: None,
     )
 
     started = time.monotonic()
@@ -569,6 +579,126 @@ def test_futu_provider_maps_repeated_rate_limit_to_typed_error() -> None:
     assert exc_info.value.code == "rate_limited"
 
 
+def test_futu_provider_retries_transient_network_failure_on_ohlcv() -> None:
+    data = pd.DataFrame(
+        [
+            {
+                "time_key": "2026-09-10 00:00:00",
+                "open": 1.0,
+                "high": 2.0,
+                "low": 0.5,
+                "close": 1.5,
+                "volume": 10,
+            }
+        ]
+    )
+    fake_context = _FakeContext([(1, "网络中断", None), (0, data, None)])
+    sleeps: list[float] = []
+    provider = FutuMarketDataProvider(
+        context_factory=lambda host, port: fake_context,
+        sdk_loader=_sdk,
+        transient_retry_seconds=1.5,
+        sleep_func=sleeps.append,
+    )
+
+    frame = provider.fetch_ohlcv(["AAPL"], start="2026-09-10", end="2026-09-10")
+
+    assert len(frame) == 1
+    assert frame.loc[0, "close"] == 1.5
+    assert len(fake_context.calls) == 2
+    assert sleeps == [1.5]
+
+
+def test_futu_provider_maps_exhausted_transient_network_to_typed_error() -> None:
+    class OfflineContext:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def request_history_kline(self, code: str, **kwargs):
+            self.calls += 1
+            return 1, "网络中断"
+
+        def close(self) -> None:
+            pass
+
+    context = OfflineContext()
+    provider = FutuMarketDataProvider(
+        context_factory=lambda host, port: context,
+        sdk_loader=_sdk,
+        transient_max_retries=0,
+    )
+
+    with pytest.raises(FutuProviderError) as exc_info:
+        provider.fetch_ohlcv(["AAPL"], start="2026-09-10", end="2026-09-10")
+
+    assert exc_info.value.code == "provider_unavailable"
+    assert context.calls == 1
+
+
+def test_futu_provider_does_not_retry_permanent_failures() -> None:
+    fake_context = _FakeContext(
+        [(1, "security not found", None), (0, pd.DataFrame(), None)]
+    )
+    sleeps: list[float] = []
+    provider = FutuMarketDataProvider(
+        context_factory=lambda host, port: fake_context,
+        sdk_loader=_sdk,
+        sleep_func=sleeps.append,
+    )
+
+    with pytest.raises(FutuProviderError) as exc_info:
+        provider.fetch_ohlcv(["AAPL"], start="2026-09-10", end="2026-09-10")
+
+    assert exc_info.value.code == "invalid_symbol"
+    assert sleeps == []
+    assert len(fake_context.calls) == 1
+
+
+@pytest.mark.parametrize("failure", ["Connect timeout", TimeoutError("request deadline")])
+def test_futu_provider_recovers_read_timeout(failure) -> None:
+    data = pd.DataFrame([{
+        "time_key": "2026-09-10 00:00:00", "open": 1.0, "high": 2.0,
+        "low": 0.5, "close": 1.5, "volume": 10,
+    }])
+
+    class Context(_FakeContext):
+        def request_history_kline(self, code, **kwargs):
+            self.calls.append({"code": code, **kwargs})
+            if len(self.calls) == 1:
+                if isinstance(failure, Exception):
+                    raise failure
+                return 1, failure, None
+            return 0, data, None
+
+    context = Context()
+    sleeps = []
+    provider = FutuMarketDataProvider(
+        context_factory=lambda *_: context, sdk_loader=_sdk, sleep_func=sleeps.append,
+    )
+    frame = provider.fetch_ohlcv(["AAPL"], start="2026-09-10", end="2026-09-10")
+    assert frame.loc[0, "close"] == 1.5
+    assert len(context.calls) == 2
+    assert sleeps == [2.0]
+    assert context.closed
+
+
+def test_futu_timeout_and_disconnect_share_a_bounded_retry_budget() -> None:
+    context = _FakeContext([
+        (1, "网络中断", None), (1, "Connect timeout", None),
+        (1, "Connect timeout", None),
+    ])
+    sleeps = []
+    provider = FutuMarketDataProvider(
+        context_factory=lambda *_: context, sdk_loader=_sdk, sleep_func=sleeps.append,
+    )
+    with pytest.raises(FutuProviderError) as exc:
+        provider.fetch_ohlcv(["AAPL"], start="2026-09-10", end="2026-09-10")
+    assert exc.value.code == "provider_timeout"
+    assert len(context.calls) == 3
+    assert sleeps == [2.0, 2.0]
+    assert context.closed
+
+
 def test_futu_provider_splits_option_chain_ranges_longer_than_thirty_days() -> None:
     chain_1 = pd.DataFrame(
         [
@@ -783,3 +913,234 @@ def test_futu_provider_batches_large_snapshot_requests() -> None:
     assert len(snapshot_calls) == 2
     assert len(snapshot_calls[0]["symbols"]) == 400
     assert len(snapshot_calls[1]["symbols"]) == 1
+
+
+def test_futu_provider_error_preserves_sdk_ret_fields() -> None:
+    class OfflineContext:
+        def request_history_kline(self, code: str, **kwargs):
+            return 1001, "网络中断"
+
+        def close(self) -> None:
+            pass
+
+    provider = FutuMarketDataProvider(
+        context_factory=lambda host, port: OfflineContext(),
+        sdk_loader=_sdk,
+        transient_max_retries=0,
+    )
+
+    with pytest.raises(FutuProviderError) as exc_info:
+        provider.fetch_ohlcv(["AAPL"], start="2026-09-10", end="2026-09-10")
+
+    assert exc_info.value.code == "provider_unavailable"
+    assert exc_info.value.ret_code == 1001
+    assert exc_info.value.ret_msg == "网络中断"
+
+
+# --- per-symbol failure isolation (strict=False) -------------------------
+#
+# Discriminative note: the strict=False tests below fail on the 8ef4b1a9
+# baseline because ``fetch_ohlcv``/``_fetch_ohlcv`` had no ``strict`` keyword
+# (TypeError) and the batch aborted on the first failing symbol with no
+# ``failed_symbols`` attrs. They pass only after the isolation change.
+
+
+def _history_frame(*, close: float = 183.73) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "time_key": "2024-01-02 00:00:00",
+                "open": close - 1.0,
+                "high": close + 1.0,
+                "low": close - 2.0,
+                "close": close,
+                "volume": 82488674,
+            }
+        ]
+    )
+
+
+class _ScriptedContext:
+    """Per-code scripted OpenD stub: returns a queued response or raises it."""
+
+    def __init__(self, responses: dict[str, list[object]]) -> None:
+        self._responses = {code: list(items) for code, items in responses.items()}
+        self.calls: list[str] = []
+        self.closed = False
+
+    def request_history_kline(self, code: str, **kwargs):
+        self.calls.append(code)
+        queue = self._responses.get(code)
+        if not queue:
+            raise AssertionError(f"unexpected request_history_kline call for {code}")
+        item = queue.pop(0)
+        if isinstance(item, Exception):
+            raise item
+        return item
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def _scripted_provider(context: _ScriptedContext) -> FutuMarketDataProvider:
+    return FutuMarketDataProvider(
+        context_factory=lambda host, port: context,
+        sdk_loader=_sdk,
+    )
+
+
+def test_futu_provider_strict_default_still_aborts_batch_on_symbol_failure() -> None:
+    # Baseline semantics guard: with no ``strict`` argument the first failing
+    # symbol must still abort the whole batch and surface its error.
+    context = _ScriptedContext(
+        {
+            "US.AAPL": [(0, _history_frame(), None)],
+            "US.DELISTED": [(0, pd.DataFrame(), None)],
+        }
+    )
+    provider = _scripted_provider(context)
+
+    with pytest.raises(FutuProviderError, match="no OHLCV data returned for US.DELISTED"):
+        provider.fetch_ohlcv(["AAPL", "DELISTED"], start="2024-01-02", end="2024-01-02")
+
+    assert context.closed is True
+
+
+def test_futu_provider_strict_default_leaves_frame_attrs_untouched() -> None:
+    context = _ScriptedContext({"US.AAPL": [(0, _history_frame(), None)]})
+    provider = _scripted_provider(context)
+
+    frame = provider.fetch_ohlcv(["AAPL"], start="2024-01-02", end="2024-01-02")
+
+    assert frame["symbol"].tolist() == ["AAPL"]
+    assert "failed_symbols" not in frame.attrs
+
+
+def test_futu_provider_non_strict_isolates_failed_symbol(caplog) -> None:
+    context = _ScriptedContext(
+        {
+            "US.AAPL": [(0, _history_frame(), None)],
+            "US.DELISTED": [(0, pd.DataFrame(), None)],
+        }
+    )
+    provider = _scripted_provider(context)
+
+    with caplog.at_level(logging.WARNING):
+        frame = provider.fetch_ohlcv(
+            ["AAPL", "DELISTED"],
+            start="2024-01-02",
+            end="2024-01-02",
+            strict=False,
+        )
+
+    assert frame["symbol"].tolist() == ["AAPL"]
+    assert frame.attrs["failed_symbols"] == {"DELISTED": "no_data"}
+    assert context.calls == ["US.AAPL", "US.DELISTED"]
+    assert context.closed is True
+    warnings = [
+        record.getMessage()
+        for record in caplog.records
+        if record.levelno == logging.WARNING
+    ]
+    assert any("DELISTED" in message and "no_data" in message for message in warnings)
+
+
+def test_futu_provider_non_strict_isolates_unparseable_symbol() -> None:
+    # The failing symbol never reaches OpenD here: normalize_symbol rejects it
+    # before any kline call, and it is still recorded per symbol.
+    context = _ScriptedContext({"US.AAPL": [(0, _history_frame(), None)]})
+    provider = _scripted_provider(context)
+
+    frame = provider.fetch_ohlcv(
+        ["AAPL", "BAD.TICKER"],
+        start="2024-01-02",
+        end="2024-01-02",
+        strict=False,
+    )
+
+    assert frame["symbol"].tolist() == ["AAPL"]
+    assert frame.attrs["failed_symbols"] == {"BAD.TICKER": "invalid_symbol"}
+    assert context.calls == ["US.AAPL"]
+
+
+def test_futu_provider_non_strict_records_wrapped_transport_error() -> None:
+    context = _ScriptedContext({"US.AAPL": [(0, _history_frame(), None)]})
+    provider = _scripted_provider(context)
+
+    # BRK.B is scripted as an "unexpected call" AssertionError; the SDK
+    # retry wrapper folds a raw exception into provider_timeout, so the
+    # recorded reason is that mapped code rather than the raw type.
+    frame = provider.fetch_ohlcv(
+        ["AAPL", "BRK.B"],
+        start="2024-01-02",
+        end="2024-01-02",
+        strict=False,
+    )
+
+    assert frame["symbol"].tolist() == ["AAPL"]
+    assert frame.attrs["failed_symbols"] == {"BRK.B": "provider_timeout"}
+
+
+def test_futu_provider_non_strict_records_every_failure_in_mixed_batch() -> None:
+    context = _ScriptedContext(
+        {
+            "US.AAPL": [(0, _history_frame(), None)],
+            "US.NOPE": [(0, pd.DataFrame(), None)],
+            "US.GONE": [(0, pd.DataFrame(), None)],
+        }
+    )
+    provider = _scripted_provider(context)
+
+    frame = provider.fetch_ohlcv(
+        ["AAPL", "NOPE", "BAD.TICKER", "GONE"],
+        start="2024-01-02",
+        end="2024-01-02",
+        strict=False,
+    )
+
+    assert frame["symbol"].tolist() == ["AAPL"]
+    assert frame.attrs["failed_symbols"] == {
+        "NOPE": "no_data",
+        "BAD.TICKER": "invalid_symbol",
+        "GONE": "no_data",
+    }
+
+
+def test_futu_provider_non_strict_raises_when_all_symbols_fail() -> None:
+    context = _ScriptedContext(
+        {
+            "US.AAA": [(0, pd.DataFrame(), None)],
+            "US.BBB": [(0, pd.DataFrame(), None)],
+        }
+    )
+    provider = _scripted_provider(context)
+
+    with pytest.raises(FutuProviderError) as exc_info:
+        provider.fetch_ohlcv(
+            ["AAA", "BBB"], start="2024-01-02", end="2024-01-02", strict=False
+        )
+
+    assert exc_info.value.code == "all_symbols_failed"
+    assert "AAA" in str(exc_info.value)
+    assert "BBB" in str(exc_info.value)
+    assert context.closed is True
+
+
+def test_futu_provider_non_strict_applies_to_local_market_entry_point() -> None:
+    context = _ScriptedContext(
+        {
+            "JP..N225": [(0, _history_frame(close=39100.0), None)],
+            "JP..MISSING": [(0, pd.DataFrame(), None)],
+        }
+    )
+    provider = _scripted_provider(context)
+
+    frame = provider.fetch_local_market_ohlcv(
+        ["JP..N225", "JP..MISSING"],
+        start="2026-08-10",
+        end="2026-08-10",
+        strict=False,
+    )
+
+    assert frame["symbol"].tolist() == ["JP..N225"]
+    assert frame.attrs["failed_symbols"] == {"JP..MISSING": "no_data"}

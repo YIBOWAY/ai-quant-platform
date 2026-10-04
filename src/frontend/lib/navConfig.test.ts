@@ -4,6 +4,7 @@ import {
   buildNavSections,
   isVisibleOnSurface,
   navSections,
+  sectionsForSurface,
   type NavItem,
   type NavItemId,
   type NavSection,
@@ -12,7 +13,11 @@ import {
 
 const expectedEnabledItemIds: NavItemId[] = [
   "hermes",
+  "watch",
+  "companyResearch",
   "brief",
+  "collection",
+  "library",
   "dataExplorer",
   "factorLab",
   "backtester",
@@ -37,7 +42,11 @@ const expectedEnabledItemIds: NavItemId[] = [
 const expectedRolledBackItemIds: NavItemId[] = [
   "dashboard",
   "hermes",
+  "watch",
+  "companyResearch",
   "brief",
+  "collection",
+  "library",
   "dataExplorer",
   "factorLab",
   "backtester",
@@ -69,13 +78,23 @@ function itemRoutesFor(
 }
 
 function routesForSurface(sections: NavSection[], surface: NavSurface) {
-  return sections
-    .flatMap((section) => section.items)
-    .filter((item) => isVisibleOnSurface(item, surface))
-    .map((item) => item.href);
+  return sectionsForSurface(sections, surface).flatMap((section) =>
+    section.items.map((item) => item.href),
+  );
 }
 
 describe("buildNavSections", () => {
+  it("keeps the candidate library as a deep link outside product navigation", () => {
+    const sections = buildNavSections({ shellEnabled: true });
+    const library = sections
+      .find((section) => section.id === "research")
+      ?.items.find((item) => item.id === "library");
+
+    expect(library).toMatchObject({ href: "/library" });
+    expect(library && isVisibleOnSurface(library, "sidebar")).toBe(false);
+    expect(library && isVisibleOnSurface(library, "mobile")).toBe(false);
+  });
+
   it("keeps the five top-level navigation groups in product order", () => {
     expect(
       buildNavSections({ shellEnabled: true }).map((section) => section.id),
@@ -117,7 +136,11 @@ describe("buildNavSections", () => {
     const enabled = buildNavSections({ shellEnabled: true });
     expect(itemRoutesFor(enabled, "research")).toEqual([
       { id: "hermes", href: "/hermes" },
+      { id: "watch", href: "/watch" },
+      { id: "companyResearch", href: "/company-research" },
       { id: "brief", href: "/brief" },
+      { id: "collection", href: "/collection" },
+      { id: "library", href: "/library" },
       { id: "dataExplorer", href: "/data-explorer" },
       { id: "factorLab", href: "/factor-lab" },
       { id: "backtester", href: "/backtest" },
@@ -129,7 +152,11 @@ describe("buildNavSections", () => {
     expect(itemRoutesFor(rolledBack, "research")).toEqual([
       { id: "dashboard", href: "/" },
       { id: "hermes", href: "/hermes" },
+      { id: "watch", href: "/watch" },
+      { id: "companyResearch", href: "/company-research" },
       { id: "brief", href: "/brief" },
+      { id: "collection", href: "/collection" },
+      { id: "library", href: "/library" },
       { id: "dataExplorer", href: "/data-explorer" },
       { id: "factorLab", href: "/factor-lab" },
       { id: "backtester", href: "/backtest" },
@@ -205,20 +232,44 @@ describe("buildNavSections", () => {
     const mobileRoutes = routesForSurface(sections, "mobile");
 
     expect(sidebarRoutes).not.toContain("/docs/reversal-momentum");
-    expect(sidebarRoutes).toEqual(
-      expect.arrayContaining([
-        "/options-screener",
-        "/options-radar",
-        "/options-tools",
-        "/options-buyside",
-        "/asia-radar",
-        "/market-cross-section",
-        "/ai-news",
-        "/polymarket",
-      ]),
-    );
+    expect(sidebarRoutes).toEqual([
+      "/hermes",
+      "/watch",
+      "/company-research",
+      "/brief",
+      "/collection",
+      "/paper-trading",
+      "/options-screener",
+      "/options-radar",
+      "/options-buyside",
+      "/ai-news",
+      "/settings",
+    ]);
+    expect(sidebarRoutes).toHaveLength(11);
+    expect(sidebarRoutes).not.toContain("/options-tools");
+    expect(sidebarRoutes).not.toContain("/polymarket");
+    for (const href of [
+      "/data-explorer",
+      "/asia-radar",
+      "/market-cross-section",
+    ]) {
+      expect(sidebarRoutes).not.toContain(href);
+    }
+    expect(sectionsForSurface(buildNavSections({ shellEnabled: true }), "sidebar").map((s) => s.id)).toEqual([
+      "research",
+      "paper",
+      "options",
+      "markets",
+      "system",
+    ]);
     expect(sidebarRoutes.filter((href) => href === "/settings")).toHaveLength(1);
+    expect(sidebarRoutes.filter((href) => href === "/watch")).toHaveLength(1);
     expect(mobileRoutes).toContain("/docs/reversal-momentum");
+    expect(mobileRoutes).toContain("/collection");
+    expect(mobileRoutes).toContain("/company-research");
+    expect(mobileRoutes).toContain("/ai-news");
+    expect(mobileRoutes).not.toContain("/library");
+    expect(mobileRoutes).not.toContain("/position-map");
     expect(mobileRoutes.filter((href) => href === "/settings")).toHaveLength(1);
   });
 
@@ -253,6 +304,25 @@ describe("buildNavSections", () => {
 describe("navSections default export", () => {
   it("matches shell-enabled product navigation", () => {
     expect(navSections).toEqual(buildNavSections({ shellEnabled: true }));
+  });
+});
+
+describe("sectionsForSurface", () => {
+  it("keeps the markets group visible through the AI News surface only", () => {
+    const visible = sectionsForSurface(
+      buildNavSections({ shellEnabled: true }),
+      "sidebar",
+    );
+    expect(visible.map((section) => section.id)).toEqual([
+      "research",
+      "paper",
+      "options",
+      "markets",
+      "system",
+    ]);
+    const markets = visible.find((section) => section.id === "markets");
+    expect(markets?.items.map((item) => item.id)).toEqual(["aiNews"]);
+    expect(visible.every((section) => section.items.length > 0)).toBe(true);
   });
 });
 

@@ -22,7 +22,7 @@ import type {
   OptionsVolSmileResponse,
   OptionsVolSurfaceResponse,
 } from "@/lib/api";
-import { ApiClientError } from "@/lib/apiClient";
+import { optionsErrorMessage } from "@/lib/optionsErrorPresentation";
 import { InfoTip } from "@/components/InfoTip";
 import type { Locale } from "@/lib/locale";
 import {
@@ -82,14 +82,13 @@ const copy = {
     brand: "Local AlphaGBM",
     title: "Options Tools",
     intro:
-      "Read-only option research tools. Market-sensitive calculations first load the entered ticker from backend Futu data, then send those live inputs to local calculators.",
+      "Option research tools. Market-sensitive calculations first load the entered ticker from backend Futu data, then send those live inputs to local calculators. The only write here is the research watchlist: it saves a ticker entry and never touches accounts or places trades.",
     ticker: "Ticker",
     researchOnly: "Research only",
     live: "Live",
     example: "Local",
     running: "Running...",
     response: "response",
-    requestFailed: "Request failed",
     expiryPnl: "Expiry P&L",
     tabs: {
       greeks: "Greeks",
@@ -180,7 +179,7 @@ const copy = {
       costBasis: "Cost basis",
       purpose: "Purpose",
       protect: "Protect shares",
-      healthCheck: "Health Check",
+      healthCheck: "Saved Profile Check",
     },
     sourceNotes: {
       exampleLabel: "Local input",
@@ -191,21 +190,20 @@ const copy = {
       signals:
         "Runs local signal endpoints; market-data-dependent signals first load read-only Futu option-chain inputs.",
       researchLabel: "Backend local",
-      research: "Calls backend research endpoints with live ticker context when market data is needed and never creates orders.",
+      research: "Calls backend research endpoints with live ticker context when market data is needed. The watchlist action only saves a ticker entry — it never writes accounts and never creates orders.",
     },
   },
   zh: {
     brand: "Local AlphaGBM",
     title: "期权工具",
     intro:
-      "只读期权研究工具。凡是需要市场数据的计算，都会先从后端读取当前标的的 Futu 期权链，再交给本地计算器处理。",
+      "期权研究工具。凡是需要市场数据的计算，都会先从后端读取当前标的的 Futu 期权链，再交给本地计算器处理。这里唯一的写入是研究自选清单：只保存标的条目，不写账户、不触发任何交易。",
     ticker: "标的代码",
     researchOnly: "仅供研究",
     live: "实时",
     example: "本地",
     running: "运行中...",
     response: "返回结果",
-    requestFailed: "请求失败",
     expiryPnl: "到期盈亏",
     tabs: {
       greeks: "希腊字母",
@@ -296,7 +294,7 @@ const copy = {
       costBasis: "成本价",
       purpose: "用途",
       protect: "保护持股",
-      healthCheck: "健康检查",
+      healthCheck: "研究档案完整度",
     },
     sourceNotes: {
       exampleLabel: "本地输入",
@@ -306,7 +304,7 @@ const copy = {
       signalsLabel: "本地信号",
       signals: "调用本地信号接口；依赖行情的信号会先读取只读 Futu 期权链输入。",
       researchLabel: "本地后端",
-      research: "调用后端研究接口；需要市场数据时使用当前标的上下文，不会创建订单。",
+      research: "调用后端研究接口；需要市场数据时使用当前标的上下文。加入自选只保存标的条目，不写账户、也不会创建订单。",
     },
   },
 } as const;
@@ -341,16 +339,16 @@ export function OptionsToolsWorkbench({ locale = "en" }: { locale?: Locale }) {
         />
       </div>
 
-      <div className="flex min-h-0 flex-1 overflow-hidden">
-        <aside className="w-[240px] shrink-0 overflow-y-auto border-r border-border-subtle bg-bg-surface p-3">
-          <div className="space-y-0.5" role="tablist" aria-label={text.title}>
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden md:flex-row">
+        <aside className="w-full shrink-0 overflow-x-auto border-b border-border-subtle bg-bg-surface p-3 md:w-[240px] md:overflow-y-auto md:border-b-0 md:border-r">
+          <div className="flex gap-1 md:block md:space-y-0.5" role="tablist" aria-label={text.title}>
             {tabs.map((tab) => {
               const Icon = tab.icon;
               const selected = activeTab === tab.id;
               return (
                 <button
                   aria-selected={selected}
-                  className={`flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left font-body-sm transition-colors ${
+                  className={`flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg border px-3 py-2 text-left font-body-sm transition-colors md:w-full ${
                     selected
                       ? "border-border-subtle bg-bg-surface-muted font-semibold text-text-primary"
                       : "border-transparent text-text-secondary hover:bg-surface-container/70 hover:text-text-primary"
@@ -371,15 +369,15 @@ export function OptionsToolsWorkbench({ locale = "en" }: { locale?: Locale }) {
           </div>
         </aside>
 
-        <section className="min-w-0 flex-1 overflow-y-auto p-6" role="tabpanel">
+        <section className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 md:p-6" role="tabpanel">
           {activeTab === "greeks" ? <GreeksPanel ticker={sharedTicker} t={text} locale={locale} /> : null}
           {activeTab === "strategy" ? <StrategyRankPanel ticker={sharedTicker} t={text} locale={locale} /> : null}
           {activeTab === "score" ? <ScoreContractsPanel ticker={sharedTicker} t={text} locale={locale} /> : null}
           {activeTab === "simulate" ? <SimulationPanel ticker={sharedTicker} t={text} locale={locale} /> : null}
-          {activeTab === "surface" ? <SurfacePanel ticker={sharedTicker} t={text} /> : null}
-          {activeTab === "smile" ? <SmilePanel ticker={sharedTicker} t={text} /> : null}
-          {activeTab === "signals" ? <SignalsPanel ticker={sharedTicker} t={text} /> : null}
-          {activeTab === "researchOps" ? <ResearchOpsPanel ticker={sharedTicker} t={text} /> : null}
+          {activeTab === "surface" ? <SurfacePanel ticker={sharedTicker} t={text} locale={locale} /> : null}
+          {activeTab === "smile" ? <SmilePanel ticker={sharedTicker} t={text} locale={locale} /> : null}
+          {activeTab === "signals" ? <SignalsPanel ticker={sharedTicker} t={text} locale={locale} /> : null}
+          {activeTab === "researchOps" ? <ResearchOpsPanel ticker={sharedTicker} t={text} locale={locale} /> : null}
         </section>
       </div>
     </div>
@@ -400,7 +398,7 @@ function GreeksPanel({ ticker, t, locale }: { ticker: string; t: Copy; locale: L
       setSelectedContract(contract);
       setResult(payload);
     } catch (err) {
-      setError(errorMessage(err, t.requestFailed));
+      setError(optionsErrorMessage(err, locale));
     } finally {
       setIsRunning(false);
     }
@@ -464,7 +462,7 @@ function StrategyRankPanel({ ticker, t, locale }: { ticker: string; t: Copy; loc
     try {
       setResult(await rankLiveStrategies(ticker));
     } catch (err) {
-      setError(errorMessage(err, t.requestFailed));
+      setError(optionsErrorMessage(err, locale));
     } finally {
       setIsRunning(false);
     }
@@ -523,7 +521,7 @@ function ScoreContractsPanel({ ticker, t, locale }: { ticker: string; t: Copy; l
     try {
       setResult(await scoreLiveContracts(ticker));
     } catch (err) {
-      setError(errorMessage(err, t.requestFailed));
+      setError(optionsErrorMessage(err, locale));
     } finally {
       setIsRunning(false);
     }
@@ -586,7 +584,7 @@ function SimulationPanel({ ticker, t, locale }: { ticker: string; t: Copy; local
     try {
       setResult(await simulateLiveCallSpread(ticker));
     } catch (err) {
-      setError(errorMessage(err, t.requestFailed));
+      setError(optionsErrorMessage(err, locale));
     } finally {
       setIsRunning(false);
     }
@@ -639,7 +637,7 @@ function SimulationPanel({ ticker, t, locale }: { ticker: string; t: Copy; local
   );
 }
 
-function SurfacePanel({ ticker: initialTicker, t }: { ticker: string; t: Copy }) {
+function SurfacePanel({ ticker: initialTicker, t, locale }: { ticker: string; t: Copy; locale: Locale }) {
   const [ticker, setTicker] = useState(initialTicker);
   const [result, setResult] = useState<OptionsVolSurfaceResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -651,7 +649,7 @@ function SurfacePanel({ ticker: initialTicker, t }: { ticker: string; t: Copy })
     try {
       setResult(await loadVolSurface(ticker));
     } catch (err) {
-      setError(errorMessage(err, t.requestFailed));
+      setError(optionsErrorMessage(err, locale));
     } finally {
       setIsRunning(false);
     }
@@ -676,7 +674,7 @@ function SurfacePanel({ ticker: initialTicker, t }: { ticker: string; t: Copy })
   );
 }
 
-function SmilePanel({ ticker: initialTicker, t }: { ticker: string; t: Copy }) {
+function SmilePanel({ ticker: initialTicker, t, locale }: { ticker: string; t: Copy; locale: Locale }) {
   const [ticker, setTicker] = useState(initialTicker);
   const [result, setResult] = useState<OptionsVolSmileResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -688,7 +686,7 @@ function SmilePanel({ ticker: initialTicker, t }: { ticker: string; t: Copy }) {
     try {
       setResult(await loadVolSmile(ticker));
     } catch (err) {
-      setError(errorMessage(err, t.requestFailed));
+      setError(optionsErrorMessage(err, locale));
     } finally {
       setIsRunning(false);
     }
@@ -735,7 +733,7 @@ function SmilePanel({ ticker: initialTicker, t }: { ticker: string; t: Copy }) {
   );
 }
 
-function SignalsPanel({ ticker, t }: { ticker: string; t: Copy }) {
+function SignalsPanel({ ticker, t, locale }: { ticker: string; t: Copy; locale: Locale }) {
   const [result, setResult] = useState<{ title: string; payload: OptionsSignalsResponse } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState<string | null>(null);
@@ -747,7 +745,7 @@ function SignalsPanel({ ticker, t }: { ticker: string; t: Copy }) {
       const payload = await request();
       setResult({ title, payload });
     } catch (err) {
-      setError(errorMessage(err, t.requestFailed));
+      setError(optionsErrorMessage(err, locale));
     } finally {
       setIsRunning(null);
     }
@@ -825,12 +823,12 @@ function SignalsPanel({ ticker, t }: { ticker: string; t: Copy }) {
         ]}
         isRunning={isRunning}
       />
-      {result ? <JsonResult title={result.title} payload={result.payload} responseLabel={t.response} /> : <EmptyPrompt label={t.signals.empty} />}
+      {result ? <JsonResult title={result.title} payload={result.payload} responseLabel={t.response} locale={locale} /> : <EmptyPrompt label={t.signals.empty} />}
     </ToolPanel>
   );
 }
 
-function ResearchOpsPanel({ ticker, t }: { ticker: string; t: Copy }) {
+function ResearchOpsPanel({ ticker, t, locale }: { ticker: string; t: Copy; locale: Locale }) {
   const [shares, setShares] = useState("100");
   const [costBasis, setCostBasis] = useState("100");
   const [purpose, setPurpose] = useState("protect");
@@ -845,7 +843,7 @@ function ResearchOpsPanel({ ticker, t }: { ticker: string; t: Copy }) {
       const payload = await request();
       setResult({ title, payload });
     } catch (err) {
-      setError(errorMessage(err, t.requestFailed));
+      setError(optionsErrorMessage(err, locale));
     } finally {
       setIsRunning(null);
     }
@@ -948,7 +946,7 @@ function ResearchOpsPanel({ ticker, t }: { ticker: string; t: Copy }) {
             onClick: () =>
               run(t.researchOps.hedgeAdvisor, () =>
                 liveHedgeAdvisor(ticker, {
-                  shares: Number.parseInt(shares, 10),
+                  shares: Number(shares),
                   costBasis: Number.parseFloat(costBasis),
                   purpose,
                 }),
@@ -964,7 +962,7 @@ function ResearchOpsPanel({ ticker, t }: { ticker: string; t: Copy }) {
         ]}
         isRunning={isRunning}
       />
-      {result ? <JsonResult title={result.title} payload={result.payload} responseLabel={t.response} /> : <EmptyPrompt label={t.researchOps.empty} />}
+      {result ? <JsonResult title={result.title} payload={result.payload} responseLabel={t.response} locale={locale} /> : <EmptyPrompt label={t.researchOps.empty} />}
     </ToolPanel>
   );
 }
@@ -1119,7 +1117,7 @@ function DataTable({ columns, rows }: { columns: ReactNode[]; rows: ReactNode[][
   );
 }
 
-function MiniPnlChart({ rows, label }: { rows: Array<{ price: number; pnl: number }>; label: string }) {
+export function MiniPnlChart({ rows, label }: { rows: Array<{ price: number; pnl: number }>; label: string }) {
   if (rows.length === 0) {
     return null;
   }
@@ -1133,12 +1131,12 @@ function MiniPnlChart({ rows, label }: { rows: Array<{ price: number; pnl: numbe
         <SlidersHorizontal size={14} />
         {label}
       </div>
-      <div className="flex h-40 items-end gap-1">
+      <div className="flex h-40 items-end gap-1" role="img" aria-label={label}>
         {rows.map((row) => {
           const positive = row.pnl >= 0;
           const height = Math.max(((row.pnl - minPnl) / range) * 100, 4);
           return (
-            <div className="flex flex-1 items-end" key={row.price}>
+            <div className="flex h-full flex-1 items-end" key={row.price}>
               <div
                 className={positive ? "w-full rounded-sm bg-accent-success" : "w-full rounded-sm bg-danger"}
                 style={{ height: `${height}%` }}
@@ -1219,13 +1217,66 @@ function ActionGrid({
   );
 }
 
-function JsonResult({ payload, title, responseLabel }: { payload: unknown; title: string; responseLabel: string }) {
+export function ResearchResultStatus({ payload, locale }: { payload: unknown; locale: Locale }) {
+  if (!payload || typeof payload !== "object") return null;
+  const result = payload as Record<string, unknown>;
+  const zh = locale === "zh";
+  if (typeof result.situation === "string" && Array.isArray(result.structures)) {
+    const structures = result.structures.filter((row): row is Record<string, unknown> => row !== null && typeof row === "object");
+    const rejectedLegs = Array.isArray(result.rejected_legs)
+      ? result.rejected_legs.filter((row): row is Record<string, unknown> => row !== null && typeof row === "object")
+      : [];
+    return <section className="space-y-3 border-b border-border-subtle p-4 font-body-sm" aria-label={zh ? "对冲数量与预计费用" : "Hedge quantities and estimated costs"}>
+      {structures.map((row, index) => {
+        const collar = row.structure === "collar";
+        const cost = collar ? row.estimated_net_debit : row.estimated_debit;
+        const knownCost = typeof cost === "number" && Number.isFinite(cost) ? cost : null;
+        const legCount = (key: string) => num(typeof row[key] === "number" ? row[key] : null, 0);
+        return <div key={index} className="rounded-md border border-border-subtle p-3">
+          <h3 className="font-semibold">{collar ? (zh ? "看跌保护＋备兑看涨" : "Protective puts + covered calls") : (zh ? "买入看跌保护" : "Protective puts")}</h3>
+          <p className="mt-2">{zh ? `买入 ${legCount("put_contracts")} 张看跌期权${collar ? `，卖出 ${legCount("call_contracts")} 张看涨期权` : ""}。` : `Buy ${legCount("put_contracts")} puts${collar ? ` and sell ${legCount("call_contracts")} calls` : ""}.`}</p>
+          <p className="mt-1 text-warning">{zh ? `看跌保护比原持股多 ${legCount("excess_put_coverage_shares")} 股${collar ? `；卖出的看涨期权只对应 ${legCount("call_covered_shares")} 股持仓，另有 ${legCount("uncapped_shares")} 股不受看涨期权限制` : ""}。` : `Put protection exceeds holdings by ${legCount("excess_put_coverage_shares")} shares${collar ? `; calls cover ${legCount("call_covered_shares")} held shares, leaving ${legCount("uncapped_shares")} uncapped` : ""}.`}</p>
+          <p className="mt-2 font-semibold">{knownCost !== null && knownCost < 0 ? (zh ? "整套预计净收入" : "Total estimated net credit") : (zh ? "整套预计支出" : "Total estimated debit")} {money(knownCost === null ? null : Math.abs(knownCost))}</p>
+          <p className="mt-1 text-text-secondary">{zh ? `每张看跌支出 ${money((collar ? row.estimated_debit_per_put : row.estimated_debit_per_contract) as number | null)}${collar ? `；每张看涨收入 ${money(row.estimated_credit_per_call as number | null)}` : ""}。合计已乘各腿张数，未计手续费和滑点。` : "Totals include each leg's contract count and exclude fees and slippage."}</p>
+        </div>;
+      })}
+      {!structures.some(row => row.structure === "collar") ? <p className="text-text-secondary">{zh ? "没有可展示的备兑看涨结构；持股不足 100 股或缺少对应合约时，不卖出看涨期权。" : "No covered-call structure: fewer than 100 held shares or missing contracts cannot support a covered call."}</p> : null}
+      {rejectedLegs.length > 0 ? <div className="rounded-md border border-warning p-3 text-warning">
+        <p className="font-semibold">{zh ? "以下期权腿已被剔除：合约乘数无法确认或不是标准 100。" : "These legs were dropped: contract size is unusable or not the standard 100."}</p>
+        <ul className="mt-1 list-disc pl-5">
+          {rejectedLegs.map((leg, index) => <li key={index}>{zh ? `角色 ${String(leg.role ?? "")}｜字段 ${String(leg.field ?? "")}｜值 ${String(leg.value ?? "")}｜原因 ${String(leg.reason ?? "")}` : `${String(leg.role ?? "")} | ${String(leg.field ?? "")}=${String(leg.value ?? "")} | ${String(leg.reason ?? "")}`}</li>)}
+        </ul>
+      </div> : null}
+    </section>;
+  }
+  let message: string | null = null;
+  if (typeof result.available_inputs === "number" && typeof result.total_inputs === "number") {
+    const coverage = `${result.available_inputs} / ${result.total_inputs}`;
+    const missingLabels: Record<string, string> = { vix: "VIX 恐慌指数", iv_rank: "期权 IV 历史排名", rsi_14: "14 日 RSI", options_volume_anomaly: "期权成交量变化", put_call_ratio: "看跌/看涨比例", consecutive_down_days: "连续下跌天数", breadth: "上涨/下跌股票比例", trend: "站上 200 日均线的股票比例" };
+    const missing = Array.isArray(result.missing_inputs) ? result.missing_inputs.map((item) => zh ? missingLabels[String(item)] ?? String(item) : String(item)).join("、") : "";
+    message = result.status === "complete"
+      ? (zh ? `已取得 ${coverage} 项输入；评分仅反映这套固定规则。` : `${coverage} inputs available; this score describes the fixed rules only.`)
+      : (zh ? `已取得 ${coverage} 项输入，不能给出完整市场判断。已知部分的分数 ${num(result.partial_score as number | null)} 不代表完整评分。缺少：${missing}。` : `${coverage} inputs available. The partial score ${num(result.partial_score as number | null)} is not the complete model score. Missing: ${missing}.`);
+  } else if (result.status === "no_saved_profile") {
+    message = zh ? "当前标的未保存研究档案，因此未评分。不会临时生成日期或研究说明来凑满分。" : "No saved research profile exists for this symbol. No profile score was calculated.";
+  } else if ("health_score" in result) {
+    message = zh ? `已读取 ${result.profile_count ?? 0} 份已保存档案。这里只检查日期和研究说明的完整度，不评价公司或策略好坏。${result.health_score == null ? "档案日期缺失或无效，评分留空。" : `档案完整度 ${num(result.health_score as number, 0)} / 100。`}` : `Read ${result.profile_count ?? 0} saved profiles. This checks dates and thesis completeness, not company or strategy quality. ${result.health_score == null ? "Missing or invalid profile dates; score unknown." : `Profile completeness: ${num(result.health_score as number, 0)} / 100.`}`;
+  } else if (result.reason === "event_aligned_iv_history_missing") {
+    message = zh ? "没有与历次财报日期配对的财报前/后 IV 记录，不能估算财报后的 IV。普通每日 IV 历史不能直接代替这些记录。" : "No earnings-aligned pre/post IV history is available. Post-earnings IV cannot be estimated from an ordinary daily-IV history alone.";
+  } else if ("iv_rank_source" in result && (result.iv_rank_source === "local_hv_proxy" || result.iv_rank == null)) {
+    message = zh ? "缺少同口径期权 IV 历史，IV Rank 未计算。股票历史波动率不是期权历史 IV。" : "Matching option-IV history is missing. IV Rank is not available; equity historical volatility is not option IV.";
+  }
+  return message ? <p className="border-b border-border-subtle p-4 font-body-sm text-text-secondary" role="status">{message}</p> : null;
+}
+
+function JsonResult({ payload, title, responseLabel, locale }: { payload: unknown; title: string; responseLabel: string; locale: Locale }) {
   return (
     <Card padded={false}>
       <div className="flex items-center justify-between gap-3 border-b border-border-subtle px-4 py-3">
         <h3 className="font-label-caps uppercase text-text-primary">{title}</h3>
         <span className="font-label-caps uppercase text-text-secondary">{responseLabel}</span>
       </div>
+      <ResearchResultStatus payload={payload} locale={locale} />
       <pre className="max-h-[360px] overflow-auto p-4 font-code-sm text-text-primary">
         {JSON.stringify(payload, null, 2)}
       </pre>
@@ -1247,13 +1298,6 @@ function ErrorLine({ message }: { message: string }) {
       {message}
     </div>
   );
-}
-
-function errorMessage(error: unknown, fallback: string) {
-  if (error instanceof ApiClientError) {
-    return error.message;
-  }
-  return error instanceof Error ? error.message : fallback;
 }
 
 function num(value: number | null | undefined, digits = 2) {

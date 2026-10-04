@@ -17,6 +17,7 @@
 后端入口是 `run_backtest`（`src/quant_system/backtest/pipeline.py`），完整流程：
 
 1. **解析输入**：把 `symbols` / `universe_id` 解析成最终股票池（自定义标的优先；留空则用所选股票池；都没有则回退到 `["SPY", "QQQ"]`）；解析 `strategy_id`、`factor_ids`、`weights`。
+   回测结果与 trial 同时保留实际解析到的 universe snapshot（`universe_id / as_of / symbols / note / digest`）和 `membership_mode`。模式只允许 `static_snapshot / dated_snapshot / adhoc`；静态 snapshot 仍表示成员变动未被跟踪，不能据此宣称结果无幸存者偏差。
 2. **取行情**：`build_ohlcv_provider` 按 `provider`（sample / futu / tiingo）取 OHLCV。Tiingo 日线会走 `CachedOHLCVProvider` + `LocalDataStorage` read-through 缓存；本地缓存必须逐个标的覆盖请求窗口才会命中，否则回源并写回缓存。
 3. **算因子**：`compute_factor_pipeline` 对每个选中的因子按 `lookback` 计算，每行带 `signal_ts`（数据所属日）和 `tradeable_ts`（可交易日，即下一根 K 线）。
 4. **合成单一打分**：`build_multifactor_score_frame`（`experiments/scoring.py`）对每个因子做**横截面 z-score**，按方向（`higher_is_better` / `lower_is_better`）取符号，按权重归一化（除以权重绝对值之和）后相加，得到每个标的每个 `tradeable_ts` 的单一 `score`。
@@ -44,6 +45,7 @@
 3. **基准 Benchmark**：默认 `SPY`，纯文本输入。基准曲线会在本次回测运行时一起计算并保存，详情页和最新运行面板复用保存产物，不再打开页面时现场重拉。
 4. **自定义标的 Custom Symbols**：可选，逗号分隔。填了就**覆盖**股票池。⚠️ 只填一个标的会弹黄色警告——因为排序选股策略需要"同类标的"才能横截面排序并买入正信号，单标的常常什么都不买、曲线保持水平。
 5. **开始 / 结束日期**：默认是**截至 UTC 今天的滚动 180 天窗口**（结束 = 今天，开始 = 今天 − 180 天；2026-06-11 起，原固定 2024 上半年的写死区间已移除）。
+   结束日期不能早于开始日期，表单会就地提示；API 在访问数据源或创建后台作业之前校验 `YYYY-MM-DD` 日期及先后关系，错误返回 422，不再误报为数据源不可用。
 6. **数据源 Data Source**：`futu` / `sample` / `tiingo`。futu 不可达时该选项被禁用并给提示。默认 `futu`（2026-06-11 起「真实数据优先」，与后端 schema 默认一致）。
 7. **因子组合 Factor Mix**：勾选已登记因子并填权重。默认勾选 `momentum`（权重 1）、`volatility`（0.5）、`liquidity`（0.5）。**未勾选的因子其权重输入框被禁用**，提交时只发送已勾选的因子及其权重。至少要选一个因子。
 8. **回看窗口 Lookback**：默认 `20`，正整数。所有因子共用这一个 lookback。

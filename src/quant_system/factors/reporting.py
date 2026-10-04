@@ -126,6 +126,8 @@ def generate_factor_report(
             "",
             "- Factor values are stamped with `signal_ts`.",
             "- Actionable rows use the next available bar as `tradeable_ts`.",
+            "- Forward returns are measured open-to-open: next session open to the open "
+            "`horizon` sessions later, on the union observed calendar with no gap filling.",
             "- Evaluation joins factor values to forward returns only after factor computation.",
             "- The last bar per symbol is excluded from actionable signals because no next "
             "bar exists.",

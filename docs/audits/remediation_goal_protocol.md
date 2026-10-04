@@ -1,5 +1,9 @@
 # Remediation Goal Protocol
 
+> **历史冻结（2026-08-26）：**这是 2026-06 整改批次的旧 `/goal` 执行协议，
+> 不是当前 agent 工作流、任务队列或验收规则。保留用于追溯当时方法；不要续跑正文
+> 步骤。当前入口见 [`../INDEX.md`](../INDEX.md)。
+
 This protocol defines how long-running Codex `/goal` work should execute the
 2026-06-11 project assessment remediation without becoming open-ended project
 cleanup. It is an agent execution protocol, not a product feature spec.

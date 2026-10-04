@@ -1,7 +1,7 @@
 'use client';
 
 import { HelpCircle } from "lucide-react";
-import { useId, useState } from "react";
+import { useId, useLayoutEffect, useRef, useState } from "react";
 
 type Locale = "en" | "zh";
 
@@ -17,9 +17,9 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
     en: "Theta burn is how much value the option loses per day just from time passing, even if the stock does not move. Higher means time is working against you faster.",
     zh: "Theta 损耗 = 仅仅因为时间流逝，期权每天损失的价值（即使股价不动）。数值越大，时间对你越不利。",
   },
-  ivCrush: {
-    en: "IV crush is the loss you take if implied volatility drops (common right after earnings). It estimates how much the option falls just from volatility cooling off.",
-    zh: "IV 崩塌 = 隐含波动率下降（常见于财报后）时你会承受的亏损。它估算仅因为波动率回落、期权会跌多少。",
+  ivChange: {
+    en: "Estimated IV change P&L keeps its direction: negative means contraction loss; positive means expansion gain.",
+    zh: "IV 变化损益保留方向：负数表示波动率回落损失，正数表示波动率扩张收益。",
   },
   ivRank: {
     en: "IV rank shows where today's implied volatility sits versus its own past year (0% = cheapest, 100% = most expensive). High IV rank means options are relatively pricey.",
@@ -121,6 +121,19 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
 
 export type GlossaryKey = keyof typeof GLOSSARY;
 
+export function infoTipPosition(
+  anchor: Pick<DOMRect, "left" | "right" | "top" | "bottom">,
+  width: number,
+  height: number,
+  viewportWidth: number,
+  viewportHeight: number,
+) {
+  return {
+    left: Math.max(8, Math.min((anchor.left + anchor.right - width) / 2, viewportWidth - width - 8)),
+    top: Math.max(8, Math.min(anchor.top >= height + 14 ? anchor.top - height - 6 : anchor.bottom + 6, viewportHeight - height - 8)),
+  };
+}
+
 export function InfoTip({
   term,
   locale = "en",
@@ -132,7 +145,52 @@ export function InfoTip({
 }) {
   const [open, setOpen] = useState(false);
   const id = useId();
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const tipRef = useRef<HTMLSpanElement>(null);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const entry = GLOSSARY[term];
+
+  const cancelClose = () => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = null;
+  };
+  const show = () => {
+    cancelClose();
+    setOpen(true);
+  };
+  const scheduleClose = () => {
+    cancelClose();
+    closeTimerRef.current = setTimeout(() => {
+      if (document.activeElement !== buttonRef.current) setOpen(false);
+    }, 120);
+  };
+
+  useLayoutEffect(() => {
+    const tip = tipRef.current;
+    const button = buttonRef.current;
+    if (!tip || !button) return;
+    if (!open) {
+      if (tip.matches(":popover-open")) tip.hidePopover();
+      return;
+    }
+    tip.showPopover();
+    const position = () => {
+      const anchor = button.getBoundingClientRect();
+      const bounds = tip.getBoundingClientRect();
+      const next = infoTipPosition(anchor, bounds.width, bounds.height, document.documentElement.clientWidth, window.innerHeight);
+      tip.style.left = `${next.left}px`;
+      tip.style.top = `${next.top}px`;
+    };
+    position();
+    window.addEventListener("resize", position);
+    window.addEventListener("scroll", position, true);
+    return () => {
+      window.removeEventListener("resize", position);
+      window.removeEventListener("scroll", position, true);
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    };
+  }, [open]);
+
   if (!entry) {
     return null;
   }
@@ -140,29 +198,35 @@ export function InfoTip({
   const label = locale === "zh" ? "查看说明" : "What is this?";
 
   return (
-    <span className={`relative inline-flex items-center ${className}`}>
+    <span
+      className={`inline-flex items-center ${className}`}
+      onMouseEnter={show}
+      onMouseLeave={scheduleClose}
+    >
       <button
         aria-describedby={open ? id : undefined}
         aria-label={label}
-        className="inline-flex cursor-help text-text-secondary transition-colors hover:text-info focus:text-info focus:outline-none"
+        className="inline-flex cursor-help items-center justify-center rounded p-0.5 text-text-secondary transition-colors hover:text-info focus-visible:outline focus-visible:outline-2 focus-visible:outline-info"
         onBlur={() => setOpen(false)}
-        onClick={() => setOpen((value) => !value)}
-        onFocus={() => setOpen(true)}
-        onMouseEnter={() => setOpen(true)}
-        onMouseLeave={() => setOpen(false)}
+        onClick={show}
+        onFocus={show}
+        ref={buttonRef}
         type="button"
       >
         <HelpCircle size={13} />
       </button>
-      {open ? (
         <span
-          className="absolute bottom-full left-1/2 z-50 mb-1 w-64 -translate-x-1/2 rounded-lg border border-border-subtle bg-bg-surface p-2 font-body-sm normal-case leading-relaxed text-text-primary shadow-lg"
+          className="fixed inset-auto m-0 max-h-[calc(100dvh-16px)] w-[min(18rem,calc(100vw-16px))] overflow-y-auto whitespace-normal rounded-lg border border-border-subtle bg-bg-surface p-3 text-left font-body-sm font-normal normal-case leading-relaxed tracking-normal text-text-primary shadow-lg"
           id={id}
+          onMouseEnter={cancelClose}
+          onMouseLeave={scheduleClose}
+          onToggle={(event) => { if (event.newState === "closed") setOpen(false); }}
+          popover="auto"
+          ref={tipRef}
           role="tooltip"
         >
           {text}
         </span>
-      ) : null}
     </span>
   );
 }

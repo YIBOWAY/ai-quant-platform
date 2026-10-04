@@ -1,8 +1,8 @@
 # Agent v0.2 Connector Daemon
 
-This user-level macOS LaunchAgent runs the production Agent v0.2 connector from
-the checkout that contains this runbook. The owner-only environment selects one
-of exactly two modes:
+This user-level macOS LaunchAgent runs the Agent v0.2 connector from the
+deployment checkout. The owner-only environment selects one of exactly two
+modes:
 
 - `reconcile_only` performs `LISTEN/NOTIFY` wakeups, periodic timeout scans, and
   expired-lease reconciliation. It never claims or dispatches a command and
@@ -21,40 +21,50 @@ of exactly two modes:
   liveness lease for its complete process lifetime;
 - every new or recovery dispatch re-evaluates the effective durable release
   gate immediately before network use;
+- nonterminal Run observation reads only the bounded status endpoint and returns
+  to the worker cycle; it does not open the live event stream. Terminal states
+  still require gap-free event replay and matching terminal evidence;
 - there is no default or configured fixed prompt;
 - it has no trading/order path and does not change the trading kill switch.
 
-The installed posture must set
-`QS_AGENT_V02_CONNECTOR_MODE=reconcile_only` explicitly. Never rely on a code
-default or remove the explicit mode from the live owner-only environment.
-For frozen compatibility, the wrapper's absent-env fallback remains `supervised_dispatch`;
-that legacy behavior is not the installed safety posture and must never be
-treated as a safe default.
-Reconcile-only intentionally does not acquire the supervised liveness
-generation, so it can never make local Web chat ready.
+The current single-owner `local_trust` stack sets
+`QS_AGENT_V02_CONNECTOR_MODE=supervised_dispatch` explicitly. This is what
+provides connector liveness for local Web chat; it does not make public write,
+release authority or live trading available. `reconcile_only` remains the
+explicit maintenance posture when dispatch must be disabled while timeout and
+lease reconciliation continue. It intentionally does not acquire a supervised
+liveness generation and therefore cannot make local Web chat ready.
+
+Use `QS_AGENT_V02_CONNECTOR_MODE=reconcile_only` for that maintenance posture.
+The absent-env fallback remains `supervised_dispatch` for frozen compatibility;
+never rely on it. Every installed owner-only environment must name its intended
+mode explicitly.
 
 ## Prerequisites
 
 [`agent-v0-2-local-stack.md`](agent-v0-2-local-stack.md) is the sole authority
-for migration 016–028 ordering, live/source distinction, backup, isolated
-replay, readiness, restart, candidate E2E, and pre-028 restore. This connector
-runbook does not declare any migration live.
+for live/source distinction, migration state, backup, isolated replay,
+readiness, restart and restore. This connector runbook does not declare any
+migration live.
 
-Do not select `supervised_dispatch` until that runbook has established all of
-the following for one exact operator window:
+Before selecting `supervised_dispatch`, that runbook must establish all of the
+following for the exact installed runtime:
 
 - clean committed Platform, HQA, and Hermes runtime identities;
-- migration 028 exact schema/runtime readiness, including canonical
-  `default` paper-account raw consistency and current paper-authority epoch;
+- the formally applied schema through migration 034, startup migration disabled,
+  and canonical `default` paper-account consistency with the current
+  paper-authority epoch;
 - provider-free `GET /api/safety/effective` reports effective paper safety;
 - HQA Keychain `probe` succeeds without creating a key;
-- one short-lived private candidate, or an exact accepted release, is active;
+- one explicit admission path is active: the current owner-only `local_trust`
+  session, a short-lived private candidate, or an exact accepted release;
 - Hermes exposes the managed Session and durable Run contract on loopback;
 - the restricted runtime login and all local mutation/owner/CSRF gates pass.
 
-An active local candidate may make local `chat_write_ready` true. It never makes
-`public_chat_write_ready`, `public_write_authorized`, or
-`release_authorized` true. Standing public posture remains OFF.
+The current `local_trust` admission or an active local candidate may make local
+`chat_write_ready` true. Neither makes `public_chat_write_ready`,
+`public_write_authorized`, or `release_authorized` true. Standing public posture
+remains OFF.
 
 The release gate distinguishes durable operator/drift facts from uncertainty.
 An operator-closed stamp/cutover, runtime identity mismatch, schema fingerprint
@@ -79,7 +89,8 @@ coordinates, not raw prompts:
 QS_DATABASE_ENABLED=true
 QS_DATABASE_URL=postgresql://quant_app_runtime:REDACTED@127.0.0.1:5432/quantplatform
 QS_DATABASE_AUTO_MIGRATE=false
-QS_AGENT_V02_CONNECTOR_MODE=reconcile_only
+QS_AGENT_V02_CONNECTOR_MODE=supervised_dispatch
+QS_PAPER_ACCOUNT_DB_MODE=canonical
 QS_HERMES_GATEWAY_ENABLED=true
 QS_HERMES_GATEWAY_BASE_URL=http://127.0.0.1:8642
 QS_HERMES_GATEWAY_API_KEY_FILE=/Users/you/.hermes/api-server.key
@@ -148,7 +159,14 @@ data/_runtime/logs/agent-v02-connector.launchd.err.log
 Cycle output is bounded NDJSON. It reports command counts, the managed Session
 provisioning outcome, and liveness generation state; it never logs a prompt or
 API key. In `reconcile_only`, `claimed_count`, `provider_call_count`, and
-`hermes_mutation_count` must remain zero.
+`hermes_mutation_count` must remain zero. In the current `supervised_dispatch`
+posture, inspect readiness and durable Run/event records rather than inferring
+success from process liveness alone.
+
+The Web activity card is a separate owner/workspace-bound GET. It reads a finite
+Run snapshot and returns only a generic stage, terminal flag, last timestamp and
+tool success/duration. It does not expose tool names, arguments, output, error
+text or reasoning, and it is not part of the connector claim/reconcile loop.
 
 ## Inspect and stop
 

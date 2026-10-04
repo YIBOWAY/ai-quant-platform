@@ -16,6 +16,9 @@ from quant_system.data.price_history import (
     HistoricalPriceSnapshot,
     read_historical_prices,
 )
+from quant_system.factors.market_risk import build_market_risk
+from quant_system.options.seller_score import latest_us_market_session
+from quant_system.options.vix_data import load_vix_history
 
 # Phase 1.5: preset baskets only. No user-defined persistence, no write paths.
 BASKETS: dict[str, dict[str, Any]] = {
@@ -110,12 +113,21 @@ def read_market_cross_section(
         adjustment="qfq",
         cache=active_cache,
     )
+    vix_error = False
+    try:
+        daily_vix, daily_vix3m = load_vix_history(settings.options_radar.vix_history_path)
+    except (OSError, ValueError, TypeError, KeyError):
+        daily_vix, daily_vix3m = None, None
+        vix_error = True
     return build_market_cross_section(
         snapshot,
         universe=universe,
         basket_id=basket_id,
         basket_label=basket_label,
         session_end=active_day,
+        daily_vix=daily_vix,
+        daily_vix3m=daily_vix3m,
+        vix_error=vix_error,
     )
 
 
@@ -126,11 +138,12 @@ def build_market_cross_section(
     basket_id: str | None,
     basket_label: dict[str, str] | None,
     session_end: date | None = None,
+    daily_vix: pd.Series | None = None,
+    daily_vix3m: pd.Series | None = None,
+    vix_error: bool = False,
 ) -> dict[str, Any]:
     _validate_snapshot(snapshot, universe)
-    closes_by_symbol = {
-        item["symbol"]: _series_frame(item) for item in snapshot.series
-    }
+    closes_by_symbol = {item["symbol"]: _series_frame(item) for item in snapshot.series}
     aligned, as_of = _align_to_shared_session(closes_by_symbol, session_end=session_end)
     ranked = sorted(
         universe,
@@ -160,6 +173,14 @@ def build_market_cross_section(
         "basket_label": basket_label,
         "methodology": dict(METHODOLOGY),
         "rows": rows,
+        "risk_observations": build_market_risk(
+            aligned,
+            expected_session=session_end or date.fromisoformat(as_of),
+            price_source=provenance,
+            daily_vix=daily_vix,
+            daily_vix3m=daily_vix3m,
+            vix_error=vix_error,
+        ),
     }
 
 
@@ -221,9 +242,7 @@ def _last_completed_us_session(now: datetime) -> date:
     candidate = local.date()
     if local.weekday() >= 5 or local.time() < _SESSION_CLOSE:
         candidate -= timedelta(days=1)
-    while candidate.weekday() >= 5:
-        candidate -= timedelta(days=1)
-    return candidate
+    return latest_us_market_session(candidate)
 
 
 def _validate_snapshot(snapshot: HistoricalPriceSnapshot, universe: tuple[str, ...]) -> None:

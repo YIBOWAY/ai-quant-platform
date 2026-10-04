@@ -5,6 +5,7 @@ import { useState, useTransition } from "react";
 import { TerminalToolbarButton, terminalInputCompactClass } from "@/components/ui/primitives";
 import type { UniverseDefinition } from "@/lib/api";
 import { localizePath, type Locale } from "@/lib/locale";
+import { localizedUniverseName } from "@/lib/catalogPresentation";
 
 const copy = {
   en: {
@@ -105,7 +106,7 @@ export function FactorLabControls({
             {universes.length ? (
               universes.map((u) => (
                 <option key={u.id} value={u.id}>
-                  {u.name}
+                  {localizedUniverseName(u, locale)}
                 </option>
               ))
             ) : (

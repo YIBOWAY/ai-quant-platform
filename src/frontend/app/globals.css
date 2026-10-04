@@ -11,16 +11,16 @@
  */
 @theme {
   /* ---- Canonical palette ---- */
-  --color-bg-base: #0c0f13;          /* graphite desk canvas */
-  --color-bg-sidebar: #10141a;       /* icon-rail / sidebar */
-  --color-bg-sidebar-muted: #181e28; /* sidebar hover / selected */
-  --color-bg-surface: #141922;       /* cards, tables, panels */
-  --color-bg-surface-muted: #1c2430; /* inputs, nested panels */
-  --color-border-subtle: #202733;    /* hairline borders */
-  --color-bg-overlay: #1c2430;       /* drawers, popovers */
+  --color-bg-base: #111315;
+  --color-bg-sidebar: #17191c;
+  --color-bg-sidebar-muted: #222529;
+  --color-bg-surface: #1b1e21;
+  --color-bg-surface-muted: #24282c;
+  --color-border-subtle: #303438;
+  --color-bg-overlay: #24282c;
 
   /* ---- Radii ---- */
-  --radius-card: 12px;
+  --radius-card: 8px;
   --radius-bubble: 16px;
   --radius-input: 14px;
 
@@ -33,9 +33,9 @@
   --spacing-dock-rail: 48px;
   --spacing-drawer: 380px;
 
-  --color-text-primary: #e2e8f0;
-  --color-text-secondary: #94a0b2;
-  --color-text-mono: #cbd5e1;
+  --color-text-primary: #eeede8;
+  --color-text-secondary: #a9adb2;
+  --color-text-mono: #d6d8da;
 
   --color-accent-success: #2fbf87;
   --color-success: #2fbf87;
@@ -43,34 +43,33 @@
   --color-warning: #e3b341;
   --color-danger: #f2555f;
   --color-info: #6cb2ff;
-  --color-border-strong: #2f3947;
+  --color-border-strong: #474d53;
 
   /* ---- Compat aliases (legacy class names -> canonical palette) ----
-     Kept so `bg-base`, `bg-surface`, `bg-surface-muted`, `text-primary`,
+     Kept so `bg-surface`, `bg-surface-muted`, `text-primary`,
      `text-on-primary`, `bg-surface-container-low`, `text-data-mono` used
      across older components resolve to the SAME palette instead of the
      removed Material-3 greens (or silently rendering nothing). Prefer the
      canonical names in new code. */
-  --color-base: #0c0f13;
-  --color-background: #0c0f13;
-  --color-sidebar: #10141a;
-  --color-sidebar-muted: #181e28;
-  --color-surface: #141922;
-  --color-surface-dim: #0c0f13;
-  --color-surface-bright: #1c2430;
-  --color-surface-muted: #1c2430;
-  --color-surface-container-lowest: #0c0f13;
-  --color-surface-container-low: #141922;
-  --color-surface-container: #181e28;
-  --color-surface-container-high: #1c2430;
-  --color-surface-container-highest: #2f3947;
-  --color-on-surface: #e2e8f0;
-  --color-on-background: #e2e8f0;
-  --color-outline: #202733;
-  --color-outline-variant: #181e28;
-  --color-primary: #6cb2ff;
+  --color-background: var(--color-bg-base);
+  --color-sidebar: var(--color-bg-sidebar);
+  --color-sidebar-muted: var(--color-bg-sidebar-muted);
+  --color-surface: var(--color-bg-surface);
+  --color-surface-dim: var(--color-bg-base);
+  --color-surface-bright: var(--color-bg-surface-muted);
+  --color-surface-muted: var(--color-bg-surface-muted);
+  --color-surface-container-lowest: var(--color-bg-base);
+  --color-surface-container-low: var(--color-bg-surface);
+  --color-surface-container: var(--color-bg-sidebar-muted);
+  --color-surface-container-high: var(--color-bg-surface-muted);
+  --color-surface-container-highest: var(--color-border-strong);
+  --color-on-surface: var(--color-text-primary);
+  --color-on-background: var(--color-text-primary);
+  --color-outline: var(--color-border-subtle);
+  --color-outline-variant: var(--color-bg-sidebar-muted);
+  --color-primary: #d6b37c;
   --color-on-primary: #0c0f13;
-  --color-secondary: #9da4ff;
+  --color-secondary: #d6b37c;
   --color-error: #f2555f;
   --color-data-mono: #cbd5e1;
 
@@ -81,17 +80,17 @@
   --color-ink: #e2e8f0;
   --color-ink-secondary: #94a0b2;
   --color-editorial-rule: #2f3947;
-  --color-editorial-accent: #6cb2ff;
+  --color-editorial-accent: #d6b37c;
   --color-editorial-up: #2fbf87;
   --color-editorial-down: #f2555f;
-  --color-hermes: #9da4ff;
-  --color-hermes-strong: #6cb2ff;
-  --color-hermes-glow: rgba(157, 164, 255, 0.4);
+  --color-hermes: #d6b37c;
+  --color-hermes-strong: #e3c493;
+  --color-hermes-glow: rgba(214, 179, 124, 0.15);
   --color-hermes-attention: #e3b341;
-  --color-hermes-canvas: #0c0f13;
-  --color-stream-bg: #0c0f13;
-  --color-stream-surface: #141922;
-  --color-stream-surface-2: #1c2430;
+  --color-hermes-canvas: var(--color-bg-base);
+  --color-stream-bg: var(--color-bg-base);
+  --color-stream-surface: var(--color-bg-surface);
+  --color-stream-surface-2: var(--color-bg-surface-muted);
   --spacing-rail-width: 208px;
   --spacing-right-panel: 340px;
   --spacing-stream-max: 720px;
@@ -117,6 +116,46 @@
   --font-headline-lg: var(--font-sans, 'Inter'), sans-serif;
   --font-headline-sm: var(--font-sans, 'Inter'), sans-serif;
   --font-editorial-serif: var(--font-serif), var(--font-serif-sc), Georgia, 'Songti SC', serif;
+
+  /* ---- Motion language (promoted from Hermes desk 120/220ms contract) ----
+     Use for state continuity only: panel reveal, opacity holds while refetching,
+     pressed feedback. Never animate P&L, prices, risk, or order truth values. */
+  --duration-motion-micro: 120ms;
+  --duration-motion-short: 220ms;
+  --duration-motion-medium: 420ms;
+  --ease-motion-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-motion-in: cubic-bezier(0.7, 0, 0.84, 0);
+}
+
+/* Continuity helpers — opacity/transform only (no width/height/layout anim). */
+.motion-panel-enter {
+  animation: motion-panel-enter var(--duration-motion-short) var(--ease-motion-out) both;
+}
+.motion-data-hold {
+  transition-property: opacity;
+  transition-duration: var(--duration-motion-micro);
+  transition-timing-function: var(--ease-motion-out);
+}
+.motion-data-hold[data-fetching="true"] {
+  opacity: 0.72;
+}
+@keyframes motion-panel-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.motion-pressable {
+  transition-property: color, background-color, border-color, transform, opacity;
+  transition-duration: var(--duration-motion-micro);
+  transition-timing-function: var(--ease-motion-out);
+}
+.motion-pressable:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
 html {
@@ -126,6 +165,7 @@ html {
 
 body {
   @apply bg-bg-base text-text-primary font-body-sm;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Native select options inherit the dark surface instead of UA white.
@@ -159,8 +199,8 @@ select option {
   font-weight: 400;
 }
 .font-headline-xl {
-  font-size: 24px;
-  line-height: 32px;
+  font-size: 30px;
+  line-height: 38px;
   letter-spacing: -0.02em;
   font-weight: 600;
 }

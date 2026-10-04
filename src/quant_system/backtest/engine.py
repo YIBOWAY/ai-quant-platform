@@ -40,12 +40,18 @@ class BacktestEngine:
         attribution_records: list[dict[str, object]] = []
         prev_close: dict[str, float] = {}
         last_rebalance_ts: pd.Timestamp | None = None
+        last_timestamp = frame["timestamp"].max()
 
         for timestamp, bars in frame.groupby("timestamp", sort=True):
             open_prices = dict(zip(bars["symbol"], bars["open"], strict=True))
             close_prices = dict(zip(bars["symbol"], bars["close"], strict=True))
-            # Quantities held coming into this bar (before any fills) earn the
-            # close-to-close move; this is what attribution credits per name.
+            mark_prices = (
+                open_prices
+                if timestamp == last_timestamp and self.config.terminal_valuation == "open"
+                else close_prices
+            )
+            # Incoming quantities earn the move to this mark (normally close;
+            # optionally the final open), consistently with terminal NAV.
             quantities_into_bar = dict(portfolio.positions)
             targets = strategy.target_weights(timestamp)
             orders: list[Order] = []
@@ -61,8 +67,8 @@ class BacktestEngine:
                 last_rebalance_ts = pd.Timestamp(timestamp)
 
             for symbol, quantity in quantities_into_bar.items():
-                if symbol in prev_close and symbol in close_prices:
-                    contribution = quantity * (float(close_prices[symbol]) - prev_close[symbol])
+                if symbol in prev_close and symbol in mark_prices:
+                    contribution = quantity * (float(mark_prices[symbol]) - prev_close[symbol])
                     attribution_records.append(
                         {
                             "timestamp": timestamp,
@@ -73,11 +79,9 @@ class BacktestEngine:
 
             order_records.extend(self._order_records(orders))
             fill_records.extend(self._fill_records(fills))
-            equity_records.append(self._equity_record(timestamp, portfolio, close_prices, fills))
-            position_records.extend(
-                self._position_records(timestamp, portfolio, close_prices)
-            )
-            for symbol, price in close_prices.items():
+            equity_records.append(self._equity_record(timestamp, portfolio, mark_prices, fills))
+            position_records.extend(self._position_records(timestamp, portfolio, mark_prices))
+            for symbol, price in mark_prices.items():
                 prev_close[symbol] = float(price)
 
         equity_curve = pd.DataFrame(

@@ -260,7 +260,10 @@ def test_paper_strategies_execute_pending_command(tmp_path, monkeypatch) -> None
     assert plan.execution_id in result.output
     reloaded_account = account_storage.load()
     assert reloaded_account is not None
-    assert reloaded_account.cash == 75_000.0
+    # R3 parity: buy 250 @100 slips to 100.05 plus 1bp commission
+    assert reloaded_account.cash == pytest.approx(
+        100_000.0 - 250.0 * 100.05 * (1 + 1.0 / 10_000)
+    )
     assert reloaded_account.positions["AAPL"].quantity == 250.0
     assert sleeve_storage.load_executions(sleeve.sleeve_id)[0].status == "filled"
 

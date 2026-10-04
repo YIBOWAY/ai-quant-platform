@@ -4,10 +4,11 @@ import math
 from typing import Literal
 
 import pandas as pd
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from quant_system.options.buy_side_metrics import score_buy_side_contract
 from quant_system.options.buy_side_scenarios import (
+    ApproximationReliability,
     BuySideScenarioLabInput,
     BuySideScenarioLabSummary,
     BuySideUserScenarioPnL,
@@ -16,7 +17,9 @@ from quant_system.options.buy_side_scenarios import (
 from quant_system.options.buy_side_strategy import (
     BuySideStrategyRequest,
     generate_buy_side_candidates,
+    resolve_atm_straddle_mids,
 )
+from quant_system.options.iv_history import IV_MEASURE_ATM30_STRADDLE_V1
 from quant_system.options.market_regime import VixRegimeSnapshot
 from quant_system.options.models import (
     BuySideEventRisk,
@@ -54,15 +57,14 @@ class BuySideDecisionRequest(BaseModel):
     avoid_high_iv: bool = False
     volatility_view: BuySideVolatilityView = "auto"
     event_risk: BuySideEventRisk = "none"
-    expected_iv_change_vol_points: float | None = None
+    expected_iv_change_vol_points: float | None = Field(default=None, ge=-100, le=100)
     preferred_dte_range: tuple[int, int] | None = None
     iv_rank: float | None = Field(default=None, ge=0, le=100)
+    iv_measure: Literal["atm30_straddle_iv_v1"] = IV_MEASURE_ATM30_STRADDLE_V1
     historical_volatility: float | None = Field(default=None, ge=0)
     as_of_date: str | None = None
     user_scenarios: list[BuySideUserScenarioPnL] = Field(default_factory=list)
-    scenario_spot_changes: list[float] = Field(
-        default_factory=lambda: [-10.0, 0.0, 10.0]
-    )
+    scenario_spot_changes: list[float] = Field(default_factory=lambda: [-10.0, 0.0, 10.0])
     scenario_iv_changes: list[float] = Field(default_factory=lambda: [-5.0, 0.0, 5.0])
     scenario_days_passed: list[int] = Field(default_factory=lambda: [0, 7])
 
@@ -77,6 +79,8 @@ class BuySideDecisionRequest(BaseModel):
 class BuySideAssistantRequest(BaseModel):
     """Public API request contract for the buy-side assistant."""
 
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
     ticker: str
     view_type: BuySideViewType
     target_price: float = Field(gt=0)
@@ -87,29 +91,78 @@ class BuySideAssistantRequest(BaseModel):
     avoid_high_iv: bool = False
     volatility_view: BuySideVolatilityView = "auto"
     event_risk: BuySideEventRisk = "none"
-    expected_iv_change_vol_points: float | None = None
+    expected_iv_change_vol_points: float | None = Field(default=None, ge=-100, le=100)
     preferred_dte_range: tuple[int, int] | None = None
-    iv_rank: float | None = Field(default=None, ge=0, le=100)
-    historical_volatility: float | None = Field(default=None, ge=0)
-    as_of_date: str | None = None
-    spot_price: float | None = Field(default=None, gt=0)
-    user_scenarios: list[BuySideUserScenarioPnL] = Field(default_factory=list)
-    scenario_spot_changes: list[float] = Field(
-        default_factory=lambda: [-10.0, 0.0, 10.0]
+    user_scenarios: list[BuySideUserScenarioPnL] = Field(
+        default_factory=list,
+        max_length=20,
     )
-    scenario_iv_changes: list[float] = Field(default_factory=lambda: [-5.0, 0.0, 5.0])
-    scenario_days_passed: list[int] = Field(default_factory=lambda: [0, 7])
+    scenario_spot_changes: list[float] = Field(
+        default_factory=lambda: [-10.0, 0.0, 10.0],
+        min_length=1,
+        max_length=25,
+    )
+    scenario_iv_changes: list[float] = Field(
+        default_factory=lambda: [-5.0, 0.0, 5.0],
+        min_length=1,
+        max_length=25,
+    )
+    scenario_days_passed: list[int] = Field(
+        default_factory=lambda: [0, 7],
+        min_length=1,
+        max_length=25,
+    )
     provider: str = "futu"
     max_recommendations: int = Field(default=10, ge=1, le=50)
 
-    @field_validator("target_date", "as_of_date")
+    @field_validator("target_date")
     @classmethod
-    def _validate_dates(cls, value: str | None) -> str | None:
-        if value is not None:
-            pd.Timestamp(value)
+    def _validate_dates(cls, value: str) -> str:
+        pd.Timestamp(value)
         return value
 
-    def to_decision_request(self, *, spot_price: float) -> BuySideDecisionRequest:
+    @field_validator("scenario_days_passed")
+    @classmethod
+    def _validate_scenario_days(cls, values: list[int]) -> list[int]:
+        if any(value < 0 for value in values):
+            raise ValueError("scenario days must be non-negative")
+        return values
+
+    @model_validator(mode="after")
+    def _validate_scenario_contract(self) -> BuySideAssistantRequest:
+        if self.preferred_dte_range is not None:
+            minimum_dte, maximum_dte = self.preferred_dte_range
+            if minimum_dte <= 0 or maximum_dte < minimum_dte or maximum_dte > 760:
+                raise ValueError("preferred DTE range must satisfy 0 < min <= max <= 760")
+        if any(
+            not math.isfinite(value) or value < -100 or value > 1000
+            for value in self.scenario_spot_changes
+        ):
+            raise ValueError("scenario spot changes must be between -100 and 1000")
+        if any(
+            not math.isfinite(value) or value < -100 or value > 100
+            for value in self.scenario_iv_changes
+        ):
+            raise ValueError("scenario IV changes must be between -100 and 100")
+        if any(value > 760 for value in self.scenario_days_passed):
+            raise ValueError("scenario days must not exceed 760")
+        if self.user_scenarios and not math.isclose(
+            sum(item.probability for item in self.user_scenarios),
+            1.0,
+            abs_tol=1e-9,
+        ):
+            raise ValueError("user scenario probabilities must sum to 1")
+        return self
+
+    def to_decision_request(
+        self,
+        *,
+        spot_price: float,
+        iv_rank: float,
+        historical_volatility: float,
+        as_of_date: str,
+        iv_measure: str,
+    ) -> BuySideDecisionRequest:
         return BuySideDecisionRequest(
             ticker=self.ticker,
             spot_price=spot_price,
@@ -124,9 +177,10 @@ class BuySideAssistantRequest(BaseModel):
             event_risk=self.event_risk,
             expected_iv_change_vol_points=self.expected_iv_change_vol_points,
             preferred_dte_range=self.preferred_dte_range,
-            iv_rank=self.iv_rank,
-            historical_volatility=self.historical_volatility,
-            as_of_date=self.as_of_date,
+            iv_rank=iv_rank,
+            iv_measure=iv_measure,
+            historical_volatility=historical_volatility,
+            as_of_date=as_of_date,
             user_scenarios=self.user_scenarios,
             scenario_spot_changes=self.scenario_spot_changes,
             scenario_iv_changes=self.scenario_iv_changes,
@@ -148,8 +202,10 @@ class BuySideRecommendation(BaseModel):
     break_even: float | None = None
     required_move_pct: float | None = None
     theta_burn_7d_pct: float | None = None
-    estimated_iv_crush_loss_pct: float | None = None
+    estimated_iv_change_pct: float | None = None
     liquidity_score: float | None = None
+    theta_safety_score: float | None = None
+    greek_efficiency_score: float | None = None
     risk_reward: float | None = None
     expected_move_pct: float | None = None
     target_vs_expected_move_ratio: float | None = None
@@ -161,6 +217,7 @@ class BuySideRecommendation(BaseModel):
     market_regime_penalty: float = 0.0
     warnings: list[str] = Field(default_factory=list)
     scenario_summary: BuySideScenarioLabSummary | None = None
+    scenario_approximation_reliability: ApproximationReliability | None = None
     scenario_ev: BuySideScenarioEV | None = None
     demotion_badge: str | None = None
     demotion_reason: str | None = None
@@ -211,14 +268,19 @@ def run_buy_side_decision(
         market_regime=market_regime,
         max_candidates=max(max_recommendations * 4, 40),
     )
+    atm_mids_by_expiry = resolve_atm_straddle_mids(
+        option_chain,
+        spot_price=request.spot_price,
+    )
     recommendations = [
-        _recommendation_from_candidate(candidate, request)
+        _recommendation_from_candidate(candidate, request, atm_mids_by_expiry)
         for candidate in generated.candidates
     ]
     ranked = sorted(
         recommendations,
         key=lambda item: (
             item.score,
+            item.risk_reward if item.risk_reward is not None else 0.0,
             item.buyer_friendliness_score or 0.0,
             -(item.max_loss or math.inf),
             item.strategy_type,
@@ -244,13 +306,21 @@ def run_buy_side_decision(
 def _recommendation_from_candidate(
     candidate: BuySideStrategyCandidate,
     request: BuySideDecisionRequest,
+    atm_mids_by_expiry: dict[str, tuple[float, float]],
 ) -> BuySideRecommendation:
+    atm_call_mid, atm_put_mid = atm_mids_by_expiry[candidate.legs[0].expiry]
     metrics = score_buy_side_contract(
         _primary_long_leg(candidate),
+        atm_call_mid=atm_call_mid,
+        atm_put_mid=atm_put_mid,
         user_target_move_pct=request.target_price / request.spot_price - 1,
         iv_rank=request.iv_rank,
         historical_volatility=request.historical_volatility,
-        iv_crush_vol_points=request.expected_iv_change_vol_points or -5.0,
+        iv_crush_vol_points=(
+            -5.0
+            if request.expected_iv_change_vol_points is None
+            else request.expected_iv_change_vol_points
+        ),
         event_risk=request.event_risk != "none",
         now=None,
     )
@@ -302,27 +372,30 @@ def _recommendation_from_candidate(
         break_even=candidate.breakeven,
         required_move_pct=required_move_pct,
         theta_burn_7d_pct=metrics.theta_burn_7d_pct,
-        estimated_iv_crush_loss_pct=metrics.estimated_iv_crush_loss_pct,
+        estimated_iv_change_pct=metrics.estimated_iv_change_pct,
         liquidity_score=metrics.liquidity_score,
+        theta_safety_score=metrics.theta_safety_score,
+        greek_efficiency_score=metrics.greek_efficiency_score,
         risk_reward=risk_reward,
         expected_move_pct=candidate.expected_move_pct or metrics.expected_move_pct,
         target_vs_expected_move_ratio=(
-            candidate.target_vs_expected_move_ratio
-            or metrics.target_vs_expected_move_ratio
+            candidate.target_vs_expected_move_ratio or metrics.target_vs_expected_move_ratio
         ),
         buyer_friendliness_score=(
-            candidate.score.buyer_friendliness_score
-            or metrics.buyer_friendliness_score
+            candidate.score.buyer_friendliness_score or metrics.buyer_friendliness_score
         ),
-        iv_crash_risk_score=(
-            candidate.score.iv_crash_risk_score or metrics.iv_crash_risk_score
-        ),
+        iv_crash_risk_score=(candidate.score.iv_crash_risk_score or metrics.iv_crash_risk_score),
         risk_attribution=risk_attribution,
         primary_risk_source=primary_risk,  # type: ignore[arg-type]
         market_regime=candidate.market_regime,
         market_regime_penalty=candidate.market_regime_penalty,
         warnings=warnings,
         scenario_summary=scenario.summary,
+        scenario_approximation_reliability=max(
+            (item.approximation_reliability for item in scenario.results),
+            key={"high": 0, "medium": 1, "low": 2}.__getitem__,
+            default=None,
+        ),
         scenario_ev=scenario.scenario_ev,
         demotion_badge="demoted_by_decision_tree" if decision["demoted"] else None,
         demotion_reason=decision["demotion_reason"],
@@ -406,8 +479,7 @@ def _decision_tree(
             prefer(16.0, "long-term conservative thesis favors lower net premium and defined risk")
         elif strategy in {"long_call", "bull_call_spread"}:
             demote(
-                "shorter-dated structure is less aligned with "
-                "long-term conservative thesis",
+                "shorter-dated structure is less aligned with long-term conservative thesis",
                 -12.0,
             )
     elif request.view_type == "short_term_speculative_bullish":
@@ -496,6 +568,8 @@ def _key_reasons(candidate, metrics, decision) -> list[str]:
         reasons.append(f"break-even is approximately {candidate.breakeven:.2f}")
     if metrics.liquidity_score is not None:
         reasons.append(f"liquidity score is {metrics.liquidity_score:.1f}/100")
+    if metrics.iv_hv_ratio is not None:
+        reasons.append(f"IV/HV ratio is {metrics.iv_hv_ratio:.2f}")
     return reasons[:5]
 
 
@@ -504,11 +578,16 @@ def _key_risks(candidate, metrics, decision, primary_risk: str) -> list[str]:
         f"primary modeled risk source is {primary_risk}",
         "hidden costs include theta decay, IV premium, IV crush, and bid-ask spread",
     ]
+    if candidate.strategy_type in {"leaps_call", "leaps_call_spread"}:
+        dte = min(leg.dte for leg in candidate.legs)
+        if dte < 90:
+            risks.append("remaining DTE is under 90 days; a roll-or-close review is required")
     if metrics.theta_burn_7d_pct is not None:
         risks.append(f"7-day theta burn is about {metrics.theta_burn_7d_pct:.1%} of premium")
-    if metrics.estimated_iv_crush_loss_pct is not None:
+    if metrics.estimated_iv_change_pct is not None and metrics.estimated_iv_change_pct < 0:
         risks.append(
-            f"estimated IV crush loss is about {metrics.estimated_iv_crush_loss_pct:.1%} of premium"
+            "estimated IV contraction loss is about "
+            f"{abs(metrics.estimated_iv_change_pct):.1%} of premium"
         )
     if decision["demoted"]:
         risks.append(str(decision["demotion_reason"]))

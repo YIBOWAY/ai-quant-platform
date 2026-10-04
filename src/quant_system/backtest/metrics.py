@@ -11,6 +11,8 @@ class PerformanceMetrics(BaseModel):
     annualized_return: float
     volatility: float
     sharpe: float
+    sortino: float | None = None
+    calmar: float | None = None
     max_drawdown: float
     turnover: float
     # Per-symbol contribution to the run's P&L (mark-to-market on held quantity).
@@ -60,6 +62,8 @@ def calculate_performance_metrics(
             annualized_return=0.0,
             volatility=0.0,
             sharpe=0.0,
+            sortino=None,
+            calmar=None,
             max_drawdown=0.0,
             turnover=0.0,
             attribution=attribution,
@@ -76,6 +80,8 @@ def calculate_performance_metrics(
     total_return = last_equity / denominator - 1 if denominator else 0.0
 
     returns = equity.pct_change(fill_method=None).dropna()
+    if initial_cash > 0:
+        returns = pd.concat([pd.Series([first_equity / initial_cash - 1]), returns])
     periods = max(len(returns), 1)
     annualized_return = (
         (last_equity / denominator) ** (annualization_factor / periods) - 1
@@ -91,6 +97,8 @@ def calculate_performance_metrics(
         else 0.0
     )
     running_max = equity.cummax()
+    if initial_cash > 0:
+        running_max = running_max.clip(lower=initial_cash)
     drawdowns = equity / running_max - 1
     max_drawdown = abs(float(drawdowns.min())) if len(drawdowns) else 0.0
 
@@ -101,11 +109,25 @@ def calculate_performance_metrics(
         )
     turnover = gross_traded / initial_cash if initial_cash else 0.0
 
+    sortino = None
+    if len(returns) > 1:
+        downside = [r for r in returns if r < 0]
+        if downside:
+            downside_var = sum(r * r for r in downside) / len(returns)
+            downside_dev = downside_var ** 0.5
+            if downside_dev > 0:
+                mean_return = float(returns.mean())
+                sortino = mean_return / downside_dev * (annualization_factor ** 0.5)
+    calmar = None
+    if max_drawdown > 0:
+        calmar = annualized_return / max_drawdown
     return PerformanceMetrics(
         total_return=float(total_return),
         annualized_return=float(annualized_return),
         volatility=float(volatility),
         sharpe=float(sharpe),
+        sortino=None if sortino is None else float(sortino),
+        calmar=None if calmar is None else float(calmar),
         max_drawdown=float(max_drawdown),
         turnover=float(turnover),
         attribution=attribution,

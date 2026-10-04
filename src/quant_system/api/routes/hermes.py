@@ -384,10 +384,20 @@ def hermes_session_detail(
             },
             "warnings": _warning(exc),
         }
+    fork_context = external_session_fork_context(session)
+    # This must match NativeHermesRunPort.fork_session: official HTTP can only
+    # clone the full transcript and end its source, not our immutable cursor
+    # fork. Session provenance alone does not establish execution capability.
+    if fork_context["eligible"] and settings.hermes_gateway.api_contract == "official-http-v1":
+        fork_context = {
+            **fork_context,
+            "eligible": False,
+            "reason_code": "native_exact_fork_unavailable",
+        }
     return {
         "read_status": "available",
         "session": session,
-        "fork_context": external_session_fork_context(session),
+        "fork_context": fork_context,
         "warnings": [],
     }
 

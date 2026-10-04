@@ -43,7 +43,7 @@ grep onClick|onChange  → 0 命中（前端工程范围内）
 
 > Status 缩写：DEAD=控件无 handler 一定不响应；NAV=链接型有效；READ=只展示 API 真实数据；FAKE=展示硬编码内容；BROKEN=点了会 404 / 报错。
 
-### 2.1 Global / Layout（[layout.tsx](../../src/frontend/app/layout.tsx) / [Sidebar.tsx](../../src/frontend/components/Sidebar.tsx) / [TopBar.tsx](../../src/frontend/components/TopBar.tsx) / [SafetyStrip.tsx](../../src/frontend/components/SafetyStrip.tsx)）
+### 2.1 Global / Layout（[layout.tsx](../../src/frontend/app/layout.tsx) / [Sidebar.tsx](../../src/frontend/components/Sidebar.tsx) / [TopBar.tsx](../../src/frontend/components/TopBar.tsx) / `src/frontend/components/SafetyStrip.tsx`（历史路径，已退役））
 
 | Page | UI Element | Current Status | Expected | Actual | Frontend Code | Backend API | Data Source | Issue | Priority | Fix Plan |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -66,7 +66,7 @@ grep onClick|onChange  → 0 命中（前端工程范围内）
 | Right Sidebar — Kill Switch toggle | DEAD/READ | 切换 paper trading kill switch | UI 是 disabled toggle，文案显示 health.safety.kill_switch 真值 | /api/health 只读 | OK（设计就是 read-only）| 无问题，但文案 cursor-not-allowed 应加 tooltip | P2 | 加 tooltip "Read-only by design" |
 | Right Sidebar — CPU / RAM 占用条 | FAKE | 真实利用率 | 42% / 65% 硬编码 | 无后端 | mock | 误导 | P1 | 删除或接 `/api/health/system` (新 endpoint) |
 
-### 2.3 Data Explorer（[/data-explorer](../../src/frontend/app/data-explorer/page.tsx)）
+### 2.3 Data Explorer（`src/frontend/app/data-explorer/page.tsx`，历史路径与页面均已退役）
 
 | UI Element | Status | Expected | Actual | Backend | Source | Issue | Pri | Fix |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -113,7 +113,7 @@ grep onClick|onChange  → 0 命中（前端工程范围内）
 
 | 现象 | 文件 / 行 | 根因 | 修复 |
 | --- | --- | --- | --- |
-| Universe `<select>` 展开后选项几乎看不清（白底浅灰） | [data-explorer/page.tsx](../../src/frontend/app/data-explorer/page.tsx) L19 | 浏览器原生 `<option>` 不继承 Tailwind 暗色 token；只有第一个 option 是高亮蓝色（OS 默认 selected），其余是白底+灰字 | 给 `<option>` 显式 `style={{background:'#0E1511',color:'#F1F5F9'}}` 或换 shadcn `<Select>` |
+| Universe `<select>` 展开后选项几乎看不清（白底浅灰） | `src/frontend/app/data-explorer/page.tsx` L19（历史路径，已退役） | 浏览器原生 `<option>` 不继承 Tailwind 暗色 token；只有第一个 option 是高亮蓝色（OS 默认 selected），其余是白底+灰字 | 给 `<option>` 显式 `style={{background:'#0E1511',color:'#F1F5F9'}}` 或换 shadcn `<Select>` |
 | 同问题影响 Resolution / Date Range 触发的原生 picker 在 Windows 下浅色 | 多处 | 同上 | 同上 |
 | 输入框 focus 时 `focus:ring-0` 反而失去可见性 | 多处 | 主动取消 ring | 改 `focus:ring-1 focus:ring-info` |
 | disabled 状态没有特殊样式 | 多处 | 没有 `disabled:` 变体 | 加 `disabled:opacity-50 disabled:cursor-not-allowed` |

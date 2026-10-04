@@ -64,8 +64,7 @@ class HermesRunCliSettings:
         if not 0.1 <= float(self.timeout_seconds) <= 600.0:
             raise ValueError("Hermes durable Run timeout must be in [0.1, 600]")
         if self.api_key is not None and (
-            not self.api_key
-            or any(char in self.api_key for char in ("\r", "\n", "\x00"))
+            not self.api_key or any(char in self.api_key for char in ("\r", "\n", "\x00"))
         ):
             raise ValueError("Hermes API key is invalid")
 
@@ -93,9 +92,7 @@ class SubprocessHermesRunLifecyclePort:
     """Durable submit/recover and observation through ``hermes_run_cli``."""
 
     cli_settings: HermesRunCliSettings
-    input_resolver: Callable[
-        [HermesDispatchRequest], str | ResolvedIntentPayload
-    ]
+    input_resolver: Callable[[HermesDispatchRequest], str | ResolvedIntentPayload]
     runner: Callable[..., subprocess.CompletedProcess[bytes]] | None = None
 
     def require_compatible_capabilities(
@@ -167,19 +164,6 @@ class SubprocessHermesRunLifecyclePort:
                 "session_id": session_id,
                 "metadata": metadata,
             }
-            if resolved.kind == "paper_intake":
-                if (
-                    resolved.execution_contract is None
-                    or resolved.execution_contract_digest is None
-                    or resolved.research_claim_digest is None
-                    or resolved.execution_instructions is None
-                ):
-                    raise HermesRunPortError(
-                        "payload_input_invalid",
-                        "paper intake dispatch contract is incomplete",
-                        retryable=False,
-                    )
-                request_body["instructions"] = resolved.execution_instructions
             document = self._invoke(
                 "submit",
                 {
@@ -197,7 +181,8 @@ class SubprocessHermesRunLifecyclePort:
             return HermesDispatchResult(
                 kind=kind,
                 error_code=exc.code,
-                network_attempted=exc.code not in {
+                network_attempted=exc.code
+                not in {
                     "durable_unavailable",
                     "run_cli_unavailable",
                     "payload_input_invalid",
@@ -206,9 +191,7 @@ class SubprocessHermesRunLifecyclePort:
         except IntentPayloadPortError as exc:
             return HermesDispatchResult(
                 kind="unavailable" if exc.retryable else "rejected",
-                error_code=(
-                    exc.code if _is_identifier(exc.code) else "payload_resolve_failed"
-                ),
+                error_code=(exc.code if _is_identifier(exc.code) else "payload_resolve_failed"),
                 network_attempted=False,
             )
         except Exception:  # noqa: BLE001 - resolver details may contain prompt data
@@ -258,9 +241,7 @@ class SubprocessHermesRunLifecyclePort:
         hermes_run_id: str,
         after_cursor: int = 0,
     ) -> HermesRunObservation:
-        expected_conversation_session_id = (
-            conversation_hermes_session_id or hermes_session_id
-        )
+        expected_conversation_session_id = conversation_hermes_session_id or hermes_session_id
         if (
             not _is_identifier(expected_conversation_session_id)
             or not _is_identifier(hermes_session_id)
@@ -274,26 +255,18 @@ class SubprocessHermesRunLifecyclePort:
                 retryable=False,
             )
         status_document = self._invoke("status", {"run_id": hermes_run_id})
-        events_document = self._invoke(
-            "events",
-            {"run_id": hermes_run_id, "since_seq": after_cursor},
-        )
         if (
             status_document.get("run_id") != hermes_run_id
             or status_document.get("session_id") != hermes_session_id
-            or status_document.get("resolved_session_id", hermes_session_id)
-            != hermes_session_id
+            or status_document.get("resolved_session_id", hermes_session_id) != hermes_session_id
             or status_document.get(
                 "conversation_session_id",
                 hermes_session_id,
             )
             != expected_conversation_session_id
-            or events_document.get("run_id") != hermes_run_id
         ):
             return _unknown_observation(
-                conversation_hermes_session_id=(
-                    expected_conversation_session_id
-                ),
+                conversation_hermes_session_id=(expected_conversation_session_id),
                 hermes_session_id=hermes_session_id,
                 hermes_run_id=hermes_run_id,
                 after_cursor=after_cursor,
@@ -302,6 +275,36 @@ class SubprocessHermesRunLifecyclePort:
 
         raw_status = status_document.get("status")
         status = _map_run_status(raw_status)
+        if status in {"accepted", "running"}:
+            return HermesRunObservation(
+                status=status,
+                conversation_hermes_session_id=expected_conversation_session_id,
+                hermes_session_id=hermes_session_id,
+                hermes_run_id=hermes_run_id,
+                next_cursor=after_cursor,
+                replay_complete=False,
+            )
+        if status == "outcome_unknown":
+            return _unknown_observation(
+                conversation_hermes_session_id=expected_conversation_session_id,
+                hermes_session_id=hermes_session_id,
+                hermes_run_id=hermes_run_id,
+                after_cursor=after_cursor,
+                error_code="run_status_unknown",
+            )
+
+        events_document = self._invoke(
+            "events",
+            {"run_id": hermes_run_id, "since_seq": after_cursor},
+        )
+        if events_document.get("run_id") != hermes_run_id:
+            return _unknown_observation(
+                conversation_hermes_session_id=expected_conversation_session_id,
+                hermes_session_id=hermes_session_id,
+                hermes_run_id=hermes_run_id,
+                after_cursor=after_cursor,
+                error_code="run_identity_mismatch",
+            )
         rows = events_document.get("events")
         next_cursor = events_document.get("next_seq")
         replay_complete, normalized_events = _validate_event_replay(
@@ -317,14 +320,11 @@ class SubprocessHermesRunLifecyclePort:
         }
         if status in terminal_events:
             replay_complete = replay_complete and any(
-                event.get("event_type") == terminal_events[status]
-                for event in normalized_events
+                event.get("event_type") == terminal_events[status] for event in normalized_events
             )
         if status == "outcome_unknown" or not replay_complete:
             return _unknown_observation(
-                conversation_hermes_session_id=(
-                    expected_conversation_session_id
-                ),
+                conversation_hermes_session_id=(expected_conversation_session_id),
                 hermes_session_id=hermes_session_id,
                 hermes_run_id=hermes_run_id,
                 after_cursor=(
@@ -333,9 +333,7 @@ class SubprocessHermesRunLifecyclePort:
                     else after_cursor
                 ),
                 error_code=(
-                    "run_status_unknown"
-                    if status == "outcome_unknown"
-                    else "run_replay_incomplete"
+                    "run_status_unknown" if status == "outcome_unknown" else "run_replay_incomplete"
                 ),
             )
         evidence = {
@@ -345,9 +343,7 @@ class SubprocessHermesRunLifecyclePort:
         }
         return HermesRunObservation(
             status=status,
-            conversation_hermes_session_id=(
-                expected_conversation_session_id
-            ),
+            conversation_hermes_session_id=(expected_conversation_session_id),
             hermes_session_id=hermes_session_id,
             hermes_run_id=hermes_run_id,
             evidence_digest=_evidence_digest(evidence),
@@ -538,8 +534,7 @@ def _validate_compatibility_receipt(
             not isinstance(fact, Mapping)
             or fact.get("supported") is not True
             or fact.get("grounded") is not True
-            or fact.get("evidence")
-            != contract.durable_evidence_template.format(capability=name)
+            or fact.get("evidence") != contract.durable_evidence_template.format(capability=name)
         ):
             raise _compatibility_error("hermes_contract_mismatch")
 
@@ -682,9 +677,7 @@ def _evidence_digest(document: object) -> str:
 def build_subprocess_run_lifecycle_port(
     settings: object,
     *,
-    input_resolver: Callable[
-        [HermesDispatchRequest], str | ResolvedIntentPayload
-    ],
+    input_resolver: Callable[[HermesDispatchRequest], str | ResolvedIntentPayload],
     runner: Callable[..., subprocess.CompletedProcess[bytes]] | None = None,
 ) -> SubprocessHermesRunLifecyclePort:
     """Build the production HQA subprocess port from existing platform config."""
@@ -733,6 +726,14 @@ def build_subprocess_run_lifecycle_port(
             "Hermes durable Run settings are invalid",
             retryable=False,
         ) from exc
+    if getattr(gateway, "api_contract", "carried-v1") == "official-http-v1":
+        from quant_system.hermes.native_run_port import NativeHermesRunPort
+
+        return NativeHermesRunPort(
+            cli_settings=cli_settings,
+            input_resolver=input_resolver,
+            state_path=gateway.native_state_path,
+        )
     return SubprocessHermesRunLifecyclePort(
         cli_settings=cli_settings,
         input_resolver=input_resolver,

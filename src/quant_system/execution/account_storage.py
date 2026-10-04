@@ -18,7 +18,9 @@ from quant_system.execution.account import (
     PaperAccount,
 )
 from quant_system.execution.account_repository import (
+    PaperAccountAllocationIntegrityResult,
     PaperAccountReconciliationResult,
+    inspect_persisted_paper_account_allocation,
     paper_account_reconciliation_result,
     validate_paper_account_identity,
 )
@@ -63,6 +65,36 @@ class PaperAccountStorage:
             account_id=self.account_id,
             source="file",
             target=None,
+        )
+
+    def allocation_integrity(self) -> PaperAccountAllocationIntegrityResult:
+        if not self.account_path.exists():
+            return {
+                "status": "missing",
+                "account_id": self.account_id,
+                "raw_sha256": None,
+                "cash": None,
+                "manual_cash": None,
+                "partition_sum": None,
+                "ledger_count": None,
+                "invalid_sleeve_ids": [],
+            }
+        try:
+            raw = json.loads(self.account_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return {
+                "status": "corrupt",
+                "account_id": self.account_id,
+                "raw_sha256": None,
+                "cash": None,
+                "manual_cash": None,
+                "partition_sum": None,
+                "ledger_count": None,
+                "invalid_sleeve_ids": [],
+            }
+        return inspect_persisted_paper_account_allocation(
+            raw,
+            account_id=self.account_id,
         )
 
     def is_stale(self) -> bool:

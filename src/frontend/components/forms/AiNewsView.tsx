@@ -118,6 +118,7 @@ const copy = {
     daily: "Daily",
     source: "Provider",
     beta: "Beta",
+    betaOn: "ON",
     fetched: "Fetched",
     none: "None",
     safety:
@@ -152,6 +153,7 @@ const copy = {
     failoverBanner:
       "Primary AI HOT is unavailable — serving standby Horizon. Research-only; verify originals.",
     servedFrom: "Served from",
+    flashes: "Flashes",
   },
   zh: {
     eyebrow: "只读 · 双源研究资讯",
@@ -174,6 +176,7 @@ const copy = {
     daily: "日报",
     source: "来源",
     beta: "测试版",
+    betaOn: "开",
     fetched: "抓取时间",
     none: "无",
     safety:
@@ -207,6 +210,7 @@ const copy = {
     failoverActive: "故障切换中",
     failoverBanner: "主源 AI HOT 不可用，当前使用备用 Horizon。仅供研究；请回原文核对。",
     servedFrom: "供应路径",
+    flashes: "快讯",
   },
 };
 
@@ -370,7 +374,7 @@ export function AiNewsView({ locale = "en" }: { locale?: Locale }) {
                   (feedStampPage?.provider_beta ??
                     dailyQuery.data?.provider_beta ??
                     statusQuery.data?.provider_beta)
-                    ? "ON"
+                    ? text.betaOn
                     : "--"
                 }
               />
@@ -1050,7 +1054,7 @@ function DailyReport({ daily, locale }: { daily: AiHotDailyResponse; locale: Loc
       ))}
       {daily.flashes.length > 0 ? (
         <article className="rounded-lg border border-border-subtle bg-bg-surface p-4">
-          <h3 className="font-label-caps text-text-primary">Flashes</h3>
+          <h3 className="font-label-caps text-text-primary">{text.flashes}</h3>
           <div className="mt-3 grid gap-2">
             {daily.flashes.map((flash, index) => (
               <DailyItem item={flash} key={`flash-${index}`} locale={locale} />

@@ -8,7 +8,7 @@ Evidence. DOI: `10.1093/rfs/hhaf057`。
 用于实现评审的本地 PDF 文件为：
 
 ```text
-C:\Users\86189\Desktop\Short-Term Reversals and Longer-Term Momentum around the world.pdf
+C:\Users\<user>\Desktop\Short-Term Reversals and Longer-Term Momentum around the world.pdf
 ```
 
 ## 平台实现了什么

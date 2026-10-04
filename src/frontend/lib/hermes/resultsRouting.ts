@@ -297,7 +297,7 @@ export function buildHermesOriginalResultHref(
     case "experiment":
       return localizePath(`/experiments?experiment=${resourceId}`, locale);
     case "factor_candidate":
-      return localizePath(`/hermes/approvals?candidate=${resourceId}`, locale);
+      return localizePath(`/library?candidate=${resourceId}`, locale);
     default:
       return null;
   }

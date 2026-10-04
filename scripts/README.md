@@ -6,12 +6,63 @@ helpers.
 
 ## Daily Entry Points
 
+The connector's absent-env fallback remains `supervised_dispatch` for frozen
+compatibility only. Set its mode explicitly; use
+`QS_AGENT_V02_CONNECTOR_MODE=reconcile_only` for no-dispatch maintenance.
+
 | Script | Purpose |
 | --- | --- |
 | `dev.ps1` | Start the local backend and frontend on the canonical ports `8765` and `3001`, with optional Docker/OpenD probes. |
 | `dev-stop.ps1` | Stop processes recorded by `dev.ps1` under `data/_runtime/pids/`. |
 | `verify.ps1` | Run the standard local verification suite on Windows. Skips frontend build unless `-Build` is passed. |
 | `verify.sh` | Unix shell equivalent for the standard verification suite. |
+| `audit_study_return.py` | Reconcile a saved study's return metrics against its stored calculation evidence. |
+| `random_top5_null.py` | Local research diagnostic: compare random monthly Top-5 selections using saved inputs; not the product backtest engine or a paper-trading task. |
+| `review_admission_activation.py` | Close all current-code parallel intake jobs, run fixed source/data/consumer checks, retain changed/unknown decisions, and install only the bounded static-24 activation state when complete; `--review-only` never installs state. No policy, existing protocol, engine, trial, account or sleeve writes. |
+| `refresh_market_assessments.py` | Refresh saved US/Asia market assessments through the configured providers and model; an explicit operator action. |
+| `refresh_security_catalog.py` | Refresh the local security reference catalog; this is directory data, not historical prices. |
+| `check_futu_history_quota.py` | Read-only probe of the local OpenD history-kline quota; prints one JSON line, optionally appends it to `futu_quota_ledger.jsonl` under `QS_DATA_DIR` (`--record`) and fails closed below a floor (`--check-floor N`). Never requests bars. |
+| `install_futu_quota_probe_launchagent.sh` | Render and replay-safely install the `com.aiquant.futu-quota-probe` user LaunchAgent that runs `check_futu_history_quota.py --record --check-floor` on a calendar interval; read-only quota probe, no bar requests. |
+
+## Phase2 research evidence (2026-09-20)
+
+These are research and audit tools, not trade or paper-cycle commands. Use fresh
+output directories, preserve source manifests and do not overwrite frozen studies.
+
+| Script | Purpose |
+| --- | --- |
+| `collect_phase2_futu_panel.py` | Read-only, quota-bounded collection into a new per-symbol Futu QFQ panel with metadata; no fallback or frozen-history replacement. |
+| `compare_phase2_sources.py` | Offline comparison of explicitly selected Futu/Tiingo files; reports observed price/volume differences, not universal equivalence. |
+| `probe_tiingo_backfill.py` | Quota-bounded missing-symbol backfill probe; transient errors are not permanent no-data decisions. |
+| `prepare_phase2_wide_inputs.py` | Assemble issuer/ticker-period-bound research inputs and full SHA manifest; unresolved identities stay excluded. |
+| `prepare_current_phase2_inputs.py` | Freeze an explicitly new 24-stock-plus-benchmark window from existing real Futu archives; preserves original inputs, prewarm and actual trading-calendar coverage. |
+| `run_current_phase2_controls.py` | Run 500 fixed-seed random controls through the real backtest engine on that frozen new window; keeps every curve/order/cost artifact, not an extension of older curves or a funding qualification by itself. |
+| `current_phase2_owner_example.py` | Create a fresh isolated owner with exact saved prices and native intake; optional fixed parallel-stage review can precede another native job. Preserves original protocols/trials, keeps `auto_enable=false`, and never uses the formal queue, provider or account. |
+| `wide_universe_scorecard.py` | Audit or score the frozen 27-object research manifest; formal input acceptance does not grant admission or capital. |
+| `recompute_phase2_evidence.py` | Re-output saved studies/sleeves and run true-engine random controls into separate evidence; no canonical trial or paper-ledger rewriting. |
+| `recompute_phase2_full_gate_control.py` | Recheck the frozen 500 real-engine curves through all statistical gate components and optional isolated consumer tests; no new backtests/trials or production qualification switch. |
+| `compare_phase2_historical_admission.py` | Compare archived validations under a separately frozen current research context; preserves original decisions and reports missing historical authority/peer evidence instead of rewriting history. |
+| `calibrate_admission_semantics.py` | Preregistered artificial bidirectional minimum-quality calibration with fixed objects, effects, seeds and intervals; exact engine cost examples, immutable per-cell results and explicit resume diagnosis. No provider, formal ledger or money writes; not market alpha or whole funding-consumer Monte Carlo. |
+| `qualify_admission.py` | Run fixed review/data/consumer checks from real bound inputs; `--register` stores their recomputable result. A supplied `passed` document is not qualification, and this command never changes the catalog or funding switch. |
+| `exploration_sandbox_runner.py` | Internal container-only factor runner, not an operator host-execution entrypoint. |
+| `run_phase2_exploration_example.py` | Real-price bounded Docker example through behavior/reference checks to a format-valid, unsubmitted research payload. |
+| `exploration_admission_example.py` | Replay that exact frozen example through an isolated intake and actual Platform/Qlib engines using saved real prices; records rejection as well as success, never submits to the formal queue or allocates capital. |
+| `phase2_public_price_pilot.py` | Independently frozen monthly price-method study on existing PIT inputs; signals and future labels separate, missing group returns stay unknown; not OSAP financial-factor replication. |
+| `import_wide_scorecard.py` | Explicit import of a closed 11-file SHA-bound completed run via `--run-dir`, `--expected-output-manifest-sha256`, `--scorecard-store`; never replaces a run in place. |
+| `import_study_active_metrics.py` | Verify derived active metrics by recomputing statistics from each bound saved curve, then import a separate display sidecar; no provider/strategy replay/trial mutation, and GET stays read-only. |
+
+## Phase3 research evidence (2026-09-26)
+
+These are frozen, preregistered research drivers over saved real inputs. They
+own no candidate, intake, account or funding path and never recompute archived
+component inputs.
+
+| Script | Purpose |
+| --- | --- |
+| `phase3_etf_research.py` | Finite preregistered ETF research over supplied real snapshots only; the adapter owns targets while the Platform engine owns orders/fills/fees/NAV. No provider calls, production storage or parameter search. |
+| `phase3_portfolio_research.py` | Frozen T3.4 offline portfolio experiment (fixed allocation policies × cost tiers with removal/reference replays); default is read-only preflight. Component signal/return inputs are the original archived experiments, never recomputed. |
+| `rebuild_factor_contributions.py` | Rebuild immutable original-v4 factor contribution panels with exact reconciliation; does not rerun scorecards or compute SEs. |
+| `sec_pit_pilot.py` | Bounded AAPL/NVDA SEC submissions and companyfacts capture with a privately supplied User-Agent; freezes four requests, retains original JSON and incomplete historical as-of views. Research data only, no provider substitution, factors, backtests or funding. |
 
 ## Agent v0.2.2 Release Hardening
 
@@ -30,7 +81,7 @@ or trading.
 | `verify_agent_v02_backup_restore.sh` | Back up and restore the full authoritative PostgreSQL state into an independently created destination cluster, then compare schema, role, and data facts. |
 | `verify_agent_v02_noneditable_upgrade.sh` | Exercise baseline-to-current non-editable installation in isolated Python environments and reject source-tree import leakage. |
 | `verify_agent_v02_zero_effect.sh` | Run the fixed-identity §9.1 blocked paper-replay proof with a durable pre-route claim, exact-byte replay, provider tripwires, and zero effect counters. |
-| `restart_agent_v02_stack.sh` | Build the current clean frontend HEAD, bind the complete `.next` digest to its Git commit/tree, restart only backend/frontend, and verify provider-free `/api/settings` plus `/api/hermes/gateway` readiness while the connector remains `reconcile_only`. |
+| `restart_agent_v02_stack.sh` | Release-specific backend/frontend restart helper. It leaves the separately running connector mode unchanged and verifies provider-free `/api/settings` plus `/api/hermes/gateway` readiness. Use `local_mac_stack.sh` for normal daily operation. |
 
 ### Gate 2: complete non-PostgreSQL backend suite
 
@@ -118,7 +169,7 @@ mode-`600` artifacts; the final receipt is sorted, compact canonical UTF-8.
 
 | Script | Purpose |
 | --- | --- |
-| `local_mac_stack.sh` | Normal Mac operator entrypoint: `start|restart|build|stop|status|logs`. Starts Docker PostgreSQL, builds the production frontend, drains the prior Hermes socket generation, installs/reloads Hermes + Hermes OAuth proxy + backend + frontend + connector + factor-automation + D-34 + asia-radar-refresh LaunchAgents, waits for health, and rejects transient AI-tool executables. |
+| `local_mac_stack.sh` | Normal Mac operator entrypoint: `start|restart|build|stop|status|logs`. Starts Docker PostgreSQL, builds the production frontend, drains the prior Hermes socket generation, installs/reloads Hermes + Hermes OAuth proxy + backend + frontend + connector + asia-radar-refresh LaunchAgents, waits for health, and rejects transient AI-tool executables. |
 | `run_quant_backend.sh` | Agent v0.2 LaunchAgent target for the localhost FastAPI backend on `127.0.0.1:8765`; loads the owner-only runtime env, rejects startup migration, and serves release-worktree source. |
 | `run_quant_frontend.sh` | Agent v0.2 LaunchAgent target for the built Next.js frontend on `127.0.0.1:3001`; requires an owner-only env that explicitly enables Hermes Chat, serves this worktree's `.next`, and can reuse main-repo `node_modules`. |
 | `install_agent_v02_stack_launchagents.sh` | Validate, render, and replay-safely install only the Agent v0.2 backend/frontend LaunchAgents. It never installs strategy schedulers. |
@@ -126,14 +177,11 @@ mode-`600` artifacts; the final receipt is sorted, compact canonical UTF-8.
 | `run_hermes_oauth_proxy.sh` | Stable local xAI OAuth proxy target on `127.0.0.1:8645`; reuses Hermes login and rejects transient AI-tool binaries. |
 | `install_hermes_oauth_proxy_launchagent.sh` | Check the Hermes xAI OAuth session and replay-safely install the persistent `com.aiquant.hermes-oauth-proxy` user LaunchAgent. |
 | `uninstall_hermes_oauth_proxy_launchagent.sh` | Boot out and remove only the Hermes OAuth proxy LaunchAgent. |
-| `run_agent_v02_connector.sh` | Agent v0.2 connector target; requires a regular, non-symlink, exact-mode-`600` env, rejects startup migration, binds imports to release source, and accepts only `QS_AGENT_V02_CONNECTOR_MODE=reconcile_only` or `supervised_dispatch`. The installed safety posture sets `QS_AGENT_V02_CONNECTOR_MODE=reconcile_only`; the legacy absent-env fallback remains `supervised_dispatch` only for frozen compatibility. Its `--check` is provider/network/database-free. |
+| `run_agent_v02_connector.sh` | Agent v0.2 connector target; requires a regular, non-symlink, exact-mode-`600` env, rejects startup migration, binds imports to release source, and accepts only `QS_AGENT_V02_CONNECTOR_MODE=reconcile_only` or `supervised_dispatch`. The current owner-only `local_trust` deployment sets `supervised_dispatch` explicitly; `reconcile_only` is the explicit no-dispatch maintenance posture. The absent-env `supervised_dispatch` fallback is frozen compatibility only and must not replace an explicit installed value. Its `--check` is provider/network/database-free. |
 | `install_agent_v02_connector_launchagent.sh` | Run the connector `--check` before any launchd mutation, then render and replay-safely install the connector LaunchAgent in the mode selected by its owner-only env. |
 | `uninstall_agent_v02_connector_launchagent.sh` | Boot out and remove only the Agent v0.2 connector LaunchAgent. |
-| `run_factor_automation_driver.sh` | Five-minute D-33 target and exact installed enqueue bridge. Loads the owner-only backend env, rejects transient HQA runtimes, defaults to one fail-closed `paper_only` queue/maintenance cycle, and accepts only `enqueue --request-file <absolute path>` as an explicit operation. |
-| `install_factor_automation_launchagent.sh` | Check and replay-safely install `com.aiquant.factor-automation`; the driver remains disabled unless both HQA and Platform Flag pairs are true. |
-| `run_d34_worker.sh` | Five-minute D-34 target. Loads the owner backend env, stays idle unless `QS_D34_WORKER_ENABLED=true`, rejects startup migration and processes at most one already-queued owner research job plus canary maintenance. Enabled `--check` requires the formal safety authorities plus real versions/Qlib/LLM JSON/Futu/Docker preflight; disabled `--check` remains import-only. |
-| `install_d34_worker_launchagent.sh` | Run the D-34 check and replay-safely install `com.aiquant.d34-worker`; installing it does not enable D-34 or apply migration 030–032, while an enabled install fails before launchd mutation unless full preflight succeeds. |
-| `uninstall_d34_worker_launchagent.sh` | Boot out and remove only the D-34 user LaunchAgent; it does not alter Mandates, Artifact Registry rows or held paper positions. |
+| `run_d34_research_worker.sh` | Research-only worker target for the fixed `local-paper-research-v1` resource envelope. Loads the owner backend env, forbids startup migration, projects terminal receipts, and leases at most one exact queued job for 7200 seconds. Model/HQA/Futu/Docker configuration is evaluated only after lease so failure is bound to that job. It constructs no paper account/sleeve/price service and never calls canary or paper-cycle code. |
+| `install_d34_research_worker_launchagent.sh` | Owner-run installer for the separately installed current `com.aiquant.d34-research-worker`. It boots out and confirms absence of retired `com.aiquant.d34-worker` and `com.aiquant.factor-automation` labels before replay-safe install; `local_mac_stack.sh` does not own this job. |
 | `run_asia_radar_refresh.sh` | Daily Asia Radar target. Warms the 12-ETF Futu bar cache and persists the day's read-only overview snapshot; fails closed when OpenD is unavailable. |
 | `install_asia_radar_refresh_launchagent.sh` | Render and replay-safely install `com.aiquant.asia-radar-refresh` (17:05 local, calendar interval); never places orders and never substitutes sample data. |
 | `run_brief_auto_archive.sh` | Daily brief auto-archive target. Runs `brief auto-archive` against the local backend to upsert today's `brief_snapshot_v1` issue; fails closed (nothing written, non-zero exit) when a blocking source or the archive database is down. |
@@ -144,12 +192,11 @@ mode-`600` artifacts; the final receipt is sorted, compact canonical UTF-8.
 
 For everyday Mac use, run `bash scripts/local_mac_stack.sh start`; do not keep
 services alive by leaving an AI-tool terminal open. See
-`docs/runbooks/agent-v0-2-local-stack.md` for the stack,
-`/Users/sunyibo/programs/Hermes-quant-agent/docs/runbooks/full-automation-paper.md`
-for D-33, and
-`docs/execution/paper_strategy_sleeves_launchd.md` for the separate paper
-schedulers. The backend/frontend jobs are long-running local services;
-legacy strategy-sleeve jobs are one-shot paper commands.
+`docs/runbooks/agent-v0-2-local-stack.md` for the stack and
+`docs/execution/paper_strategy_sleeves_launchd.md` for the legacy/optional
+generic paper-sleeve jobs. The backend/frontend jobs are long-running local
+services; formal hung-sleeve observation uses `com.aiquant.d34-paper-cycle`,
+not those generic templates.
 
 ## Data And Maintenance
 
@@ -169,8 +216,26 @@ legacy strategy-sleeve jobs are one-shot paper commands.
 | `refresh_options_universe.py` | Refresh the local options universe cache. |
 | `refresh_earnings_calendar.py` | Refresh the local earnings calendar cache. |
 | `refresh_vix_history.py` | Refresh VIX/VIX3M history used by options radar inputs. |
-| `run_options_radar.ps1` | Windows Task Scheduler target for the read-only daily options radar scan. |
-| `register_options_radar_task.ps1` | Register the Windows scheduled task that calls `run_options_radar.ps1`. |
+| `run_options_radar.ps1` | Legacy Windows Task Scheduler target for the pre-v3 options radar contract. It is retained for reproducibility and is not a canonical current scheduler. |
+| `register_options_radar_task.ps1` | Register the legacy Windows task above. Do not use it to mirror or supplement the current Hermes cron. |
+
+On the current macOS deployment, HQA owns Hermes cron `hqa-options-collect`
+(`0 22 * * 1-6`, `Asia/Shanghai`) and calls the same Platform `options
+daily-task` used by the page's manual refresh. The operator contract is in
+`/Users/sunyibo/programs/Hermes-quant-agent/docs/runbooks/options-recommendations.md`;
+the Platform user contract is in
+[`docs/guides/options-recommendations.md`](../docs/guides/options-recommendations.md).
+Do not load a second LaunchAgent or Windows task alongside that cron.
+
+## Paper Cycle And Isolation Preview
+
+| Script | Purpose |
+| --- | --- |
+| `run_d34_paper_cycle.sh` | Current observation-day-only driver behind loaded `com.aiquant.d34-paper-cycle`: the digest-gated cycle for already-hung sleeves. It deliberately ignores `QS_D34_WORKER_ENABLED` and never runs the research factory. Do not invoke it manually to manufacture an observation day. |
+| `coo_unify_preview.sh` | Start/stop the isolated coo-unify preview stack; never binds `:3001`/`:8765` and never uses the live `quantplatform` database. |
+| `coo_unify_d34_worker_once.sh` | Run one isolation D-34 cycle against `quantplatform_coo`; never uses the live LaunchAgent. |
+| `coo_unify_preview_seed.py` | Seed one hung paper sleeve fill under `QS_DATA_DIR` for the isolated preview; does not touch live `api_runs` or `quantplatform`. |
+| `coo_unify_seed_paper_authority.py` | Mirror the isolation file paper account into `quantplatform_coo` only. |
 
 ## Legacy Or Historical Helpers
 
@@ -187,4 +252,4 @@ legacy strategy-sleeve jobs are one-shot paper commands.
 | `sql/001_runs_index.sql` | Optional PostgreSQL run-index migration. The file-based `data/api_runs/` artifacts remain the source of truth. |
 | `sql/002_ai_news_cache.sql` | Optional PostgreSQL AI HOT item cache and fetch-audit migration for read-only `/ai-news` stale fallback. |
 | `sql/003_app_users_brief_ai_reports.sql` | Optional PostgreSQL root user, brief issue/snapshot/source, and AI daily report tables. Brief archive APIs and AI daily fallback are wired. |
-| `sql/004_paper_account_tables.sql` | Optional PostgreSQL paper account mirror tables for explicit `account.json` backfill and `QS_PAPER_ACCOUNT_DB_MODE=mirror` API/CLI dual-write. File storage remains canonical until the later DB-canonical slice. |
+| `sql/004_paper_account_tables.sql` | Historical paper-account schema foundation used by mirror and canonical repositories. The current local deployment is PostgreSQL `canonical`; this migration file is not an instruction to switch back to file authority or replay migrations. |

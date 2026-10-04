@@ -2,30 +2,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
 
-const repoRoot = findRepoRoot(process.cwd());
-const e2eDataRoot = path.join(repoRoot, "src", "frontend", ".tmp", "e2e-data");
-const apiRunsDir = path.join(e2eDataRoot, "api_runs");
+let apiRunsDir = "";
 
 const backtestRunId = "backtest-e2e-detail";
 const factorRunId = "factor-e2e-detail";
 const paperRunId = "paper-e2e-detail";
-
-function findRepoRoot(start: string) {
-  let current = path.resolve(start);
-  while (true) {
-    if (
-      fs.existsSync(path.join(current, "pyproject.toml")) &&
-      fs.existsSync(path.join(current, "src", "frontend", "package.json"))
-    ) {
-      return current;
-    }
-    const parent = path.dirname(current);
-    if (parent === current) {
-      throw new Error(`Unable to locate repository root from ${start}`);
-    }
-    current = parent;
-  }
-}
 
 function writeJson(filePath: string, payload: unknown) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -39,7 +20,12 @@ function removeRun(kind: "backtests" | "factors" | "paper", runId: string) {
 test.describe("single run detail routes", () => {
   test.skip(process.env.PW_E2E !== "1", "Set PW_E2E=1 to run local full-stack smoke.");
 
-  test.beforeAll(() => {
+  test.beforeAll(({}, testInfo) => {
+    const run = testInfo.config.metadata.e2eRun as { dataRoot?: unknown } | undefined;
+    if (!run || typeof run.dataRoot !== "string" || !run.dataRoot.trim()) {
+      throw new Error("Run-detail E2E requires the isolated run data root.");
+    }
+    apiRunsDir = path.join(run.dataRoot, "api_runs");
     writeJson(path.join(apiRunsDir, "backtests", backtestRunId, "metadata.json"), {
       run_id: backtestRunId,
       source: "sample",
@@ -95,6 +81,7 @@ test.describe("single run detail routes", () => {
   });
 
   test.afterAll(() => {
+    if (!apiRunsDir) return;
     removeRun("backtests", backtestRunId);
     removeRun("factors", factorRunId);
     removeRun("paper", paperRunId);

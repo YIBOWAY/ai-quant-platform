@@ -253,40 +253,9 @@ async function expectExactRenderedAuthorities(
     approvalRows.locator("[data-hermes-approval-status]"),
   ).toHaveText(expected.approvalText);
 
-  await openDock(page, "gates");
-  const gateRows = page.locator("[data-hermes-gate-row]");
-  await expect(gateRows).toHaveCount(3);
-  await expect
-    .poll(() =>
-      gateRows.evaluateAll((rows) =>
-        rows
-          .map((row) => ({
-            gateId: row.getAttribute("data-hermes-gate-id"),
-            kind: row.getAttribute("data-hermes-gate-kind"),
-            status: row.getAttribute("data-hermes-gate-status"),
-          }))
-          .sort((left, right) =>
-            String(left.gateId).localeCompare(String(right.gateId)),
-          ),
-      ),
-    )
-    .toEqual([
-      {
-        gateId: "fixture-gate-1",
-        kind: "gate1",
-        status: "confirmed",
-      },
-      {
-        gateId: "fixture-gate-2",
-        kind: "gate2",
-        status: "pending",
-      },
-      {
-        gateId: "fixture-gate-3",
-        kind: "gate3",
-        status: "prepared",
-      },
-    ]);
+  // The former candidate Gate UI is intentionally retired. Workspace facts
+  // are still checked unchanged below; no tool decision revives that surface.
+  await expect(page.locator("[data-hermes-gate-row]")).toHaveCount(0);
 
   await openDock(page, "results");
   const typedResultRows = page.locator("[data-hermes-typed-result-row]");
@@ -365,6 +334,74 @@ if (modeMatches) {
   test.describe("@lifecycle-fixture Hermes active lifecycle", () => {
   test.describe.configure({ mode: "serial" });
 
+  test("does not allow tool decisions with incomplete or expired approval evidence", async ({ page }) => {
+    await page.route("**/api/workspace/ws-local-main/snapshot", async route => {
+      const upstream = await route.fetch();
+      const snapshot = await upstream.json();
+      snapshot.approvals = [
+        { approval_id: "missing-digest", run_id: INITIAL_RUN_ID, status: "pending", expires_at: "2099-01-01T00:00:00Z" },
+        { approval_id: "expired", run_id: INITIAL_RUN_ID, digest: "a".repeat(64), status: "pending", expires_at: "2000-01-01T00:00:00Z" },
+      ];
+      await route.fulfill({ json: snapshot });
+    });
+    const writes: string[] = [];
+    page.on("request", request => { if (request.method() === "POST") writes.push(request.url()); });
+    await page.goto(`/en/hermes?hermes_session_id=${ACTIVE_SESSION_ID}`, { waitUntil: "domcontentloaded" });
+    await openDock(page, "approvals");
+    await expect(page.locator("[data-hermes-approval-row]")).toHaveCount(2);
+    await expect(page.locator('[data-hermes-approval-decidable="true"]')).toHaveCount(0);
+    await expect(page.locator("[data-hermes-approval-allow-once], [data-hermes-approval-deny]")).toHaveCount(0);
+    expect(writes).toEqual([]);
+  });
+
+  test("fresh browser initializes the owner session before workspace follow", async ({
+    page,
+  }) => {
+    const sequence: string[] = [];
+    let releaseOwner = () => {};
+    const ownerGate = new Promise<void>((resolve) => {
+      releaseOwner = resolve;
+    });
+    await page.route("**/api/auth/owner/session", async (route) => {
+      sequence.push("owner");
+      await ownerGate;
+      await route.fulfill({
+        contentType: "application/json",
+        headers: {
+          "Set-Cookie": "qs_aw_csrf=fresh-owner-csrf; Path=/; SameSite=Strict",
+        },
+        status: 200,
+        body: JSON.stringify({
+          session_id: "fresh-owner-session",
+          mutation_enabled: true,
+          security_ready: true,
+        }),
+      });
+    });
+    await page.route("**/api/workspace/ws-local-main/snapshot", async (route) => {
+      sequence.push("snapshot");
+      await route.continue();
+    });
+    await page.route("**/api/workspace/ws-local-main/follow/stream?*", async (route) => {
+      sequence.push("follow");
+      await route.continue();
+    });
+
+    await page.goto("/en/hermes", { waitUntil: "domcontentloaded" });
+    await expect.poll(() => sequence.includes("owner")).toBe(true);
+    // Wait for the mounted desk while the owner response is deliberately held;
+    // the boundary is a UI event, not an arbitrary sleep.
+    await expect(page.locator("#hermes-ledger-panel")).toBeVisible();
+    expect(sequence).toEqual(["owner"]);
+    releaseOwner();
+    await expect.poll(() => sequence.includes("snapshot")).toBe(true);
+    expect(sequence[0]).toBe("owner");
+    expect(sequence.indexOf("owner")).toBeLessThan(sequence.indexOf("snapshot"));
+    if (sequence.includes("follow")) {
+      expect(sequence.indexOf("owner")).toBeLessThan(sequence.indexOf("follow"));
+    }
+  });
+
   test("renders an explicit transcript loading state before messages resolve", async ({
     page,
   }) => {
@@ -386,7 +423,7 @@ if (modeMatches) {
       `/en/hermes?hermes_session_id=${encodeURIComponent(ACTIVE_SESSION_ID)}`,
       { waitUntil: "domcontentloaded" },
     );
-    await expect(page.locator("[data-hermes-active-grid]")).toBeVisible();
+    await expect(page.locator("#hermes-ledger-panel")).toBeVisible();
     await expect(
       page.locator("[data-hermes-transcript-loading]"),
     ).toContainText("Fetching session messages");
@@ -397,6 +434,78 @@ if (modeMatches) {
       page.locator("[data-hermes-transcript-loading]"),
     ).toHaveCount(0);
     expectCleanBrowser(externalRequests, problems);
+  });
+
+  test("renders inline agent progress and resizes the chat rail", async ({ page }) => {
+    const externalRequests = await installLoopbackOnlyGuard(page);
+    const problems = collectBrowserProblems(page);
+    const originalViewport = page.viewportSize();
+    // The rail is capped at 53% of the viewport. At 1440px the unchanged
+    // 620px initial width has more than 100px of room for the resize check.
+    await page.setViewportSize({ width: 1440, height: 900 });
+    try {
+    await page.goto(
+      `/en/hermes?hermes_session_id=${encodeURIComponent(ACTIVE_SESSION_ID)}`,
+      { waitUntil: "domcontentloaded" },
+    );
+
+    const rail = page.locator("#hermes-chat-rail");
+    const activity = rail.locator("[data-hermes-run-activity]");
+    const progress = activity.getByRole("progressbar", {
+      name: "Hermes progress",
+    });
+    await expect(activity).toContainText("Writing the reply");
+    await expect(progress).toBeVisible();
+    await assertReducedMotion(page);
+    expect(
+      await rail.locator("[data-hermes-desk-transcript]").evaluate((container) => {
+        const transcript = container.querySelector("[data-hermes-workbench-transcript]");
+        const inline = container.querySelector("[data-hermes-run-activity]");
+        return Boolean(
+          transcript &&
+            inline &&
+            transcript.compareDocumentPosition(inline) & Node.DOCUMENT_POSITION_FOLLOWING,
+        );
+      }),
+    ).toBe(true);
+
+    const separator = rail.getByRole("separator", { name: "Resize chat panel" });
+    const before = await rail.boundingBox();
+    const handle = await separator.boundingBox();
+    expect(before).not.toBeNull();
+    expect(handle).not.toBeNull();
+    await page.mouse.move(handle!.x + handle!.width / 2, handle!.y + 100);
+    await page.mouse.down();
+    // The desk's chat rail is left-aligned: moving its right boundary right
+    // expands it; the matching keyboard shrink direction is ArrowLeft.
+    await page.mouse.move(handle!.x + 120, handle!.y + 100, { steps: 4 });
+    await page.mouse.up();
+    const expanded = await rail.boundingBox();
+    expect(expanded!.width).toBeGreaterThan(before!.width + 100);
+    await separator.press("ArrowLeft");
+    const keyboardShrunk = await rail.boundingBox();
+    expect(keyboardShrunk!.width).toBeLessThan(expanded!.width);
+
+    for (const viewport of [
+      { width: 320, height: 760 },
+      { width: 375, height: 812 },
+      { width: 414, height: 896 },
+      { width: 768, height: 1024 },
+    ]) {
+      await page.setViewportSize(viewport);
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await page.getByRole("button", { name: "Open chat" }).click();
+      await expect(separator).toBeHidden();
+      const mobileRail = await rail.boundingBox();
+      expect(mobileRail!.width).toBeGreaterThanOrEqual(
+        Math.min(viewport.width, 352) - 1,
+      );
+      await assertNoHorizontalOverflow(page, viewport.width);
+    }
+    expectCleanBrowser(externalRequests, problems);
+    } finally {
+      if (originalViewport) await page.setViewportSize(originalViewport);
+    }
   });
 
   test("active lifecycle whole-shell quality spans all four exact viewports", async ({
@@ -418,10 +527,14 @@ if (modeMatches) {
         `/en/hermes?hermes_session_id=${encodeURIComponent(ACTIVE_SESSION_ID)}`,
         { waitUntil: "domcontentloaded" },
       );
-      await expect(page.locator("[data-hermes-active-grid]")).toBeVisible();
-      await expect(
-        page.locator("[data-hermes-transcript-scroll]"),
-      ).toBeVisible();
+      await expect(page.locator("#hermes-ledger-panel")).toBeVisible();
+      const transcript = page.locator("[data-hermes-transcript-scroll]");
+      if (viewport.width <= 960) {
+        await expect(transcript).toBeHidden();
+        await expect(page.locator("#hermes-chat-rail")).toHaveAttribute("inert", "");
+      } else {
+        await expect(transcript).toBeVisible();
+      }
 
       await assertWholeHermesShellWcagAaContrast(page);
       await assertWholeHermesShellControlsUnclipped(page);
@@ -440,7 +553,7 @@ if (modeMatches) {
   // gate is deliberately not run here: the drawer is modal, so its scrim covers
   // every shell control behind it by design, which that gate reads as an
   // offender. Closed-shell clipping is already covered by the sweep above.
-  test("active lifecycle dock drawers pass contrast", async ({ page }) => {
+  test("active lifecycle run details pass contrast", async ({ page }) => {
     const externalRequests = await installLoopbackOnlyGuard(page);
     const problems = collectBrowserProblems(page);
     await page.setViewportSize({ width: 1440, height: 900 });
@@ -448,18 +561,17 @@ if (modeMatches) {
       `/en/hermes?hermes_session_id=${encodeURIComponent(ACTIVE_SESSION_ID)}`,
       { waitUntil: "domcontentloaded" },
     );
-    await expect(page.locator("[data-hermes-active-grid]")).toBeVisible();
+    await expect(page.locator("#hermes-ledger-panel")).toBeVisible();
 
     for (const panel of [
       "approvals",
       "activity",
       "runs",
       "results",
-      "gates",
       "authority",
     ] as const) {
       await openDock(page, panel);
-      await expect(page.locator("[data-hermes-dock-drawer]")).toBeVisible();
+      await expect(page.locator(`[data-hermes-run-panel="${panel}"]`)).toHaveAttribute("open", "");
       await assertWholeHermesShellWcagAaContrast(page);
     }
     await closeDock(page);
@@ -477,7 +589,7 @@ if (modeMatches) {
       { waitUntil: "domcontentloaded" },
     );
 
-    await expect(page.locator("[data-hermes-active-grid]")).toBeVisible();
+    await expect(page.locator("#hermes-ledger-panel")).toBeVisible();
     await expect(page.locator("[data-hermes-transcript-scroll]")).toBeVisible();
     await expect(page.getByText("Fixture answer 28:")).toBeVisible();
     const composer = page.getByRole("textbox", { name: "Talk with Hermes" });
@@ -584,7 +696,7 @@ if (modeMatches) {
     ).toBe(true);
 
     await page.reload({ waitUntil: "domcontentloaded" });
-    await expect(page.locator("[data-hermes-active-grid]")).toBeVisible();
+    await expect(page.locator("#hermes-ledger-panel")).toBeVisible();
     await expect(page.getByText(firstPrompt, { exact: true })).toBeVisible();
     await expect(page.getByText(secondPrompt, { exact: true })).toBeVisible();
     await expect(page).toHaveURL(
@@ -637,7 +749,7 @@ if (modeMatches) {
     // its one-time shell transition can remount the server-rendered controller.
     // The dock rail is the owner-ready marker here: the fullscreen transcript
     // grid only renders on the Today route.
-    await expect(page.locator("[data-hermes-dock-rail]")).toBeVisible();
+    await expect(page.locator('[data-hermes-session-fork-controller][data-hermes-session-fork-eligible="true"]')).toBeVisible();
     await expect(
       page.getByRole("textbox", { name: "Talk with Hermes" }),
     ).toBeDisabled();
@@ -787,22 +899,7 @@ if (modeMatches) {
       ),
     ).toHaveCount(0);
 
-    await openDock(page, "gates");
-    await expect(
-      page.locator(
-        '[data-hermes-gate-row][data-hermes-gate-kind="gate1"][data-hermes-gate-status="confirmed"]',
-      ),
-    ).toHaveCount(1);
-    await expect(
-      page.locator(
-        '[data-hermes-gate-row][data-hermes-gate-kind="gate2"][data-hermes-gate-status="pending"]',
-      ),
-    ).toHaveCount(1);
-    await expect(
-      page.locator(
-        '[data-hermes-gate-row][data-hermes-gate-kind="gate3"][data-hermes-gate-status="prepared"]',
-      ),
-    ).toHaveCount(1);
+    await expect(page.locator("[data-hermes-gate-row]")).toHaveCount(0);
     await openDock(page, "results");
     await expect(
       page.locator(

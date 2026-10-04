@@ -3,7 +3,13 @@ import type { Locale } from "@/lib/locale";
 import type { HermesAutomationSummary } from "@/lib/hermes/types";
 import { AutomationDetails } from "./AutomationDetails";
 import { artifactCopy } from "./copy";
-import { assertNever, formatDateTime, qualityTone, safeDomId } from "./formatters";
+import {
+  artifactStatusLabel,
+  assertNever,
+  formatDateTime,
+  qualityTone,
+  safeDomId,
+} from "./formatters";
 import { ForesightSummary } from "./ForesightSummary";
 import { OpportunitySummary } from "./OpportunitySummary";
 import { PortfolioRiskSummary } from "./PortfolioRiskSummary";
@@ -96,7 +102,7 @@ function AutomationArtifactCard({
           </div>
           <StatusPill
             label={text.status}
-            value={artifact.status || artifact.quality}
+            value={artifactStatusLabel(artifact.status || artifact.quality, locale)}
             tone={qualityTone(artifact.quality)}
           />
         </div>

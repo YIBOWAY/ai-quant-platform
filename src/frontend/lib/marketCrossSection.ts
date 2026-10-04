@@ -1,4 +1,7 @@
 import { apiRequest } from "./apiClient";
+import type { components } from "./api.generated";
+
+export type MarketRiskResponse = components["schemas"]["MarketRiskResponse"];
 
 export type MarketCrossSectionProvenance = "futu" | "futu_cache";
 
@@ -39,6 +42,7 @@ export type MarketCrossSectionResponse = {
   basket_label: { en: string; zh: string } | null;
   methodology: Record<string, string>;
   rows: MarketCrossSectionRow[];
+  risk_observations?: MarketRiskResponse | null;
 };
 
 export function getMarketCrossSection(params?: {

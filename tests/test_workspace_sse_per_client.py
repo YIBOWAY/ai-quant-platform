@@ -19,7 +19,6 @@ from quant_system.config.settings import (
 from quant_system.hermes.approval_observe import (
     reset_default_approval_observe_journal,
 )
-from quant_system.hermes.gate_observe import reset_default_gate_observe_journal
 from quant_system.hermes.result_observe import reset_default_result_observe_journal
 from quant_system.hermes.transcript_observe import (
     reset_default_transcript_observe_journal,
@@ -36,7 +35,6 @@ WORKSPACE_ID = "workspace-sse-two-clients"
 def _reset_process_journals() -> None:
     resets = (
         reset_default_approval_observe_journal,
-        reset_default_gate_observe_journal,
         reset_default_result_observe_journal,
         reset_default_vertical_observe_journal,
         reset_default_transcript_observe_journal,
@@ -103,14 +101,6 @@ class _ProjectionPage:
                     "status": "pending",
                 }
             ],
-            "gates": [
-                {
-                    "gate_id": "gate-two-clients",
-                    "gate_kind": "gate_1",
-                    "status": "pending",
-                    "expected_digest": "a" * 64,
-                }
-            ],
             "results": [
                 {
                     "result_id": "result-two-clients",
@@ -125,9 +115,6 @@ class _ProjectionPage:
             "runs": ["run-two-clients"],
             "authority_health": {
                 "command_approval": "ready",
-                "gate_1": "ready",
-                "gate_2": "ready",
-                "gate_3": "ready",
                 "result": "ready",
                 "task": "ready",
                 "attempt": "ready",
@@ -139,6 +126,30 @@ class _ProjectionPage:
 class _ProjectionWorkspace:
     def follow(self, *_args: object, **_kwargs: object) -> _ProjectionPage:
         return _ProjectionPage()
+
+
+class _ResyncPage:
+    def to_public_dict(self) -> dict[str, object]:
+        return {
+            "workspace_id": WORKSPACE_ID,
+            "events": [],
+            "next_cursor": 41,
+            "after_cursor": 7,
+            "resync_required": True,
+            "recovery_action": "reload_snapshot",
+            "mutation_enabled": False,
+            "approvals": [{"approval_id": "must-not-project"}],
+            "results": [{"result_id": "must-not-project"}],
+            "tasks": ["must-not-project"],
+            "attempts": ["must-not-project"],
+            "runs": ["must-not-project"],
+            "gates": [{"gate_id": "retired-must-not-return"}],
+        }
+
+
+class _ResyncWorkspace:
+    def follow(self, *_args: object, **_kwargs: object) -> _ResyncPage:
+        return _ResyncPage()
 
 
 def _event_payloads(body: str, event_name: str) -> list[dict[str, object]]:
@@ -163,10 +174,7 @@ def test_each_sse_client_receives_all_projection_updates(
         lambda _settings: _ProjectionWorkspace(),
     )
     client = _client(tmp_path)
-    url = (
-        f"/api/workspace/{WORKSPACE_ID}/follow/stream"
-        "?after_cursor=0&max_ticks=1&poll_seconds=0"
-    )
+    url = f"/api/workspace/{WORKSPACE_ID}/follow/stream?after_cursor=0&max_ticks=1&poll_seconds=0"
 
     first = client.get(url, headers=_headers())
     second = client.get(url, headers=_headers())
@@ -179,15 +187,11 @@ def test_each_sse_client_receives_all_projection_updates(
                 "status": "pending",
             }
         ]
-        assert _event_payloads(response.text, "gates")[0]["gates"][0][
-            "gate_id"
-        ] == "gate-two-clients"
-        assert _event_payloads(response.text, "results")[0]["results"][0][
-            "result_id"
-        ] == "result-two-clients"
-        assert _event_payloads(response.text, "vertical")[0]["tasks"] == [
-            "task-two-clients"
-        ]
+        assert (
+            _event_payloads(response.text, "results")[0]["results"][0]["result_id"]
+            == "result-two-clients"
+        )
+        assert _event_payloads(response.text, "vertical")[0]["tasks"] == ["task-two-clients"]
         transcript = _event_payloads(response.text, "transcript")[0]
         assert transcript["hermes_session_id"] == "web.two-clients"
         for forbidden in (
@@ -202,3 +206,52 @@ def test_each_sse_client_receives_all_projection_updates(
             "tokens",
         ):
             assert forbidden not in transcript
+
+
+def test_resync_page_emits_resync_without_gate_projection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        workspace_routes,
+        "_workspace",
+        lambda _settings: _ResyncWorkspace(),
+    )
+    client = _client(tmp_path)
+
+    response = client.get(
+        f"/api/workspace/{WORKSPACE_ID}/follow/stream?after_cursor=7&max_ticks=1&poll_seconds=0",
+        headers=_headers(),
+    )
+
+    assert response.status_code == 200
+    assert _event_payloads(response.text, "resync") == [
+        {
+            "after_cursor": 7,
+            "recovery_action": "reload_snapshot",
+            "mutation_enabled": False,
+        }
+    ]
+    for forbidden_event in ("command", "cursor", "approvals", "results", "vertical", "gates"):
+        assert _event_payloads(response.text, forbidden_event) == []
+
+
+def test_resync_page_ends_stream_after_one_frame(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        workspace_routes,
+        "_workspace",
+        lambda _settings: _ResyncWorkspace(),
+    )
+    client = _client(tmp_path)
+
+    response = client.get(
+        f"/api/workspace/{WORKSPACE_ID}/follow/stream?after_cursor=7&max_ticks=3&poll_seconds=0",
+        headers=_headers(),
+    )
+
+    assert response.status_code == 200
+    assert len(_event_payloads(response.text, "resync")) == 1
+    assert _event_payloads(response.text, "reconnect") == []

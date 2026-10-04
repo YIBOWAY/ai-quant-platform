@@ -2,7 +2,7 @@
 
 Safety rails held on every path:
 * release_authorized stays False (full V8 release is a separate stamp)
-* m6_gate2_decide_authorized stays False
+* retired Gate2 projection stays absent
 * v2_durable_live stays False
 * kill_switch_unchanged stays True
 * mutation_enabled gate still required
@@ -96,7 +96,7 @@ def _settings() -> Settings:
 
 def _assert_rails(payload: dict, *, public_open: bool | None = None) -> None:
     assert payload.get("release_authorized") is False
-    assert payload.get("m6_gate2_decide_authorized") is False
+    assert "m6_gate2_decide_authorized" not in payload
     assert payload.get("v2_durable_live") is False
     assert payload.get("kill_switch_unchanged") is True
     if public_open is True:
@@ -261,7 +261,7 @@ def test_open_spine_and_flag() -> None:
     assert rows[0]["status"] == "open"
     assert rows[0]["public_flag_open"] is True
     assert rows[0]["release_authorized"] is False
-    assert rows[0]["m6_gate2_decide_authorized"] is False
+    assert "m6_gate2_decide_authorized" not in rows[0]
     assert rows[0]["v2_durable_live"] is False
     assert rows[0]["kill_switch_unchanged"] is True
 

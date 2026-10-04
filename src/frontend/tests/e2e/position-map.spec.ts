@@ -4,10 +4,8 @@ import path from "node:path";
 import { expect, test } from "@playwright/test";
 
 const repoRoot = findRepoRoot(process.cwd());
-const e2eDataRoot = path.join(repoRoot, "src", "frontend", ".tmp", "e2e-data");
-const parquetDir = path.join(e2eDataRoot, "parquet");
-const priceFixturePath = path.join(parquetDir, "ohlcv.parquet");
 const apiBase = `http://127.0.0.1:${process.env.PW_BACKEND_PORT ?? "8765"}`;
+let priceFixturePath: string | null = null;
 
 function findRepoRoot(start: string) {
   let current = path.resolve(start);
@@ -45,7 +43,7 @@ function findPython() {
   throw new Error("Unable to find a Python interpreter for paper price fixtures.");
 }
 
-function writePaperPriceFixture() {
+function writePaperPriceFixture(parquetDir: string) {
   fs.mkdirSync(parquetDir, { recursive: true });
   const scriptPath = path.join(parquetDir, "_write_paper_price_fixture.py");
   const script = `
@@ -80,12 +78,23 @@ pd.DataFrame(rows).to_parquet(root / "ohlcv.parquet", index=False)
 test.describe("position map", () => {
   test.skip(process.env.PW_E2E !== "1", "Set PW_E2E=1 to run local full-stack smoke.");
 
-  test.beforeAll(() => {
-    writePaperPriceFixture();
+  test.beforeAll(({}, workerInfo) => {
+    const metadata = workerInfo.config.metadata as {
+      e2eRun?: { dataRoot?: string };
+    };
+    const dataRoot = metadata.e2eRun?.dataRoot;
+    if (!dataRoot) {
+      throw new Error("Position Map E2E requires the isolated run data root.");
+    }
+    const parquetDir = path.join(dataRoot, "parquet");
+    priceFixturePath = path.join(parquetDir, "ohlcv.parquet");
+    writePaperPriceFixture(parquetDir);
   });
 
   test.afterAll(() => {
-    fs.rmSync(priceFixturePath, { force: true });
+    if (priceFixturePath) {
+      fs.rmSync(priceFixturePath, { force: true });
+    }
   });
 
   test("renders the live paper account exposure after a manual order", async ({ page, request }) => {
@@ -103,13 +112,23 @@ test.describe("position map", () => {
     });
     expect(order.status()).toBe(200);
 
-    await page.goto("/position-map", { waitUntil: "domcontentloaded" });
+    await page.goto("/paper-trading?view=map", { waitUntil: "domcontentloaded" });
 
     await expect(page.getByRole("heading", { name: "Position Map" })).toBeVisible();
-    await expect(page.getByText("Net Value")).toBeVisible();
+    await expect(page.getByText("Net Value", { exact: true })).toBeVisible();
     await expect(page.getByText("Account Exposure by Symbol")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Account Positions" })).toBeVisible();
     await expect(page.getByText("SPY").first()).toBeVisible();
+    const ordersTab = page.getByRole("tab", { name: /Orders/ });
+    await ordersTab.click();
+    const tabUrl = new URL(page.url());
+    expect(tabUrl.searchParams.get("view")).toBe("map");
+    expect(tabUrl.searchParams.get("tab")).toBe("orders");
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(page.getByRole("tab", { name: /Orders/ })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
 
     // Clean up so repeated local runs start fresh.
     await request.post(`${apiBase}/api/paper/account/reset`, {
@@ -157,5 +176,46 @@ test.describe("position map", () => {
       await expect(replayTab).toHaveAttribute("aria-selected", "true", { timeout: 1_000 });
     }).toPass({ timeout: 30_000 });
     await expect(page.getByText("历史回放（研究）", { exact: true })).toBeVisible();
+  });
+
+  test("shared tabs and quick order preserve keyboard focus", async ({ page, request }) => {
+    await request.post(`${apiBase}/api/paper/account/reset`, {
+      data: { initial_cash: 1000000 },
+    });
+
+    await page.goto("/paper-trading", { waitUntil: "domcontentloaded" });
+    const liveTab = page.getByRole("tab", { name: /Live Account/i });
+    const replayTab = page.getByRole("tab", { name: /Historical Replay/i });
+
+    await liveTab.focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(replayTab).toBeFocused();
+    await expect(replayTab).toHaveAttribute("aria-selected", "true");
+    await page.keyboard.press("Home");
+    await expect(liveTab).toBeFocused();
+    await expect(liveTab).toHaveAttribute("aria-selected", "true");
+    await page.keyboard.press("End");
+    await expect(replayTab).toBeFocused();
+
+    await page.goto("/position-map", { waitUntil: "domcontentloaded" });
+    const trigger = page.getByRole("button", { name: "New paper order" });
+    await trigger.focus();
+    await trigger.click();
+
+    const dialog = page.getByRole("dialog", { name: "Quick Order" });
+    const closeButton = dialog.getByRole("button", { name: "Close" });
+    const submitButton = dialog.getByRole("button", { name: "Submit paper order" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.locator("#qtd-symbol")).toBeFocused();
+
+    await closeButton.focus();
+    await page.keyboard.press("Shift+Tab");
+    await expect(submitButton).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(closeButton).toBeFocused();
+    await page.keyboard.press("Escape");
+
+    await expect(page.getByRole("dialog", { name: "Quick Order" })).toHaveCount(0);
+    await expect(trigger).toBeFocused();
   });
 });

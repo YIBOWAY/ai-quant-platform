@@ -12,7 +12,9 @@ export function splitLocalePath(pathname: string): {
   locale?: Locale;
   pathname: string;
 } {
-  const [pathOnly, suffix = ""] = pathname.split(/(?=[?#])/, 2);
+  const boundary = pathname.search(/[?#]/);
+  const pathOnly = boundary < 0 ? pathname : pathname.slice(0, boundary);
+  const suffix = boundary < 0 ? "" : pathname.slice(boundary);
   const segments = pathOnly.split("/");
   const maybeLocale = segments[1];
   if (maybeLocale === "en" || maybeLocale === "zh") {
@@ -26,7 +28,9 @@ export function localizePath(pathname: string, locale: Locale): string {
   if (!pathname.startsWith("/")) {
     return pathname;
   }
-  const [pathOnly, suffix = ""] = pathname.split(/(?=[?#])/, 2);
+  const boundary = pathname.search(/[?#]/);
+  const pathOnly = boundary < 0 ? pathname : pathname.slice(0, boundary);
+  const suffix = boundary < 0 ? "" : pathname.slice(boundary);
   const stripped = splitLocalePath(pathOnly).pathname;
   const normalized = stripped === "/" ? "" : stripped;
   return `/${locale}${normalized}${suffix}`;

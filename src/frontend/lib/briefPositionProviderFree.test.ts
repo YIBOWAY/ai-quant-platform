@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 const briefPagePath = path.join(process.cwd(), "app/brief/page.tsx");
 const positionMapPagePath = path.join(
   process.cwd(),
-  "app/position-map/page.tsx",
+  "components/position-map/PositionMapPageContent.tsx",
 );
 const positionMapWorkspacePath = path.join(
   process.cwd(),

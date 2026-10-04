@@ -145,8 +145,6 @@ SELECTORS=(
   tests/test_agent_v02_zero_effect_hardening.py
   tests/test_agent_v02_restart_live_settings.py
   tests/test_agent_v02_restart_release_authority.py
-  tests/test_gate_surfaces_v7e.py
-  tests/test_paper_gate_authority.py
   tests/test_paper_run_attestation.py
   tests/test_api_paper.py
   tests/test_hermes_run_control_client.py

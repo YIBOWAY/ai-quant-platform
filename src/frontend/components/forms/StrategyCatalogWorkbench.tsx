@@ -34,6 +34,12 @@ import { ApiClientError, apiPost } from "@/lib/apiClient";
 import { isBacktestJobState, waitForBacktestJob } from "@/lib/backtestJobs";
 import { useIsHydrated } from "@/lib/hydration";
 import { localizePath, type Locale } from "@/lib/locale";
+import {
+  localizedFactorName,
+  localizedStrategyDescription,
+  localizedStrategyName,
+  localizedUniverseName,
+} from "@/lib/catalogPresentation";
 import { asStringArray, buildStrategyPayload } from "@/lib/strategyPayload";
 import { FutuUnavailableHint, futuOptionLabel } from "./FutuProviderHint";
 
@@ -106,7 +112,7 @@ const copy = {
     eyebrow: "研究流水线",
     title: "策略目录",
     subtitle: "后端已登记的研究策略。新增后端策略后，这里会自动出现目录项。",
-    source: "论文出处",
+    source: "策略说明",
     parameters: "参数",
     run: "运行策略",
     running: "运行中...",
@@ -184,15 +190,6 @@ const fieldLabels = {
 const inputClass =
   "rounded-lg border border-border-subtle bg-bg-base px-3 py-2 font-data-mono text-text-primary disabled:opacity-50";
 
-// zh display layer: ids and canonical English names stay authoritative.
-function localizedName(
-  item: { display_name_zh?: string | null },
-  canonical: string,
-  locale: Locale,
-): string {
-  return locale === "zh" && item.display_name_zh ? item.display_name_zh : canonical;
-}
-
 export function StrategyCatalogWorkbench({
   strategies,
   universes,
@@ -208,8 +205,23 @@ export function StrategyCatalogWorkbench({
   const [strategyId, setStrategyId] = useState(
     initialStrategyId ?? activeStrategies[0]?.id ?? "",
   );
-  const strategy = activeStrategies.find((item) => item.id === strategyId) ?? activeStrategies[0];
-  const [values, setValues] = useState<Record<string, unknown>>(strategy?.default_payload ?? {});
+  const strategy = activeStrategies.find((item) => item.id === strategyId)
+    ?? (initialResult ? undefined : activeStrategies[0]);
+  const savedRequest = asRecord(asRecord(initialResult)?.request);
+  const savedRequestComplete = Boolean(strategy && savedRequest && Object.keys(savedRequest).length
+    && Object.entries(strategy.parameter_schema.fields ?? {}).every(([key, schema]) =>
+      Object.prototype.hasOwnProperty.call(savedRequest, key)
+      && savedRequest[key] !== undefined
+      && (savedRequest[key] !== null || String(schema.type).endsWith("_or_null") || schema.nullable === true),
+    ));
+  const [savedRequestMissing, setSavedRequestMissing] = useState(
+    initialResult !== null && !savedRequestComplete,
+  );
+  const [values, setValues] = useState<Record<string, unknown>>(() =>
+    savedRequest && Object.keys(savedRequest).length
+      ? Object.fromEntries(Object.entries(savedRequest).map(([key, value]) => [key, value === null ? "" : value]))
+      : strategy?.default_payload ?? {},
+  );
   const [result, setResult] = useState<StrategyRunResponse | null>(initialResult);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -252,12 +264,13 @@ export function StrategyCatalogWorkbench({
     const nextStrategy = activeStrategies.find((item) => item.id === nextId);
     setStrategyId(nextId);
     setValues(nextStrategy?.default_payload ?? {});
+    setSavedRequestMissing(false);
     setResult(null);
     setError(null);
   }
 
   async function submit() {
-    if (!strategy) {
+    if (!strategy || strategy.runnable === false || savedRequestMissing || (values.provider === "futu" && !futuReachable)) {
       return;
     }
     setPending(true);
@@ -275,7 +288,7 @@ export function StrategyCatalogWorkbench({
         ? await waitForBacktestJob(response)
         : response;
       setResult(completedResponse);
-      toast.success(text.finished(strategy.name));
+      toast.success(text.finished(localizedStrategyName(strategy, locale)));
     } catch (requestError) {
       setError(
         requestError instanceof ApiClientError
@@ -304,9 +317,9 @@ export function StrategyCatalogWorkbench({
             onChange={(event) => chooseStrategy(event.target.value)}
             value={strategy?.id ?? ""}
           >
-            {activeStrategies.map((item) => (
-              <option key={item.id} value={item.id}>
-                {localizedName(item, item.name, locale)}
+            {activeStrategies.map((strategyOption) => (
+              <option key={strategyOption.id} value={strategyOption.id}>
+                {localizedStrategyName(strategyOption, locale)}
               </option>
             ))}
           </select>
@@ -316,17 +329,17 @@ export function StrategyCatalogWorkbench({
           <section className="mt-4 rounded-lg border border-border-subtle bg-bg-surface-muted p-3">
             <div className="font-label-caps text-text-secondary">{text.source}</div>
             <p className="mt-2 font-body-sm text-text-primary">
-              {strategy.paper_source ?? strategy.description}
+              {localizedStrategyDescription(strategy, locale)}
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <span
                 className={`inline-flex rounded-lg border px-2 py-1 font-data-mono text-[10px] uppercase ${
-                  strategy.result_type === "backtest"
+                  strategy.runnable === false ? "border-warning/40 bg-warning/10 text-warning" : strategy.result_type === "backtest"
                     ? "border-accent-success/40 bg-accent-success/10 text-accent-success"
                     : "border-info/40 bg-info/10 text-info"
                 }`}
               >
-                {strategy.result_type === "backtest" ? text.runsInBacktester : text.catalogOnly}
+                {strategy.runnable === false ? (locale === "zh" ? "研究草稿 · 尚无执行器，不能运行" : "Research draft · no executor available") : strategy.result_type === "backtest" ? text.runsInBacktester : text.catalogOnly}
               </span>
               {strategy.id === "reversal_momentum" ? (
                 <Link
@@ -342,7 +355,7 @@ export function StrategyCatalogWorkbench({
 
         <section className="mt-4 flex flex-col gap-3 rounded-lg border border-border-subtle bg-bg-surface-muted p-3">
           <div className="font-label-caps text-text-secondary">{text.parameters}</div>
-          {Object.entries(fields).map(([fieldName, schema]) => (
+          {savedRequestMissing ? <p className="text-sm leading-7 text-warning">{locale === "zh" ? "原运行参数缺失或对应策略当前不可用，仅展示历史结果。请重新选择策略并明确设置参数后，再发起新的运行。" : "The saved request is incomplete or its strategy is unavailable. This result is read-only; select a strategy and explicitly configure a new run."}</p> : strategy?.runnable === false ? <p className="text-sm leading-7 text-warning">{locale === "zh" ? "这份草稿尚未完成可执行代码。可以阅读规则，但不能回测或启用模拟；不会用其他策略代跑。" : "This draft has no executable implementation. It cannot run or be enabled, and another strategy will not substitute."}</p> : Object.entries(fields).map(([fieldName, schema]) => (
             <FieldRenderer
               factors={factors}
               fieldName={fieldName}
@@ -357,7 +370,7 @@ export function StrategyCatalogWorkbench({
             />
           ))}
           {error ? <p className="font-body-sm text-danger">{error}</p> : null}
-          {replicationGuidance ? (
+          {replicationGuidance && !savedRequestMissing ? (
             <div className="rounded-lg border border-info/30 bg-info/5 p-3 font-body-sm">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <span className="font-data-mono text-text-primary">
@@ -375,7 +388,7 @@ export function StrategyCatalogWorkbench({
           ) : null}
           <TerminalToolbarButton
             className="h-9"
-            disabled={!isHydrated || pending}
+            disabled={!isHydrated || pending || savedRequestMissing || strategy?.runnable === false || (values.provider === "futu" && !futuReachable)}
             onClick={() => void submit()}
             tone="info"
           >
@@ -389,8 +402,8 @@ export function StrategyCatalogWorkbench({
 
         <PageHeader
           eyebrow={text.eyebrow}
-          title={strategy ? localizedName(strategy, strategy.name, locale) : text.title}
-          subtitle={strategy?.description}
+          title={strategy ? localizedStrategyName(strategy, locale) : text.title}
+          subtitle={strategy ? localizedStrategyDescription(strategy, locale) : undefined}
           actions={
             <>
               {result?.run_id ? (
@@ -677,7 +690,7 @@ function FieldRenderer({
         >
           {universes.map((universe) => (
             <option key={universe.id} value={universe.id}>
-              {universe.name}
+              {localizedUniverseName(universe, locale)}
             </option>
           ))}
         </select>
@@ -726,7 +739,7 @@ function FieldRenderer({
               }}
               type="checkbox"
             />
-            {localizedName(factor, factor.factor_name, locale)}
+            {localizedFactorName(factor, locale)}
           </label>
         ))}
       </div>
@@ -738,9 +751,17 @@ function FieldRenderer({
     return (
       <div className="flex flex-col gap-2 font-body-sm text-text-primary">
         <div className="font-label-caps text-text-secondary">{label(fieldName, locale)}</div>
-        {selected.map((factorId) => (
+        {selected.map((factorId) => {
+          const selectedFactor = factors.find((factor) => factor.factor_id === factorId);
+          return (
           <label className="grid grid-cols-[1fr_96px] items-center gap-2" key={factorId}>
-            <span>{factorId}</span>
+            <span>
+              {selectedFactor
+                ? localizedFactorName(selectedFactor, locale)
+                : locale === "zh"
+                  ? "未命名因子"
+                  : factorId}
+            </span>
             <input
               className="rounded-lg border border-border-subtle bg-bg-base px-2 py-1 font-data-mono text-text-primary disabled:opacity-50"
               disabled={disabled}
@@ -752,7 +773,8 @@ function FieldRenderer({
               value={String(weights[factorId] ?? 1)}
             />
           </label>
-        ))}
+          );
+        })}
       </div>
     );
   }

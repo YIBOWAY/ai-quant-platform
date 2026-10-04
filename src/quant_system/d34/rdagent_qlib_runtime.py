@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 from collections.abc import Mapping
@@ -9,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+from pydantic import BaseModel, ConfigDict, Field
 
 from quant_system.d34.research_driver import (
     D34_TARGET_GROSS_EXPOSURE,
@@ -23,6 +25,30 @@ RDAGENT_COMMIT = "274e274d5dbb72cc2ea139d1a7c93d73ce9b1198"
 QLIB_COMMIT = "da920b7f954f48ab1bb64117c976710de198373e"
 RISK_DEGREE = D34_TARGET_GROSS_EXPOSURE
 ONE_WAY_COST = 0.0006
+
+
+class RegisteredFactorVerificationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    contract: str = Field(pattern=r"^hqa\.registered_factor_verification_request/v1$")
+    job_id: str = Field(pattern=r"^job-[A-Za-z0-9._:-]{8,200}$")
+    run_id: str = Field(pattern=r"^attempt-[A-Za-z0-9._:-]{8,200}$")
+    factor_id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,127}$")
+    source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    snapshot_id: str = Field(pattern=r"^snapshot-[A-Za-z0-9._:-]{8,200}$")
+    snapshot_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    provider_uri: Path
+    universe: tuple[str, ...]
+    calendar: tuple[str, ...]
+    qlib_expression: str = Field(min_length=1, max_length=2_000)
+    top_k: int = Field(default=1, ge=1, le=64)
+    initial_cash: float = Field(default=100_000, gt=0)
+
+    @property
+    def request_digest(self) -> str:
+        from quant_system.d34.research_request import digest_document  # noqa: PLC0415
+
+        return digest_document(self.model_dump(mode="json"))
 
 
 class RDAgentProposalProvider:
@@ -56,19 +82,26 @@ Required JSON object shape:
   "title": "short hypothesis name",
   "thesis": "falsifiable research claim that cites prior receipts when any exist",
   "operator": "composed",
-  "short_window": 5,
+  "short_window": 0,
   "long_window": 20,
-  "qlib_expr": "Rank($close/Ref($close,20)-1,1)",
+  "qlib_expr": "$close/Ref($close,20)-1",
   "rationale": "why this expression improves on prior receipts"
 }}
 
 Prefer operator=composed and a whitelist Qlib expression using only
 $close/$open/$high/$low/$volume and Ref, Mean, Std, Sum, Max, Min, Delta,
-EMA, Rank, Abs, Log, Sign, plus + - * /. Windows must be integers 1..252.
-Depth <= 6. If you cannot form a valid composed expression, you may fall
-back to operator in momentum, mean_reversion, low_volatility,
-volume_surprise, moving_average_spread and omit qlib_expr. Explain a
-testable thesis. Do not output Python, trading orders, or live instructions.
+EMA, Rank, Abs, Log, Sign, plus + - * /. long_window must be 2..252.
+Rank(expression, window) is a time-series percentile over that window,
+not a cross-sectional rank. Rank(expression, 1) is constant and is not
+a useful selection signal; the portfolio already ranks scores across symbols.
+short_window is momentum skip-N: 0 means no skip; 1 means skip one day
+(Ref($close,1)/Ref($close,1+window)-1). Do not use 1 as a sentinel for
+"unset". moving_average_spread requires short_window >= 1 and
+short_window < long_window. Depth <= 6. If you cannot form a valid
+composed expression, you may fall back to operator in momentum,
+mean_reversion, low_volatility, volume_surprise, moving_average_spread
+and omit qlib_expr. Explain a testable thesis. Do not output Python,
+trading orders, or live instructions.
 """.strip()
         response = self._backend.build_messages_and_create_chat_completion(
             prompt,
@@ -256,6 +289,9 @@ class QlibExperimentRunner:
             "max_drawdown": float(drawdown.min()),
             "mean_daily_cost": float(report["cost"].mean()),
             "observation_count": len(net_returns),
+            # Qlib reports gross traded value / previous account NAV per day.
+            # Sum the exact return window; do not annualize or divide by two.
+            "turnover": _period_turnover(report),
         }
         qlib_config = {
             "contract": "hqa.d34_qlib_config/v1",
@@ -286,6 +322,23 @@ class QlibExperimentRunner:
         )
 
 
+def _period_turnover(report: pd.DataFrame) -> float | None:
+    """Preserve unknown turnover instead of pandas' implicit missing-day skip."""
+    if report.empty or "turnover" not in report.columns:
+        return None
+    values = report["turnover"].tolist()
+    if any(
+        type(value) not in {int, float} or not math.isfinite(value) or value < 0
+        for value in values
+    ):
+        return None
+    try:
+        total = math.fsum(values)
+    except OverflowError:
+        return None
+    return total if math.isfinite(total) else None
+
+
 class RDAgentCostMeter:
     def __init__(self, reservation_usd: float) -> None:
         self._reservation = reservation_usd
@@ -306,12 +359,132 @@ class RDAgentCostMeter:
             return self._reservation
         return observed
 
+    def metering_alert(self, *, spent: float) -> str | None:
+        if self._module is None:
+            return None
+        if spent == 0:
+            return "d34_budget_metering_failed"
+        return None
+
+
+def run_registered_factor_verification(
+    *,
+    request_path: str | Path,
+    output_root: str | Path,
+) -> dict[str, object]:
+    """Run one registered expression through Qlib without invoking an LLM."""
+
+    request = RegisteredFactorVerificationRequest.model_validate_json(
+        Path(request_path).read_text(encoding="utf-8")
+    )
+    from quant_system.d34.research_driver import (  # noqa: PLC0415
+        D34ResearchRequest,
+        ResearchProposal,
+    )
+    from quant_system.d34.research_request import (  # noqa: PLC0415
+        LOCAL_RESEARCH_RESOURCE_ENVELOPE_ID,
+        LOCAL_RESEARCH_RESOURCE_POLICY_DIGEST,
+        digest_document,
+    )
+
+    research_request = D34ResearchRequest(
+        contract="hqa.d34_research_request/v2",
+        job_id=request.job_id,
+        run_id=request.run_id,
+        resource_envelope_id=LOCAL_RESEARCH_RESOURCE_ENVELOPE_ID,
+        resource_policy_digest=LOCAL_RESEARCH_RESOURCE_POLICY_DIGEST,
+        snapshot_id=request.snapshot_id,
+        snapshot_digest=request.snapshot_digest,
+        snapshot_source="futu",
+        provider_uri=request.provider_uri,
+        universe=request.universe,
+        calendar=request.calendar,
+        max_iterations=3,
+        experiments_per_iteration=3,
+        top_k=request.top_k,
+        initial_cash=request.initial_cash,
+        budget_reservation_usd=10,
+        objective=f"Verify registered factor {request.factor_id}",
+    )
+    proposal = ResearchProposal(
+        title=f"Registered {request.factor_id}",
+        thesis="Verify the exact registered factor through the canonical dual-engine path.",
+        operator="composed",
+        short_window=0,
+        long_window=20,
+        qlib_expr=request.qlib_expression,
+        rationale="No LLM proposal; source and expression are fixed by the registered factor map.",
+    )
+    root = Path(output_root) / f"registered-{request.request_digest[:32]}"
+    experiment = root / "qlib"
+    if root.exists():
+        receipt_path = root / "qlib_receipt.json"
+        target_path = root / "target_weights.parquet"
+        if not receipt_path.is_file() or not target_path.is_file():
+            raise D34ResearchError(
+                "registered_factor_verification_collision",
+                "existing registered-factor evidence is incomplete",
+            )
+    else:
+        experiment.mkdir(parents=True)
+        result = QlibExperimentRunner()(
+            research_request,
+            proposal,
+            request.qlib_expression,
+            experiment,
+        )
+        target_path = experiment / "target_weights.parquet"
+        target_digest = hashlib.sha256(target_path.read_bytes()).hexdigest()
+        qlib_config = dict(result.qlib_config)
+        receipt_body = {
+            "contract": "hqa.d34_engine_receipt/v1",
+            "engine": "qlib",
+            "job_id": request.job_id,
+            "run_id": request.run_id,
+            "factor_id": request.factor_id,
+            "source_digest": request.source_digest,
+            "snapshot_id": request.snapshot_id,
+            "snapshot_digest": request.snapshot_digest,
+            "universe_digest": digest_document(list(request.universe)),
+            "calendar_digest": digest_document(list(request.calendar)),
+            "target_weights_digest": target_digest,
+            "daily_returns": list(result.daily_returns),
+            "return_dates": list(result.return_dates),
+            "terminal_nav": result.terminal_nav,
+            "terminal_weights": dict(result.terminal_weights),
+            "metrics": dict(result.metrics),
+            "qlib_config": qlib_config,
+            "qlib_config_digest": digest_document(qlib_config),
+        }
+        receipt_digest = digest_document(receipt_body)
+        receipt_path = root / "qlib_receipt.json"
+        receipt_path.write_text(
+            json.dumps(
+                {**receipt_body, "receipt_digest": receipt_digest},
+                allow_nan=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        target_path.replace(root / "target_weights.parquet")
+        target_path = root / "target_weights.parquet"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    return {
+        "contract": "hqa.registered_factor_qlib_result/v1",
+        "job_id": request.job_id,
+        "run_id": request.run_id,
+        "request_digest": request.request_digest,
+        "qlib_receipt_path": str(receipt_path),
+        "qlib_receipt_digest": str(receipt["receipt_digest"]),
+        "target_weights_path": str(target_path),
+        "target_weights_digest": hashlib.sha256(target_path.read_bytes()).hexdigest(),
+    }
 
 def run_container_research(
     *, request_path: str | Path, output_root: str | Path
 ) -> dict[str, object]:
-    from rdagent.oai.llm_utils import APIBackend  # noqa: PLC0415
-
     try:
         document = json.loads(Path(request_path).read_text(encoding="utf-8"))
         request = D34ResearchRequest.model_validate(document)
@@ -319,17 +492,22 @@ def run_container_research(
         raise D34ResearchError(
             "d34_research_request_unreadable", "research request is unreadable"
         ) from exc
-    backend = APIBackend()
-    meter = RDAgentCostMeter(request.budget_reservation_usd)
+    backend = None
+    meter = None
+    if request.formula is None:
+        from rdagent.oai.llm_utils import APIBackend  # noqa: PLC0415
+
+        backend = APIBackend()
+        meter = RDAgentCostMeter(request.budget_reservation_usd)
 
     result = execute_research_request(
         request,
         output_root=output_root,
         proposal_provider=RDAgentProposalProvider(backend),
         experiment_runner=QlibExperimentRunner(),
-        cost_provider=meter.spent,
+        cost_provider=meter.spent if meter is not None else lambda: 0.0,
     )
-    return {
+    payload: dict[str, object] = {
         "contract": result.contract,
         "job_id": result.job_id,
         "request_digest": result.request_digest,
@@ -344,9 +522,30 @@ def run_container_research(
         "factor_path": str(result.factor_path),
         "target_weights_path": str(result.target_weights_path),
         "qlib_receipt_path": str(result.qlib_receipt_path),
+        "experiment_trials_path": str(result.experiment_trials_path),
+        "experiment_trials_digest": result.experiment_trials_digest,
+        "experiment_trials_file_digest": result.experiment_trials_file_digest,
+        "successful_experiment_count": result.successful_experiment_count,
         "rdagent_commit": RDAGENT_COMMIT,
         "qlib_commit": QLIB_COMMIT,
     }
+    alert = (
+        meter.metering_alert(spent=float(result.budget_spent_usd))
+        if meter is not None else None
+    )
+    if alert is not None:
+        payload["budget_metering"] = alert
+        receipt_path = result.output_dir / "research_receipt.json"
+        try:
+            document = json.loads(receipt_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            document = None
+        if isinstance(document, dict):
+            document["budget_metering"] = alert
+            receipt_path.write_text(
+                json.dumps(document, sort_keys=True) + "\n", encoding="utf-8"
+            )
+    return payload
 
 
 __all__ = [

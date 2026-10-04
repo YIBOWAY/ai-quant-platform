@@ -1,7 +1,8 @@
 # D-34 自主 Paper 架构
 
-> **历史模块名。** 现行计划是 HQA
-> `docs/plans/2026-08-13-personal-quant-assistant.md`。`d34_*` 是代码化石，不是第二套产品。
+> **历史模块名。** 唯一现行计划是 HQA
+> `docs/plans/2026-09-14-alpha-research-reset.md`。`d34_*` 是保留的实现命名，
+> 不是第二套产品，也不能从本文的历史阶段推断 NEXT。
 
 D-34 是本地单 owner 的研究与模拟执行闭环。Mandate 只是预算/标的信封。owner 提出
 研究需求后，才把一次可恢复的研究 job 入队；再经双引擎证据、`paper_only` Artifact
@@ -15,7 +16,9 @@ Owner research ask
   -> worker lease (only if a job exists)
   -> Futu 1d QFQ Parquet snapshot + manifest + digest
   -> RD-Agent proposal / whitelist Qlib expression
-  -> Qlib factor research + target weights + receipt
+  -> every successful experiment: immutable attempt receipt + host trial
+  -> Qlib selected factor research + target weights + receipt
+  -> DSR over the complete successful-experiment family
   -> Platform fill/fee/position/NAV replay + receipt
   -> deterministic comparison and policy decision
   -> Artifact Registry
@@ -30,6 +33,11 @@ Futu Parquet 是市场数据权威，Qlib provider URI 只是可重建缓存。�
 replay。两个引擎消费相同的 snapshot、universe、calendar 和 target-weight digest。Platform 不复制因子公式，而是独立
 重放成交、费用、持仓和 NAV。初始 policy 要求收益相关性至少 `0.995`、期末 NAV 差不超过
 `25 bps`、单标的权重差不超过 `50 bps`；阈值变化必须生成新 policy digest。
+
+容器中每个成功 experiment 都即时写 create-once、原子、request-digest-bound attempt
+receipt；宿主验证完整 attempt census 后批量追加 trial。容器中断时只上卷已完成 attempt，
+不伪造未开始槽位；相同 run identity 的相同内容可幂等重放，不同内容显式冲突。历史
+d489/a604 的 DSR 复核数字仍以 HQA 现行计划收据为锚，仓库尚无独立历史重算产物。
 
 ## PostgreSQL 权威
 

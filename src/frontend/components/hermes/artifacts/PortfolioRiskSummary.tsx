@@ -5,6 +5,7 @@ import type { Locale } from "@/lib/locale";
 import { artifactCopy } from "./copy";
 import { Fact } from "./Fact";
 import {
+  artifactStatusLabel,
   formatDateTime,
   formatMoney,
   humanizeReasonCode,
@@ -45,7 +46,7 @@ export function PortfolioRiskSummary({ artifact, locale }: PortfolioRiskSummaryP
           </div>
           <StatusPill
             label={text.status}
-            value={artifact.status || artifact.quality}
+            value={artifactStatusLabel(artifact.status || artifact.quality, locale)}
             tone={qualityTone(artifact.quality)}
           />
         </div>
@@ -57,7 +58,10 @@ export function PortfolioRiskSummary({ artifact, locale }: PortfolioRiskSummaryP
             value={formatMoney(artifact.data.gross_value, artifact.data.currency, locale)}
           />
           <Fact label={text.topHolding} value={artifact.data.largest_symbol ?? "--"} />
-          <Fact label={text.historicalRisk} value={artifact.data.historical_status ?? "--"} />
+          <Fact
+            label={text.historicalRisk}
+            value={artifactStatusLabel(artifact.data.historical_status ?? "unknown", locale)}
+          />
         </dl>
 
         {artifact.data.limitations?.length ? (

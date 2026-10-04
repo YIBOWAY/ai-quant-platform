@@ -3,6 +3,8 @@
 > 基于 [Garden Skills / web-design-engineer](https://github.com/ConardLi/web-design-skill/tree/main/web-design-engineer) 的系统化界面优化方案。
 > 创建时间：2026-06-04
 > **状态（2026-06-11）**：本计划已执行完毕——2026-06-07 优化批次 #1/#2 与 2026-06-11 全页面重构均已交付，见 [optimization_log.md](optimization_log.md) 与 [../delivery/frontend_refactor_2026-06-11_delivery.md](../delivery/frontend_refactor_2026-06-11_delivery.md)。本文作为历史规划文档保留。
+> 文中两张 Dashboard Before/After 截图没有被仓库跟踪；下方只保留当时引用位置，
+> 不应把缺图解释为现役视觉验收失败。
 
 ---
 
@@ -206,10 +208,10 @@ git push origin optimize/dashboard-density
 ## Dashboard Optimization — 2026-06-04
 
 ### Before
-![](screenshots/dashboard-before-desktop.png)
+（历史截图 `dashboard-before-desktop.png` 未被仓库跟踪）
 
 ### After
-![](screenshots/dashboard-after-desktop.png)
+（历史截图 `dashboard-after-desktop.png` 未被仓库跟踪）
 
 ### Changes
 - Card spacing: 12px/16px混杂 → 统一16px
@@ -300,6 +302,6 @@ git push origin optimize/dashboard-density
 ---
 
 **Created:** 2026-06-04  
-**Last updated:** 2026-06-04  
+**Last updated:** 2026-06-11
 **Owner:** Frontend optimization team  
-**Status:** Draft → Ready for execution
+**Status:** Archived / completed; do not execute as a current plan

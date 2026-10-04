@@ -22,7 +22,7 @@ Design freeze
 * Close is idempotent on exact cutover_digest; closed cutover leaves facts.
 * Snapshot projection lists open cutover + recent closed facts. Empty honest.
 * Public dict honesty: ``release_authorized=False`` always; ``kill_switch``
-  never touched; ``m6_gate2_decide_authorized=False``; ``v2_durable_live=False``.
+  never touched; retired Gate projection stays absent; ``v2_durable_live=False``.
 """
 
 from __future__ import annotations
@@ -58,9 +58,7 @@ def _utc_now() -> datetime:
 
 def _canon_ts(dt: datetime) -> str:
     if dt.tzinfo is None or dt.utcoffset() is None:
-        raise PublicCutoverAuthorityError(
-            "validation", "timestamp must be timezone-aware"
-        )
+        raise PublicCutoverAuthorityError("validation", "timestamp must be timezone-aware")
     return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
@@ -74,9 +72,7 @@ def _validate_digest(value: str, field: str) -> str:
 
 def _validate_id(value: str, field: str) -> str:
     if type(value) is not str or _ID.fullmatch(value) is None:
-        raise PublicCutoverAuthorityError(
-            "validation", f"{field} must be a bounded identifier"
-        )
+        raise PublicCutoverAuthorityError("validation", f"{field} must be a bounded identifier")
     return value
 
 
@@ -161,7 +157,6 @@ class PublicCutover:
             "kind": "v8.public.cutover",
             # Honesty triad for release / trading / durable rails.
             "release_authorized": False,
-            "m6_gate2_decide_authorized": False,
             "v2_durable_live": False,
             "kill_switch_unchanged": True,
             # Public write surface is open only while status=open.
@@ -204,9 +199,7 @@ class PublicCutoverAuthority:
         row = self.open_cutover(workspace_id)
         return row is not None and row.status == "open"
 
-    def list_observed(
-        self, workspace_id: str, *, limit: int = 20
-    ) -> list[PublicCutover]:
+    def list_observed(self, workspace_id: str, *, limit: int = 20) -> list[PublicCutover]:
         """Open first, then recent closed facts."""
         with self._lock:
             rows = [r for (ws, _), r in self._cutovers.items() if ws == workspace_id]
@@ -259,19 +252,12 @@ class PublicCutoverAuthority:
             for (w, _), row in self._cutovers.items():
                 if w != ws:
                     continue
-                if (
-                    row.open_action_id == client_action_id
-                    and row.open_action_digest == ad
-                ):
+                if row.open_action_id == client_action_id and row.open_action_digest == ad:
                     if row.status == "open":
                         return row
-                    raise PublicCutoverAuthorityError(
-                        "conflict", "public_cutover_already_closed"
-                    )
+                    raise PublicCutoverAuthorityError("conflict", "public_cutover_already_closed")
                 if row.status == "open":
-                    raise PublicCutoverAuthorityError(
-                        "conflict", "public_cutover_already_open"
-                    )
+                    raise PublicCutoverAuthorityError("conflict", "public_cutover_already_open")
 
             cid = cutover_id or f"pct-{uuid.uuid4().hex[:16]}"
             cid = _validate_id(cid, "cutover_id")
@@ -327,13 +313,9 @@ class PublicCutoverAuthority:
         with self._lock:
             row = self._cutovers.get((ws, cid))
             if row is None:
-                raise PublicCutoverAuthorityError(
-                    "not_found", "public_cutover_not_found"
-                )
+                raise PublicCutoverAuthorityError("not_found", "public_cutover_not_found")
             if row.cutover_digest != ed:
-                raise PublicCutoverAuthorityError(
-                    "conflict", "cutover_digest_mismatch"
-                )
+                raise PublicCutoverAuthorityError("conflict", "cutover_digest_mismatch")
             # Idempotent close of exact same action.
             if (
                 row.status == "closed"

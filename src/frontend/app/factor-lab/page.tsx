@@ -65,6 +65,7 @@ export default async function FactorLab({ searchParams }: FactorLabProps) {
       </div>
       <ErrorBanner locale={locale} messages={[dashboard.apiError, factorRuns.apiError, universes.apiError]} />
       <FactorLabDashboard
+        selectedFactorId={typeof params.factor === "string" && dashboard.factors.some(row => row.factor_id === params.factor) ? params.factor : undefined}
         controlsInitial={{ provider, universeId, symbol, benchmarkSymbol, start, end, lookback, forceRefresh }}
         dashboard={dashboard}
         hiddenSampleCount={hiddenSampleCount}

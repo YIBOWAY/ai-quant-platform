@@ -1,45 +1,52 @@
 # Agent v0.2 Local Stack Operations
 
+> 本地路径说明（公开版）：文中未随本版提供的 `artifacts/`、`evidence/` 和运行目录是本地证据坐标或路径示例，原件未公开；不能把路径存在当作公开证据。详见[公开范围说明](../publication-20261004.md)。
+
 This is the sole Platform operations authority for Agent v0.2 database
 migration, readiness, service restart, candidate E2E, and database restore.
 The connector runbook covers connector mechanics only and must not duplicate
 this sequence.
 
-The long-running local stack has six independently managed LaunchAgents:
+The long-running local stack manages this current service set:
 
-- `ai.hermes.gateway` — official Hermes API on `127.0.0.1:8642`;
-- `com.aiquant.backend` — Platform API on `127.0.0.1:8765`;
-- `com.aiquant.frontend` — built Web frontend on `127.0.0.1:3001`;
-- `com.aiquant.agent-v02-connector` — installed separately and kept in
-  explicit `reconcile_only` unless a bounded candidate/release window is ready;
-- `com.aiquant.factor-automation` — five-minute, dual-Flag, `paper_only`
-  automation and sleeve-maintenance driver;
-- `com.aiquant.asia-radar-refresh` — daily, read-only Asia Radar cache/snapshot
-  refresh, independent of D-33 qualification and execution.
+| Component | launchd/container identity | HTTP endpoint | Current role |
+| --- | --- | --- | --- |
+| PostgreSQL | Docker `quantplatform-db` | — | Canonical paper-account and Platform business state; startup never applies migrations. |
+| Hermes API | `ai.hermes.gateway` | `http://127.0.0.1:8642/health` | Official local Hermes Session/Run API. |
+| Hermes OAuth proxy | `com.aiquant.hermes-oauth-proxy` | `http://127.0.0.1:8645/v1/models` | Reuses the owner Hermes xAI login for the research worker/provider path. |
+| Platform backend | `com.aiquant.backend` | `http://127.0.0.1:8765/api/health` | FastAPI and the same-origin `/api/*` target. |
+| Platform frontend | `com.aiquant.frontend` | `http://127.0.0.1:3001/zh/hermes` | Built Next.js production frontend. |
+| Agent connector | `com.aiquant.agent-v02-connector` | — | Current `local_trust` deployment uses `supervised_dispatch`; public/release authorities remain OFF. |
+| Asia Radar refresh | `com.aiquant.asia-radar-refresh` | — | Daily read-only cache/snapshot refresh. |
 
-This stack still does not install the optional legacy manual-sleeve schedulers.
-The D-33 driver acts only on `automation_managed` sleeves; its semantic runbook
-is `/Users/sunyibo/programs/Hermes-quant-agent/docs/runbooks/full-automation-paper.md`.
+Startup waits for all four HTTP endpoints in the table. A loaded launchd label
+is not a substitute for HTTP readiness.
 
-## Everyday macOS operation (2026-08-10)
+The retired factor-automation and old D-34 worker jobs are not installed. The
+research-only worker is installed separately as `com.aiquant.d34-research-worker`;
+each invocation projects durable state and handles at most one research job,
+without entering paper-cycle, canary, account or sleeve paths. Already-hung
+paper observations retain their independent paper-cycle driver.
+
+## Everyday macOS operation
 
 The supported daily entrypoint is repository-owned and independent of Codex,
 Claude Code, ChatGPT, or any terminal lifetime:
 
 ```bash
-cd /Users/sunyibo/programs/Hermes-quant-agent/data/_runtime/agent-v02-work/ai-quant-platform
+cd $HOME/programs/Hermes-quant-agent/data/_runtime/agent-v02-work/ai-quant-platform
 bash scripts/local_mac_stack.sh start
 bash scripts/local_mac_stack.sh status
 ```
 
-### Source and deployment checkout contract (2026-08-11)
+### Source and deployment checkout contract
 
 The two local checkouts have different, non-interchangeable roles:
 
 | Role | Path | Allowed Git activity |
 |---|---|---|
-| Development source | `/Users/sunyibo/programs/ai-quant-platform` or a purpose-named worktree under `/Users/sunyibo/programs/.worktrees/` | edit, test, and commit here; integrate/push from the primary checkout |
-| Deployment runtime | `/Users/sunyibo/programs/Hermes-quant-agent/data/_runtime/agent-v02-work/ai-quant-platform` | fetch and fast-forward only; never develop, commit, rebase, or push |
+| Development source | [ai-quant-platform](https://github.com/YIBOWAY/ai-quant-platform/tree/main/) or a purpose-named worktree under `$HOME/programs/.worktrees/` | edit, test, and commit here; integrate/push from the primary checkout |
+| Deployment runtime | `$HOME/programs/Hermes-quant-agent/data/_runtime/agent-v02-work/ai-quant-platform` | fetch and fast-forward only; never develop, commit, rebase, or push |
 
 All agents and interactive development tools must edit a development source.
 Long-running cross-repo work such as D-34 should use paired purpose-named
@@ -53,21 +60,21 @@ Deploy a reviewed source commit with an exact fast-forward:
 
 ```bash
 # 1. Develop and verify only in the source checkout.
-cd /Users/sunyibo/programs/ai-quant-platform
+cd $HOME/programs/ai-quant-platform
 git status --short --branch
 
 # 2. Promote that exact committed main into the runtime checkout.
-cd /Users/sunyibo/programs/Hermes-quant-agent/data/_runtime/agent-v02-work/ai-quant-platform
+cd $HOME/programs/Hermes-quant-agent/data/_runtime/agent-v02-work/ai-quant-platform
 git fetch source main
 git merge --ff-only FETCH_HEAD
-test "$(git rev-parse HEAD)" = "$(git -C /Users/sunyibo/programs/ai-quant-platform rev-parse HEAD)"
+test "$(git rev-parse HEAD)" = "$(git -C $HOME/programs/ai-quant-platform rev-parse HEAD)"
 
 # 3. Build/restart the persistent stack from the deployment checkout.
 bash scripts/local_mac_stack.sh restart
 bash scripts/local_mac_stack.sh status
 
 # 4. After runtime health and safety verification, publish from source only.
-cd /Users/sunyibo/programs/ai-quant-platform
+cd $HOME/programs/ai-quant-platform
 git push origin main
 ```
 
@@ -94,10 +101,10 @@ routes added after it started. The script:
 2. validates the ordinary backend command
    `python -m quant_system.cli serve --host 127.0.0.1 --port 8765`;
 3. runs `npm --prefix src/frontend run build` and serves the production build;
-4. installs the Hermes, backend, frontend, connector, factor-automation, and
-   Asia Radar refresh user LaunchAgents;
+4. reloads Hermes and installs the Hermes OAuth proxy, backend, frontend,
+   connector, and Asia Radar refresh user LaunchAgents;
 5. requires the prior Hermes PID and port to remain quiescent before replacement,
-   then waits for PostgreSQL and all three HTTP ports to become ready.
+   then waits for PostgreSQL and all four HTTP endpoints to become ready.
 
 The local trust mode bypasses identity ceremony only. A trust session is bound
 to the `local_trust` session kind and stops working when trust mode is disabled.
@@ -105,17 +112,15 @@ Live readiness reports `admission_mode=local_trust` with no candidate ID or
 digest; it must never masquerade as a digest-bound candidate admission.
 It does not enable real trading: `live_trading_enabled=false` and
 `kill_switch=true` remain independent hard boundaries. Startup never applies a
-database migration. Migration 029 was applied once on 2026-08-10 after backup
-and isolated restore rehearsal. It is the append-only automatic
-promote/demote/daily-quota authority and must not be replayed. D-33 source flags
-default off; the inspected owner runtime enabled all four on 2026-08-10 after
-full acceptance. They grant only machine-reviewed `paper_only` land and never
-authorize a candidate/release or live trading.
+database migration. Formal migrations through 034 have already been applied
+and must not be replayed. Migration 029 remains historical data authority, but
+its factor-automation product is retired and no longer installed or exposed by
+the current source tree.
 
 ## Historical source and live boundary (2026-07-31)
 
 The snapshot below is retained as dated evidence and is superseded operationally
-by the 2026-08-10 everyday-operation and migration statements above.
+by the everyday-operation and current-service statements above.
 
 Read-only inspection on 2026-07-31 established this narrow snapshot:
 
@@ -163,15 +168,7 @@ them into one “E2E passed” claim:
 | Factor/backtest/Gate/result continuation | **NOT EVALUATED** | Because the upstream paper-intake verdict was not accepted, zero downstream rows cannot be relabeled `EXPECTED_NOT_REACHED` or used as evidence of a correct non-actionable branch. |
 | Trading safety | **PASS** | The canonical order state did not change and the retest placed zero orders. |
 
-The exact lifecycle identity was:
-
-```text
-Platform Session: wm_39f4577b534c9a9bca8eb5c634339408
-Hermes Session:   web_39f4577b534c9a9bca8eb5c634339408cd82dd74
-Command:          850d34cd-6286-4fdb-9151-4c6b333ef895
-Hermes Run:       run_7cf82203191743ff85cb373285579ab6
-Candidate:        candidate_087abe73ffb54fb9914fac6817862c01 (revoked)
-```
+The exact session, command, run and candidate identities remain in the private local receipt and are omitted from this public edition. The candidate was revoked. The PASS / UNVERIFIED / NOT EVALUATED verdicts above are unchanged.
 
 The PostgreSQL retest counts were `primary=1`, `approval_control=2`,
 `hermes_run=1`, `workflow_binding=0`, `gate_challenge=0`, `gate_action=0`,
@@ -190,13 +187,13 @@ and left `chat_write_ready=false` with blocker `candidate_admission_missing`,
 `live_trading_enabled=false`.
 
 The formal retest preflight manifest is
-`/Users/sunyibo/programs/Hermes-quant-agent/artifacts/alphazerobeta-websearch-retest-20260801.pEDa3x/preflight/agent-v0.2-candidate-evidence.json`
+`$HOME/programs/Hermes-quant-agent/artifacts/alphazerobeta-websearch-retest-20260801.pEDa3x/preflight/agent-v0.2-candidate-evidence.json`
 (SHA-256
 `eba8099bf3801927f3d93b40d1e133546d7cbcc4eece4c58b416bf52bd29a136`);
 its candidate suite recorded `5632 passed / 272 skipped / 0 failed`.
 The cross-repo trace and database/browser evidence are recorded in the exact
 HQA runtime repository as
-`/Users/sunyibo/programs/Hermes-quant-agent/data/_runtime/agent-v02-work/Hermes-quant-agent/docs/audits/2026-07-31-alphazerobeta-paper-research-web-e2e.md`;
+`$HOME/programs/Hermes-quant-agent/data/_runtime/agent-v02-work/Hermes-quant-agent/docs/audits/2026-07-31-alphazerobeta-paper-research-web-e2e.md`;
 do not duplicate them here. This is a dated observation, not authority to
 reapply 028, reuse the revoked candidate, or open public write. Re-run all
 status and readiness checks before any future candidate or release window.
@@ -261,6 +258,7 @@ QS_INTENT_PAYLOAD_HQA_ROOT=/absolute/path/to/Hermes-quant-agent-release
 QS_INTENT_PAYLOAD_PYTHON_EXECUTABLE=/absolute/path/to/hqa-python
 QS_LOCAL_MUTATION_ENABLED=true
 QS_LOCAL_MUTATION_COMPOSER_OPEN=true
+QS_LOCAL_TRUST_MODE=true
 ```
 
 The frontend env requires an explicit local-only chat build:
@@ -270,9 +268,18 @@ QS_HERMES_CHAT_ENABLED=true
 NEXT_PUBLIC_QUANT_API_BASE_URL=http://127.0.0.1:8765
 ```
 
+The connector env must select the current local owner mode explicitly:
+
+```dotenv
+QS_DATABASE_AUTO_MIGRATE=false
+QS_PAPER_ACCOUNT_DB_MODE=canonical
+QS_AGENT_V02_CONNECTOR_MODE=supervised_dispatch
+QS_LOCAL_TRUST_MODE=true
+```
+
 These flags are necessary but never sufficient: database readiness, effective
-paper safety, Keychain readiness, candidate/release authority, owner/CSRF
-checks, and connector liveness still gate every write.
+paper safety, Keychain readiness, one valid local-trust/candidate/release
+admission, owner/CSRF checks, and connector liveness still gate every write.
 
 ## Historical migration 016–028 operator window — do not replay live
 

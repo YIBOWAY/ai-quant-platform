@@ -88,6 +88,46 @@ const pagination: HermesResultsPaginationModel = {
 };
 
 describe("UnifiedResultsIndex", () => {
+  it("marks sample performance in both list and detail before the raw payload", () => {
+    const sample = { ...backtest, data_mode: "sample" as const, data_provider: "sample" };
+    const list = renderToStaticMarkup(createElement(UnifiedResultsIndex, {
+      envelope: envelope({ items: [sample] }), locale: "zh", itemHrefs: {}, filters, pagination,
+    }));
+    const detail = renderToStaticMarkup(createElement(UnifiedResultDetail, {
+      envelope: { read_status: "available", item: sample, resource: { metadata: { source: "sample" } }, warnings: [] },
+      locale: "zh", backHref: "/zh/hermes/results",
+    }));
+    for (const html of [list, detail]) expect(html).toContain("样例数据 · 非真实表现");
+  });
+  it("uses Chinese result copy and marks stale rows as expired historical snapshots", () => {
+    const staleAutomation: HermesResultItem = {
+      ...backtest,
+      kind: "automation_status",
+      resource_id: "automation_status:cd47dc43c404f7b3730fcce2",
+      display_title: "Automation · fresh",
+      summary: "4 scheduled jobs",
+      status: "available",
+      freshness: "stale",
+      source: "hqa_artifact_feed",
+      authority: "hqa_artifact_manifest",
+    };
+    const html = renderToStaticMarkup(
+      createElement(UnifiedResultsIndex, {
+        envelope: envelope({ items: [staleAutomation] }),
+        locale: "zh",
+        itemHrefs: {},
+        filters: { ...filters, groups: [], activeSummary: null, clearHref: null },
+        pagination,
+      }),
+    );
+
+    expect(html).toContain("自动化历史快照");
+    expect(html).toContain("历史快照 · 已过期");
+    expect(html).toContain("可用");
+    expect(html).not.toContain("Automation · fresh");
+    expect(html).not.toContain(">available<");
+  });
+
   it("renders one available result with exact provenance and keyboard-reachable links", () => {
     const html = renderToStaticMarkup(
       createElement(UnifiedResultsIndex, {
@@ -186,7 +226,7 @@ describe("UnifiedResultsIndex", () => {
     expect(html).toContain('data-hermes-result-read-status="corrupt"');
     expect(html).toContain('data-hermes-result-read-status="missing"');
     expect(html).toContain("HQA artifact feed");
-    expect(html).toContain("unavailable · 0");
+    expect(html).toContain("Unavailable · 0");
   });
 
   it("distinguishes a successful empty catalog from an unavailable catalog", () => {
@@ -367,6 +407,28 @@ describe("UnifiedResultsIndex", () => {
 });
 
 describe("UnifiedResultDetail", () => {
+  it("keeps the Chinese primary detail readable while retaining exact provenance", () => {
+    const detail: HermesResultDetailEnvelope = {
+      read_status: "available",
+      item: { ...backtest, freshness: "stale" },
+      resource: { metrics: { sharpe: 1.2 } },
+      warnings: [],
+    };
+    const html = renderToStaticMarkup(
+      createElement(UnifiedResultDetail, {
+        envelope: detail,
+        locale: "zh",
+        backHref: "/zh/hermes/results",
+      }),
+    );
+
+    expect(html).toContain("回测");
+    expect(html).toContain("已完成");
+    expect(html).toContain("历史快照 · 已过期");
+    expect(html).not.toContain("AAPL momentum backtest");
+    expect(html).toContain("backtest-run-20260715");
+  });
+
   it("renders an available resource with exact provenance and Hermes run links", () => {
     const linkedItem: HermesResultItem = {
       ...backtest,
@@ -557,11 +619,50 @@ describe("UnifiedResultDetail", () => {
     expect(unavailableHtml).toContain("503: local resource adapter unavailable");
     expect(degradedHtml).toContain('data-hermes-result-detail-degraded="true"');
     expect(degradedHtml).toContain("结果详情已降级");
-    expect(degradedHtml).toContain("candidate_migration_required");
+    expect(degradedHtml).toContain("候选记录需要升级后才能完整读取");
+    expect(degradedHtml).not.toContain("candidate_migration_required");
     expect(degradedHtml).toContain("migration_required");
     expect(degradedHtml).toContain("data-hermes-result-resource");
     for (const html of [missingHtml, corruptHtml, unavailableHtml]) {
       expect(html).not.toContain("data-hermes-result-resource");
+    }
+  });
+
+  it("renders the back control as a plain localized anchor in both branches", () => {
+    const successHtml = renderToStaticMarkup(
+      createElement(UnifiedResultDetail, {
+        envelope: {
+          read_status: "available",
+          item: backtest,
+          resource: null,
+          warnings: [],
+        },
+        locale: "zh",
+        backHref: "/zh/hermes/results",
+      }),
+    );
+    const failureHtml = renderToStaticMarkup(
+      createElement(UnifiedResultDetail, {
+        envelope: {
+          read_status: "missing",
+          item: null,
+          resource: null,
+          warnings: [],
+        } satisfies HermesResultDetailEnvelope,
+        locale: "en",
+        backHref: "/en/hermes/results",
+      }),
+    );
+
+    // A back control must hard-navigate even when the client router is
+    // unhealthy, so it is a plain anchor carrying the exact localized href.
+    for (const [html, href, label] of [
+      [successHtml, "/zh/hermes/results", "返回统一结果"],
+      [failureHtml, "/en/hermes/results", "Back to unified results"],
+    ] as const) {
+      expect(html).toContain("data-hermes-result-back");
+      expect(html).toContain(`href="${href}"`);
+      expect(html).toContain(label);
     }
   });
 });

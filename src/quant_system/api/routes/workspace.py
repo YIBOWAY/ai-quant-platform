@@ -12,9 +12,11 @@ Mutation defaults OFF. Local installs open POST /act and submit-turn via
 from __future__ import annotations
 
 import json
+import math
 import time
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, Literal
+from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
@@ -32,7 +34,6 @@ from quant_system.api.safety.mutation_rate_limit import (
 )
 from quant_system.api.schemas.workspace import (
     CompositeTurnReceiptResponse,
-    Gate1SourceEvidenceResponse,
     WorkspaceActionReceiptResponse,
     WorkspaceAuthoritiesResponse,
     WorkspaceFollowResponse,
@@ -48,22 +49,30 @@ from quant_system.hermes.agent_workspace_actions import (
     AgentWorkspaceActionError,
     WorkspaceRef,
 )
+from quant_system.hermes.command_ledger import (
+    HermesCommandLedger,
+    HermesCommandLedgerUnavailable,
+    HermesCommandNotFound,
+)
 from quant_system.hermes.composer_readiness import composer_readiness_snapshot
 from quant_system.hermes.composite_turn_submit import (
     CompositeTurnSubmitError,
     parse_submit_turn_body,
     submit_composite_turn,
 )
-from quant_system.hermes.paper_gate_authority import (
-    PaperGateAuthority,
-    PaperGateAuthorityConflict,
-    PaperGateAuthorityError,
-    PaperGateNotFound,
+from quant_system.hermes.gateway_client import (
+    HermesApiReadError,
+    HermesRunControlError,
+    OfficialHermesRunControlClient,
 )
-from quant_system.hermes.paper_gate_source_evidence import (
-    PaperGateSourceEvidenceError,
+from quant_system.hermes.session_registry import (
+    HermesSessionRegistryUnavailable,
+    get_workspace_session,
 )
-from quant_system.hermes.submission_saga import SubmissionSagaError
+from quant_system.hermes.submission_saga import (
+    SubmissionSagaError,
+    control_plane_session_id,
+)
 
 router = APIRouter()
 
@@ -105,6 +114,26 @@ class SubmitTurnRequest(BaseModel):
     prompt: str = Field(min_length=1)
 
 
+class WorkspaceRunActivityResponse(BaseModel):
+    command_id: str
+    stage: Literal[
+        "queued",
+        "running",
+        "analyzing",
+        "using_tool",
+        "answering",
+        "waiting_for_approval",
+        "stopping",
+        "succeeded",
+        "failed",
+        "stopped",
+    ]
+    terminal: bool
+    last_activity_at: float | None = None
+    tool_state: Literal["active", "completed", "failed"] | None = None
+    tool_duration_seconds: float | None = Field(default=None, ge=0)
+
+
 def _workspace(settings: SettingsDep) -> PlatformAgentWorkspace:
     mutation_enabled = bool(getattr(settings.local_mutation, "enabled", False))
     return build_platform_agent_workspace(settings, mutation_enabled=mutation_enabled)
@@ -118,16 +147,80 @@ def _is_release_rollback_action(action: dict[str, Any]) -> bool:
     kind = action.get("kind")
     if kind in _RELEASE_ROLLBACK_ACTION_KINDS:
         return True
-    return (
-        kind == "hermes.command_approval.decide"
-        and action.get("decision") == "deny"
-    )
+    return kind == "hermes.command_approval.decide" and action.get("decision") == "deny"
 
 
 def _is_operator_release_action(action: dict[str, Any]) -> bool:
     """Legacy browser cutover acts only return an operator-CLI-required receipt."""
 
     return action.get("kind") in _OPERATOR_RELEASE_ACTION_KINDS
+
+
+def _finite_nonnegative(value: object) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    number = float(value)
+    return number if math.isfinite(number) and number >= 0 else None
+
+
+def _summarize_run_activity(events: tuple[dict[str, object], ...]) -> dict[str, object]:
+    stage: str | None = None
+    last_activity_at: float | None = None
+    tool_state: str | None = None
+    tool_duration_seconds: float | None = None
+    for event in events:
+        name = event.get("event")
+        if not isinstance(name, str):
+            continue
+        timestamp = _finite_nonnegative(event.get("timestamp"))
+        if timestamp is not None:
+            last_activity_at = timestamp
+        if name == "reasoning.available":
+            stage = "analyzing"
+        elif name == "message.delta":
+            stage = "answering"
+        elif name == "tool.started":
+            stage = "using_tool"
+            tool_state = "active"
+            tool_duration_seconds = None
+        elif name == "tool.completed":
+            stage = "running"
+            tool_state = "failed" if event.get("error") is True else "completed"
+            tool_duration_seconds = _finite_nonnegative(event.get("duration"))
+        elif name == "approval.request":
+            stage = "waiting_for_approval"
+        elif name == "run.completed":
+            stage = "succeeded"
+        elif name == "run.failed":
+            stage = "failed"
+        elif name in {"run.cancelled", "run.stopped"}:
+            stage = "stopped"
+    return {
+        "stage": stage,
+        "last_activity_at": last_activity_at,
+        "tool_state": tool_state,
+        "tool_duration_seconds": tool_duration_seconds,
+    }
+
+
+def _run_activity_stage(
+    status: str,
+    substate: object,
+    stage: object,
+) -> str:
+    if status == "succeeded":
+        return "succeeded"
+    if status == "failed":
+        return "failed"
+    if status == "stopped":
+        return "stopped"
+    if substate == "waiting_for_approval":
+        return "waiting_for_approval"
+    if substate == "stopping":
+        return "stopping"
+    if status == "queued":
+        return "queued"
+    return str(stage) if stage in {"analyzing", "using_tool", "answering"} else "running"
 
 
 def _require_effective_release(settings: SettingsDep) -> None:
@@ -195,51 +288,96 @@ def workspace_snapshot(
 
 
 @router.get(
-    "/workspace/{workspace_id}/gates/{gate_id}/source",
-    response_model=Gate1SourceEvidenceResponse,
+    "/workspace/{workspace_id}/commands/{command_id}/activity",
+    response_model=WorkspaceRunActivityResponse,
 )
-def workspace_gate1_source_evidence(
+def workspace_command_activity(
     workspace_id: str,
-    gate_id: str,
+    command_id: str,
     settings: SettingsDep,
     owner: OwnerSessionDep,
 ) -> dict[str, object]:
-    """Read exact Gate 1 bytes from its durable owner/workspace binding.
-
-    ``owner`` is intentionally consumed even though the single-user authority
-    already binds its database rows to ROOT_USER_ID.  The browser cannot pass a
-    path or digest, and this GET performs no workflow mutation.
-    """
-
-    del owner
     try:
-        return PaperGateAuthority(settings).get_gate1_source_evidence(
-            workspace_id=workspace_id,
-            gate_id=gate_id,
-        )
-    except PaperGateNotFound as exc:
+        command_uuid = UUID(command_id)
+        canonical_command_id = str(command_uuid)
+        control_session_id = control_plane_session_id(workspace_id)
+    except (ValueError, SubmissionSagaError) as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "validation", "message": "workspace or command is invalid"},
+        ) from exc
+
+    try:
+        command = HermesCommandLedger(settings).get_command(command_uuid)
+    except HermesCommandNotFound as exc:
         raise HTTPException(
             status_code=404,
-            detail={"code": exc.code, "message": exc.message},
+            detail={"code": "command_not_found", "message": "workspace command not found"},
         ) from exc
-    except PaperGateAuthorityConflict as exc:
-        raise HTTPException(
-            status_code=409,
-            detail={"code": exc.code, "message": exc.message},
-        ) from exc
-    except PaperGateSourceEvidenceError as exc:
-        status = 409 if exc.code == "paper_gate_source_digest_mismatch" else 422
-        if exc.code == "paper_gate_source_unavailable":
-            status = 503
-        raise HTTPException(
-            status_code=status,
-            detail={"code": exc.code, "message": exc.message},
-        ) from exc
-    except PaperGateAuthorityError as exc:
+    except HermesCommandLedgerUnavailable as exc:
         raise HTTPException(
             status_code=503,
-            detail={"code": exc.code, "message": exc.message},
+            detail={"code": "command_unavailable", "message": "workspace command is unavailable"},
         ) from exc
+
+    if command.platform_session_id != control_session_id:
+        try:
+            session = get_workspace_session(
+                settings,
+                platform_session_id=command.platform_session_id,
+            )
+        except LookupError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "command_not_found", "message": "workspace command not found"},
+            ) from exc
+        except HermesSessionRegistryUnavailable as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "command_unavailable",
+                    "message": "workspace command is unavailable",
+                },
+            ) from exc
+        if session.workspace_id != workspace_id:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "command_not_found", "message": "workspace command not found"},
+            )
+
+    run_id = command.hermes_run_id
+    if not isinstance(run_id, str) or not run_id:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "run_not_bound", "message": "Hermes Run is not bound yet"},
+        )
+
+    try:
+        gateway = OfficialHermesRunControlClient(settings.hermes_gateway)
+        status = gateway.run_status(run_id)
+        activity = _summarize_run_activity(gateway.run_events(run_id))
+    except (HermesApiReadError, HermesRunControlError) as exc:
+        raise HTTPException(
+            status_code=404 if exc.code == "run_not_found" else 503,
+            detail={
+                "code": "run_activity_unavailable",
+                "message": "Hermes Run activity is unavailable",
+            },
+        ) from exc
+
+    run_status = str(status["status"])
+    return {
+        "command_id": canonical_command_id,
+        "stage": _run_activity_stage(
+            run_status,
+            status.get("substate"),
+            activity["stage"],
+        ),
+        "terminal": run_status in {"succeeded", "failed", "stopped"},
+        "last_activity_at": activity["last_activity_at"],
+        "tool_state": activity["tool_state"],
+        "tool_duration_seconds": activity["tool_duration_seconds"],
+    }
 
 
 @router.get(
@@ -253,9 +391,7 @@ def workspace_follow(
     owner: OwnerSessionDep,
     after_cursor: int | None = None,
 ) -> dict[str, object]:
-    after: WorkspaceCursor | int | None = (
-        None if after_cursor is None else after_cursor
-    )
+    after: WorkspaceCursor | int | None = None if after_cursor is None else after_cursor
     mutation_enabled = bool(getattr(settings.local_mutation, "enabled", False))
     try:
         page = _workspace(settings).follow(
@@ -300,7 +436,7 @@ def workspace_follow_stream(
 ) -> StreamingResponse:
     """Server-Sent Events over workspace follow pages.
 
-    Command lifecycle + approvals/gates/results/vertical_ids + Plan-V6
+    Command lifecycle + approvals/results/vertical ids
     transcript **hints only**. Assistant bodies never ride this stream;
     text authority remains GET /api/hermes/sessions/{id}/messages
     (spine-refetch, not provider-token passthrough).
@@ -335,18 +471,11 @@ def workspace_follow_stream(
 
     def _sse_pack(event: str, data: dict[str, object]) -> str:
         payload = json.dumps(data, separators=(",", ":"), ensure_ascii=False)
-        return (
-            f"id: {cursor_state[0]}\n"
-            f"event: {event}\n"
-            f"data: {payload}\n\n"
-        )
+        return f"id: {cursor_state[0]}\nevent: {event}\ndata: {payload}\n\n"
 
     def event_iter() -> Iterator[str]:
         from quant_system.hermes.approval_observe import (
             ApprovalObserveJournal,
-        )
-        from quant_system.hermes.gate_observe import (
-            GateObserveJournal,
         )
         from quant_system.hermes.result_observe import (
             ResultObserveJournal,
@@ -365,7 +494,6 @@ def workspace_follow_stream(
         # process authority. A process-global fingerprint lets the first
         # browser consume a projection and starves every later subscriber.
         journal = ApprovalObserveJournal()
-        gate_journal = GateObserveJournal()
         result_journal = ResultObserveJournal()
         vertical_journal = VerticalObserveJournal()
         transcript_journal = TranscriptObserveJournal()
@@ -377,7 +505,7 @@ def workspace_follow_stream(
                 "mutation_enabled": mutation_enabled,
                 "transport": "sse",
                 # Honest scope marker for FE/docs (V7d–V7g).
-                "scope": "command_lifecycle+approvals+gates+results+vertical_ids+transcript_hints",
+                "scope": "command_lifecycle+approvals+results+vertical_ids+transcript_hints",
             },
         )
         for _tick in range(tick_limit):
@@ -420,116 +548,7 @@ def workspace_follow_stream(
                         "mutation_enabled": public.get("mutation_enabled"),
                     },
                 )
-                # Still emit hermetic projections on resync pages (V7d–V7g).
-                # Command events stay empty/fail-closed; spine ids must not wait for PG.
-                emitted_proj = False
-                approvals = public.get("approvals")
-                if isinstance(approvals, list):
-                    changed = journal.take_approvals_if_changed(
-                        workspace_id, list(approvals)
-                    )
-                    if changed is not None:
-                        yield _sse_pack(
-                            "approvals",
-                            {
-                                "approvals": changed,
-                                "authority_health": (
-                                    public.get("authority_health") or {}
-                                ),
-                                "mutation_enabled": public.get("mutation_enabled"),
-                            },
-                        )
-                        emitted_proj = True
-                gates = public.get("gates")
-                if isinstance(gates, list):
-                    g_changed = gate_journal.take_gates_if_changed(
-                        workspace_id, list(gates)
-                    )
-                    if g_changed is not None:
-                        health = public.get("authority_health") or {}
-                        yield _sse_pack(
-                            "gates",
-                            {
-                                "gates": g_changed,
-                                "authority_health": {
-                                    "gate_1": health.get("gate_1", "unavailable")
-                                    if isinstance(health, dict)
-                                    else "unavailable",
-                                    "gate_2": health.get("gate_2", "unavailable")
-                                    if isinstance(health, dict)
-                                    else "unavailable",
-                                    "gate_3": health.get("gate_3", "unavailable")
-                                    if isinstance(health, dict)
-                                    else "unavailable",
-                                },
-                                "mutation_enabled": public.get("mutation_enabled"),
-                            },
-                        )
-                        emitted_proj = True
-                results = public.get("results")
-                if isinstance(results, list):
-                    r_changed = result_journal.take_results_if_changed(
-                        workspace_id, list(results)
-                    )
-                    if r_changed is not None:
-                        health = public.get("authority_health") or {}
-                        yield _sse_pack(
-                            "results",
-                            {
-                                "results": r_changed,
-                                "authority_health": {
-                                    "result": health.get("result", "unavailable")
-                                    if isinstance(health, dict)
-                                    else "unavailable",
-                                },
-                                "mutation_enabled": public.get("mutation_enabled"),
-                            },
-                        )
-                        emitted_proj = True
-                tasks = public.get("tasks")
-                attempts = public.get("attempts")
-                runs = public.get("runs")
-                if (
-                    isinstance(tasks, list)
-                    and isinstance(attempts, list)
-                    and isinstance(runs, list)
-                ):
-                    v_changed = vertical_journal.take_vertical_ids_if_changed(
-                        workspace_id,
-                        [str(x) for x in tasks],
-                        [str(x) for x in attempts],
-                        [str(x) for x in runs],
-                    )
-                    if v_changed is not None:
-                        health = public.get("authority_health") or {}
-                        yield _sse_pack(
-                            "vertical",
-                            {
-                                "tasks": v_changed["tasks"],
-                                "attempts": v_changed["attempts"],
-                                "runs": v_changed["runs"],
-                                "authority_health": {
-                                    "task": health.get("task", "unavailable")
-                                    if isinstance(health, dict)
-                                    else "unavailable",
-                                    "attempt": health.get("attempt", "unavailable")
-                                    if isinstance(health, dict)
-                                    else "unavailable",
-                                    "run": health.get("run", "unavailable")
-                                    if isinstance(health, dict)
-                                    else "unavailable",
-                                },
-                                "mutation_enabled": public.get("mutation_enabled"),
-                            },
-                        )
-                        emitted_proj = True
-                _ = emitted_proj  # projections optional; resync still primary
-                # Client must snapshot command cursor; keep head until reconnect.
-                idle = 0
-                if sleep_s > 0:
-                    time.sleep(sleep_s)
-                continue
-
+                return
             events = public.get("events") or []
             emitted = False
             if isinstance(events, list) and events:
@@ -565,9 +584,7 @@ def workspace_follow_stream(
             # heartbeats still work and we do not flood the stream.
             approvals = public.get("approvals")
             if isinstance(approvals, list):
-                changed = journal.take_approvals_if_changed(
-                    workspace_id, list(approvals)
-                )
+                changed = journal.take_approvals_if_changed(workspace_id, list(approvals))
                 if changed is not None:
                     yield _sse_pack(
                         "approvals",
@@ -579,41 +596,10 @@ def workspace_follow_stream(
                         },
                     )
                     emitted = True
-            # V7e: Domain Gate 1/2/3 projection — separate event namespace from
-            # approvals. Never stuff gates into event:approvals.
-            gates = public.get("gates")
-            if isinstance(gates, list):
-                g_changed = gate_journal.take_gates_if_changed(
-                    workspace_id, list(gates)
-                )
-                if g_changed is not None:
-                    health = public.get("authority_health") or {}
-                    yield _sse_pack(
-                        "gates",
-                        {
-                            "gates": g_changed,
-                            "authority_health": {
-                                "gate_1": health.get("gate_1", "ready")
-                                if isinstance(health, dict)
-                                else "ready",
-                                "gate_2": health.get("gate_2", "ready")
-                                if isinstance(health, dict)
-                                else "ready",
-                                "gate_3": health.get("gate_3", "ready")
-                                if isinstance(health, dict)
-                                else "ready",
-                            },
-                            "mutation_enabled": public.get("mutation_enabled"),
-                        },
-                    )
-                    emitted = True
-            # V7f: typed results projection on the same follow spine. Never stuff
-            # results into event:gates or event:approvals.
+            # V7f: typed results projection on the same follow spine.
             results = public.get("results")
             if isinstance(results, list):
-                r_changed = result_journal.take_results_if_changed(
-                    workspace_id, list(results)
-                )
+                r_changed = result_journal.take_results_if_changed(workspace_id, list(results))
                 if r_changed is not None:
                     health = public.get("authority_health") or {}
                     yield _sse_pack(
@@ -636,11 +622,7 @@ def workspace_follow_stream(
             tasks = public.get("tasks")
             attempts = public.get("attempts")
             runs = public.get("runs")
-            if (
-                isinstance(tasks, list)
-                and isinstance(attempts, list)
-                and isinstance(runs, list)
-            ):
+            if isinstance(tasks, list) and isinstance(attempts, list) and isinstance(runs, list):
                 v_changed = vertical_journal.take_vertical_ids_if_changed(
                     workspace_id,
                     [str(x) for x in tasks],
@@ -680,9 +662,7 @@ def workspace_follow_stream(
                     events=cmd_events,  # type: ignore[arg-type]
                     mutation_enabled=bool(public.get("mutation_enabled")),
                 )
-                t_changed = transcript_journal.take_hints_if_changed(
-                    workspace_id, hints
-                )
+                t_changed = transcript_journal.take_hints_if_changed(workspace_id, hints)
                 if t_changed is not None:
                     for hint in t_changed:
                         yield _sse_pack("transcript", dict(hint))

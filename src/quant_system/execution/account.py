@@ -184,6 +184,34 @@ class PaperAccount(BaseModel):
     def available_cash(self, *, exclude_order_id: str | None = None) -> float:
         return max(self.cash - self.reserved_cash(exclude_order_id=exclude_order_id), 0.0)
 
+    def manual_available_cash(self, *, exclude_order_id: str | None = None) -> float:
+        reserved = sum(
+            max(order.reserved_cash, 0.0)
+            for order in self.pending_orders
+            if order.source == "manual" and order.order_id != exclude_order_id
+        )
+        return max(self.sleeve_cash.get("manual", self.cash) - reserved, 0.0)
+
+    def manual_available_quantity(
+        self, symbol: str, *, exclude_order_id: str | None = None
+    ) -> float:
+        position = self.positions.get(symbol.upper())
+        if position is None:
+            return 0.0
+        owned = (
+            position.source_quantity.get("manual", 0.0)
+            if position.source_quantity
+            else position.quantity
+        )
+        reserved = sum(
+            max(order.reserved_quantity, 0.0)
+            for order in self.pending_orders
+            if order.source == "manual"
+            and order.order_id != exclude_order_id
+            and order.symbol.upper() == symbol.upper()
+        )
+        return max(owned - reserved, 0.0)
+
     def reserved_quantity(
         self, symbol: str, *, exclude_order_id: str | None = None
     ) -> float:
@@ -222,6 +250,12 @@ class PaperAccount(BaseModel):
         symbol = fill.symbol.upper()
         position = self.positions.get(symbol, AccountPosition(symbol=symbol))
 
+        exact_source_fill = source == "manual" or kind == "sleeve_execution_fill"
+        if fill.side == OrderSide.SELL and exact_source_fill and position.source_quantity:
+            source_quantity = position.source_quantity.get(source, 0.0)
+            if fill.quantity > source_quantity + 1e-9:
+                raise ValueError("fill exceeds source-owned position quantity")
+
         # Numeric position/cash/avg_cost roll comes from the shared pure kernel;
         # the ledger, source-quantity, and realized-P&L side effects stay here.
         new_quantity, new_avg_cost, realized_delta, cash_delta = roll_position_on_fill(
@@ -247,7 +281,12 @@ class PaperAccount(BaseModel):
             )
         else:  # SELL
             self.realized_pnl += realized_delta
-            self._reduce_source_quantity(position, fill.quantity)
+            self._reduce_source_quantity(
+                position,
+                fill.quantity,
+                source=source,
+                exact_source=exact_source_fill,
+            )
 
         if abs(position.quantity) < 1e-9:
             self.positions.pop(symbol, None)
@@ -269,19 +308,31 @@ class PaperAccount(BaseModel):
         )
 
     @staticmethod
-    def _reduce_source_quantity(position: AccountPosition, sold_quantity: float) -> None:
-        total = sum(position.source_quantity.values())
-        if total <= 0:
+    def _reduce_source_quantity(
+        position: AccountPosition,
+        sold_quantity: float,
+        *,
+        source: str,
+        exact_source: bool,
+    ) -> None:
+        if not position.source_quantity:
             return
-        # Reduce each source proportionally to its share of the position.
-        remaining = sold_quantity
-        for source in list(position.source_quantity):
-            share = position.source_quantity[source] / total
-            reduction = min(position.source_quantity[source], share * sold_quantity)
-            position.source_quantity[source] -= reduction
-            remaining -= reduction
+        if exact_source:
+            position.source_quantity[source] -= sold_quantity
             if position.source_quantity[source] <= 1e-9:
                 position.source_quantity.pop(source, None)
+        else:
+            total = sum(position.source_quantity.values())
+            if total <= 0:
+                return
+            for owner in list(position.source_quantity):
+                reduction = min(
+                    position.source_quantity[owner],
+                    (position.source_quantity[owner] / total) * sold_quantity,
+                )
+                position.source_quantity[owner] -= reduction
+                if position.source_quantity[owner] <= 1e-9:
+                    position.source_quantity.pop(owner, None)
         # Drop residual rounding so an emptied position has no source dust.
         if position.quantity <= 1e-9:
             position.source_quantity.clear()

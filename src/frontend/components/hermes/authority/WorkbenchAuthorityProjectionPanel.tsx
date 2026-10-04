@@ -27,7 +27,7 @@ type AuthoritySlot = {
 /**
  * L5b-Authority-Projection-M1: read-only Task / Attempt / Run / result-ref slots (ids only; typed body lives in Typed results panel)
  * from the shared follow spine snapshot. Empty is honest — never invent HQA
- * rows from conversation commands. ≠ /hermes/tasks research page; no mutation.
+ * rows from conversation commands. This projection has no mutation controls.
  * L5c: shared collapse/long-id a11y contracts.
  */
 export function WorkbenchAuthorityProjectionPanel({
@@ -107,7 +107,7 @@ export function WorkbenchAuthorityProjectionPanel({
           </button>
         </div>
       }
-      title={isZh ? "权威" : "Authority"}
+      title={isZh ? "关联记录" : "Linked records"}
     >
       <div
         className="min-w-0"
@@ -116,13 +116,13 @@ export function WorkbenchAuthorityProjectionPanel({
       >
         <p className="font-body-sm text-text-secondary break-words">
           {isZh
-            ? "只读：HQA Task / Attempt / Run / result-ref 槽位（仅 id；typed 正文在 Typed results 面板）。V7g hermetic vertical bind 可填充 id；普通 conversation_turn 不会伪造 Attempt。空列表诚实；≠ /hermes/tasks 研究任务页；无 stop/gate 写端。"
-            : "Read-only: HQA Task / Attempt / Run / result-ref slots (ids only; typed body lives in Typed results panel). V7g hermetic vertical bind may fill ids; ordinary conversation_turn never invents Attempt rows. Empty is honest; not the /hermes/tasks research page; no stop/gate write."}
+            ? "用于核对任务、执行与结果是否对应。这里只展示已保存的编号，缺少的记录保持空白。"
+            : "Match saved task, execution and result IDs. Missing records remain empty."}
         </p>
 
         {!spineReady ? (
           <p className="mt-2 font-body-sm text-text-secondary">
-            {isZh ? "follow spine 尚未就绪…" : "Follow spine not ready yet…"}
+            {isZh ? "正在读取记录…" : "Loading records…"}
           </p>
         ) : null}
 
@@ -165,8 +165,8 @@ export function WorkbenchAuthorityProjectionPanel({
                     data-hermes-authority-empty={slot.key}
                   >
                     {isZh
-                      ? "无权威行（不从 commands 伪造）。"
-                      : "No authority rows (none invented from commands)."}
+                      ? "暂无对应记录。"
+                      : "No linked records."}
                   </p>
                 ) : (
                   <ul className="mt-1 min-w-0 space-y-0.5">

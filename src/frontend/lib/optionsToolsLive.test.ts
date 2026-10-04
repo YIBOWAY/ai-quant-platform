@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   calculateLiveGreeks,
+  liveBullPutSignal,
+  liveEarningsCrush,
   liveHedgeAdvisor,
   liveResearchHealthCheck,
   rankLiveStrategies,
@@ -22,9 +24,10 @@ function mockLiveContext() {
         ticker: "SPY",
         price: 101,
         nearest_expiry: "2026-06-18",
-        atm_iv: 25,
+        atm_iv: 0.25,
         hv_30d: 0.19,
         iv_rank: 64,
+        iv_rank_source: "local_hv_proxy",
       };
     }
 
@@ -38,7 +41,7 @@ function mockLiveContext() {
             strike: 95,
             bid: 7,
             ask: 7.4,
-            implied_volatility: 0.24,
+            implied_volatility: 24,
           },
           {
             option_type: "CALL",
@@ -59,14 +62,14 @@ function mockLiveContext() {
             strike: 100,
             bid: 1.8,
             ask: 2,
-            implied_volatility: 0.28,
+            implied_volatility: 28,
           },
           {
             option_type: "CALL",
             strike: null,
             bid: 3,
             ask: 3.4,
-            implied_volatility: 0.3,
+            implied_volatility: 30,
           },
         ],
       };
@@ -106,6 +109,19 @@ describe("optionsToolsLive", () => {
       iv: 0.25,
       option_type: "call",
     });
+  });
+
+  it("converts low Futu percentage IV exactly once instead of guessing its unit", async () => {
+    mockLiveContext();
+    const originalRequest = apiClientMock.apiRequest.getMockImplementation()!;
+    apiClientMock.apiRequest.mockImplementation(async (path: string) => {
+      const response = await originalRequest(path);
+      if (response.contracts) response.contracts.forEach((contract: { implied_volatility: number }) => { contract.implied_volatility = 0.5; });
+      return response;
+    });
+    apiClientMock.apiPost.mockResolvedValue({ success: true });
+    await calculateLiveGreeks("SPY");
+    expect(apiClientMock.apiPost).toHaveBeenCalledWith("/api/options/tools/greeks", expect.objectContaining({ iv: 0.005 }));
   });
 
   it("builds a bull call spread from adjacent usable live calls", async () => {
@@ -154,20 +170,28 @@ describe("optionsToolsLive", () => {
     });
   });
 
-  it("normalizes research health check tickers and uses the current local date", async () => {
+  it("requests the saved research profile without fabricating a date or thesis", async () => {
     apiClientMock.apiPost.mockResolvedValue({ success: true });
 
     await liveResearchHealthCheck(" qqq ");
 
     expect(apiClientMock.apiPost).toHaveBeenCalledWith("/api/options/tools/health-check", {
-      profiles: [
-        {
-          ticker: "QQQ",
-          updated_at: "2026-06-16",
-          thesis: "local research watch",
-        },
-      ],
+      ticker: "QQQ",
     });
+  });
+
+  it("does not turn an HV proxy or incomplete fear score into an entry signal", async () => {
+    mockLiveContext();
+    apiClientMock.apiPost.mockResolvedValue({ fear_score: null, status: "unavailable" });
+    await expect(liveBullPutSignal("SPY")).rejects.toThrow("insufficient_fear_inputs");
+    expect(apiClientMock.apiPost).toHaveBeenCalledExactlyOnceWith("/api/options/tools/fear-score", { iv_rank: null });
+  });
+
+  it("does not supply a made-up empty event history as a completed earnings study", async () => {
+    mockLiveContext();
+    apiClientMock.apiPost.mockResolvedValue({ success: true, sample_count: 0 });
+    await liveEarningsCrush("SPY");
+    expect(apiClientMock.apiPost).toHaveBeenCalledWith("/api/options/tools/earnings-crush", { ticker: "SPY", current_iv: 0.25 });
   });
 
   it("builds a hedge-advisor request from live chain data and supplied holdings", async () => {
@@ -191,6 +215,12 @@ describe("optionsToolsLive", () => {
         expect.objectContaining({ option_type: "CALL", strike: 105, expiry: "2026-06-18" }),
       ]),
     });
+  });
+
+  it("rejects fractional shares before fetching rather than silently truncating them", async () => {
+    await expect(liveHedgeAdvisor("SPY", { shares: 1.5, costBasis: 96.5 })).rejects.toThrow("positive_integer_shares_required");
+    expect(apiClientMock.apiRequest).not.toHaveBeenCalled();
+    expect(apiClientMock.apiPost).not.toHaveBeenCalled();
   });
 
   it("rejects blank tickers before calling the backend", async () => {

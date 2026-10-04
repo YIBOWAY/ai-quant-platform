@@ -6,11 +6,13 @@ from enum import StrEnum
 from math import isfinite
 from typing import Any, ClassVar
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, model_validator
 
 from quant_system.execution.account import DEFAULT_ACCOUNT_ID, PaperAccount
 
 MANUAL_SLEEVE_ID = "manual"
+# Identity-only reads are scoped to the named replacement loader.
+_FROZEN_REPLACEMENT_CONTEXT = object()
 
 
 def _utc_now_iso() -> str:
@@ -83,6 +85,7 @@ class StrategyConfig(BaseModel):
             "min_order_value",
             "data_provider",
             "execution_timing",
+            "strategy_definition",
         }
     )
     EDITABLE_IN_PLACE_FIELDS: ClassVar[frozenset[str]] = frozenset(
@@ -105,11 +108,38 @@ class StrategyConfig(BaseModel):
     min_order_value: float = Field(default=0.0, ge=0)
     data_provider: str = "futu"
     execution_timing: str = "next_open"
+    strategy_definition: dict[str, Any] | None = None
     created_at: str = Field(default_factory=_utc_now_iso)
     updated_at: str = Field(default_factory=_utc_now_iso)
     archived: bool = False
     tags: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_strategy_definition(self, info: ValidationInfo) -> StrategyConfig:
+        if self.strategy_definition is not None:
+            from quant_system.research.definition_paper import (
+                definition_config_fields,
+                paper_definition,
+            )
+
+            if info.context is _FROZEN_REPLACEMENT_CONTEXT:
+                from quant_system.research.fingerprint_grading import frozen_definition_identity
+
+                definition = frozen_definition_identity(self.strategy_definition)
+            else:
+                definition = paper_definition(self.strategy_definition)
+            for field, expected in definition_config_fields(definition).items():
+                if getattr(self, field) != expected:
+                    raise ValueError(f"strategy_definition_config_mismatch:{field}")
+        elif self.strategy_id == "strategy_definition":
+            raise ValueError("strategy_definition_required")
+        return self
+
+    @classmethod
+    def frozen_for_replacement(cls, data: dict) -> StrategyConfig:
+        """Validate historical columns and seal without granting execution rights."""
+        return cls.model_validate(data, context=_FROZEN_REPLACEMENT_CONTEXT)
 
     @classmethod
     def create(cls, **data: Any) -> StrategyConfig:
@@ -282,8 +312,7 @@ class SleeveLotBook:
         if lot is None or lot.quantity + 1e-9 < quantity:
             available = 0.0 if lot is None else lot.quantity
             raise InsufficientSleeveLotQuantity(
-                f"sleeve {sleeve_id!r} has {available:.4f} {normalized}, "
-                f"cannot sell {quantity:.4f}"
+                f"sleeve {sleeve_id!r} has {available:.4f} {normalized}, cannot sell {quantity:.4f}"
             )
         self._validate_positive_finite(quantity, "quantity")
         remaining_quantity = lot.quantity - quantity
@@ -339,6 +368,8 @@ class StrategySignal(BaseModel):
         metadata: dict[str, Any] | None = None,
     ) -> StrategySignal:
         blocked_reason = execution_blocked_reason
+        if sleeve.metadata.get("strategy_replacement_id"):
+            blocked_reason = "strategy_replacement_pending"
         if sleeve.status != StrategySleeveStatus.RUNNING and blocked_reason is None:
             blocked_reason = f"sleeve_{sleeve.status.value}"
         return cls(
@@ -449,6 +480,18 @@ class StrategyExecutionPlan(BaseModel):
         target_date: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> StrategyExecutionPlan:
+        if signal.metadata.get("definition_digest"):
+            if not signal.metadata.get("trade_date"):
+                raise StrategyExecutionPlanError("strategy_definition_trade_date_missing")
+            target_date = str(signal.metadata["trade_date"])
+            metadata = {
+                **(metadata or {}),
+                "definition_digest": signal.metadata["definition_digest"],
+                "decision_session": signal.metadata.get("signal_date"),
+                "trade_date": target_date,
+                "target_weights": signal.target_weights,
+                "rebalance_required": signal.metadata.get("rebalance_required") is True,
+            }
         return cls(
             execution_id=f"strategy-exec-{uuid.uuid4().hex[:12]}",
             sleeve_id=sleeve.sleeve_id,
@@ -528,8 +571,17 @@ class PaperStrategySleeveService:
         return sleeve
 
     def resume_sleeve(self, sleeve: StrategySleeve) -> StrategySleeve:
+        from quant_system.execution.strategy_replacement import sleeve_replacement_pending
+
+        if sleeve_replacement_pending(self.storage, sleeve):
+            raise ValueError("strategy_replacement_pending")
         if sleeve.status != StrategySleeveStatus.PAUSED:
             raise ValueError("only paused sleeves can be resumed")
+        if (
+            sleeve.metadata.get("mandate_id") == "remote-hang"
+            and sleeve.metadata.get("hang_activation_state") == "book_binding_pending"
+        ):
+            raise ValueError("remote_hang_binding_pending")
         sleeve.status = StrategySleeveStatus.RUNNING
         sleeve.paused_at = None
         sleeve.updated_at = _utc_now_iso()
@@ -600,6 +652,10 @@ class PaperStrategySleeveService:
         metadata: dict[str, Any] | None = None,
         allow_frozen_account: bool = False,
     ) -> StrategyExecutionPlan:
+        from quant_system.execution.strategy_replacement import sleeve_replacement_pending
+
+        if sleeve_replacement_pending(self.storage, sleeve):
+            raise StrategyExecutionPlanError("strategy_replacement_pending")
         if sleeve.mode == StrategySleeveMode.SIGNAL_ONLY:
             raise StrategyExecutionPlanError("signal_only_no_execution")
         if sleeve.status != StrategySleeveStatus.RUNNING:
@@ -610,6 +666,8 @@ class PaperStrategySleeveService:
             raise StrategyExecutionPlanError("signal_sleeve_mismatch")
         if signal.strategy_config_id != sleeve.strategy_config_id:
             raise StrategyExecutionPlanError("signal_config_mismatch")
+        if signal.strategy_config_version != sleeve.strategy_config_version:
+            raise StrategyExecutionPlanError("signal_config_version_mismatch")
         if signal.status != SignalStatus.GENERATED:
             raise StrategyExecutionPlanError("signal_not_generated")
         if signal.execution_blocked_reason:
@@ -619,18 +677,25 @@ class PaperStrategySleeveService:
         if execution_window != "next_open":
             raise StrategyExecutionPlanError("unsupported_execution_window")
         if not signal.proposed_orders:
-            raise StrategyExecutionPlanError("no_proposed_orders")
+            if (signal.metadata.get("rebalance_required") is not True
+                    or not signal.metadata.get("definition_digest")):
+                raise StrategyExecutionPlanError("no_proposed_orders")
+            config = self.storage.load_strategy_config(
+                signal.strategy_config_id, version=signal.strategy_config_version,
+            )
+            if (config.strategy_definition is None
+                    or config.strategy_definition["content_digest"]
+                    != signal.metadata["definition_digest"]):
+                raise StrategyExecutionPlanError("strategy_definition_signal_binding_mismatch")
         plan_metadata = dict(metadata or {})
         if sleeve.metadata.get("automation_managed") is True:
-            from quant_system.execution.factor_automation_safety import (
-                FactorAutomationLimitError,
-                validate_auto_execution_orders,
+            from quant_system.execution.paper_execution_policy import (
+                PaperExecutionBatch,
+                PaperExecutionPolicy,
             )
 
             reference_prices = {
-                str(order.get("symbol", "")).upper(): float(
-                    order.get("reference_price", 0.0)
-                )
+                str(order.get("symbol", "")).upper(): float(order.get("reference_price", 0.0))
                 for order in signal.proposed_orders
                 if order.get("symbol") and order.get("reference_price")
             }
@@ -644,22 +709,19 @@ class PaperStrategySleeveService:
             }
             lots = self.storage.load_sleeve_lots(sleeve.sleeve_id)
             sleeve_equity = sleeve.cash + sum(
-                lot.quantity
-                * reference_prices.get(lot.symbol.upper(), lot.avg_cost)
+                lot.quantity * reference_prices.get(lot.symbol.upper(), lot.avg_cost)
                 for lot in lots
             )
             raw_context = plan_metadata.get("paper_execution_policy_context", {})
             policy_context = raw_context if isinstance(raw_context, dict) else {}
-            try:
-                policy_decision = validate_auto_execution_orders(
+            policy_decision = PaperExecutionPolicy().evaluate_batch(
+                PaperExecutionBatch(
                     orders=signal.proposed_orders,
                     sleeve_equity=sleeve_equity,
                     nav=account.equity(account_prices),
                     aggregate_symbol_values=aggregate_symbol_values,
                     source=str(sleeve.metadata.get("automation_source", "d33")),
-                    workspace_id=str(
-                        sleeve.metadata.get("workspace_id", "local-default")
-                    ),
+                    workspace_id=str(sleeve.metadata.get("workspace_id", "local-default")),
                     account_id=account.account_id,
                     sleeve_id=sleeve.sleeve_id,
                     emergency_stop=policy_context.get("emergency_stop") is True,
@@ -672,13 +734,10 @@ class PaperStrategySleeveService:
                     ),
                     hung_observation=policy_context.get("hung_observation") is True,
                 )
-            except FactorAutomationLimitError as exc:
-                raise StrategyExecutionPlanError(
-                    f"automation_{exc.code}"
-                ) from exc
-            plan_metadata["paper_execution_policy_decision"] = (
-                policy_decision.to_dict()
             )
+            if not policy_decision.allowed:
+                raise StrategyExecutionPlanError(f"automation_{policy_decision.blockers[0]}")
+            plan_metadata["paper_execution_policy_decision"] = policy_decision.to_dict()
         existing = self.storage.latest_execution_for_signal(
             sleeve.sleeve_id,
             signal.signal_id,
@@ -702,19 +761,18 @@ class PaperStrategySleeveService:
             account.sleeve_cash[MANUAL_SLEEVE_ID] = float(account.cash)
             return
         allocated_cash = sum(
-            cash
-            for sleeve_id, cash in account.sleeve_cash.items()
-            if sleeve_id != MANUAL_SLEEVE_ID
+            cash for sleeve_id, cash in account.sleeve_cash.items() if sleeve_id != MANUAL_SLEEVE_ID
         )
         account.sleeve_cash[MANUAL_SLEEVE_ID] = max(account.cash - allocated_cash, 0.0)
 
     @staticmethod
     def _allocate_cash(account: PaperAccount, sleeve: StrategySleeve) -> None:
         manual_cash = account.sleeve_cash.get(MANUAL_SLEEVE_ID, account.cash)
-        if sleeve.cash > manual_cash + 1e-9:
+        available_manual_cash = account.manual_available_cash()
+        if sleeve.cash > available_manual_cash + 1e-9:
             raise CashAllocationError(
                 f"cannot allocate {sleeve.cash:.2f}; manual cash available is "
-                f"{manual_cash:.2f}"
+                f"{available_manual_cash:.2f}"
             )
         account.sleeve_cash[MANUAL_SLEEVE_ID] = manual_cash - sleeve.cash
         account.sleeve_cash[sleeve.sleeve_id] = (
@@ -724,7 +782,6 @@ class PaperStrategySleeveService:
             kind="sleeve_cash_allocated",
             source=f"strategy:{sleeve.sleeve_id}",
             note=(
-                f"allocated {sleeve.cash:.2f} {account.base_currency} "
-                f"to sleeve {sleeve.sleeve_id}"
+                f"allocated {sleeve.cash:.2f} {account.base_currency} to sleeve {sleeve.sleeve_id}"
             ),
         )

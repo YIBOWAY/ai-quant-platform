@@ -70,7 +70,8 @@ describe("Hermes Today server page", () => {
     expect(api.getAgentCandidates).toHaveBeenCalledOnce();
     expect(api.getHermesArtifacts).toHaveBeenCalledOnce();
     expect(html).toContain("AAPL 页面接线回测");
-    expect(html).toContain("HQA 结论产物");
+    expect(html).not.toContain("HQA 结论产物");
+    expect(html).toContain('<details class="dp-diagnostics"><summary>运行记录与诊断</summary>');
   });
 
   it("projects a validated child-session deep link into the shared workbench binding", async () => {

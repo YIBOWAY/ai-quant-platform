@@ -1,0 +1,35 @@
+ticker,name,sector,exchange,source
+SPY,SPDR S&P 500 ETF Trust,ETF,NYSEARCA,core_etf
+QQQ,Invesco QQQ Trust,ETF,NASDAQ,core_etf
+AAPL,Apple Inc.,Information Technology,NASDAQ,m7
+MSFT,Microsoft Corporation,Information Technology,NASDAQ,m7
+NVDA,NVIDIA Corporation,Information Technology,NASDAQ,m7
+GOOGL,Alphabet Inc. Class A,Communication Services,NASDAQ,m7
+AMZN,Amazon.com Inc.,Consumer Discretionary,NASDAQ,m7
+META,Meta Platforms Inc.,Communication Services,NASDAQ,m7
+TSLA,Tesla Inc.,Consumer Discretionary,NASDAQ,m7
+SOXX,iShares Semiconductor ETF,ETF,NASDAQ,sector_etf
+SMH,VanEck Semiconductor ETF,ETF,NASDAQ,sector_etf
+IGV,iShares Expanded Tech-Software Sector ETF,ETF,NYSEARCA,sector_etf
+XLY,Consumer Discretionary Select Sector SPDR Fund,ETF,NYSEARCA,sector_etf
+XLP,Consumer Staples Select Sector SPDR Fund,ETF,NYSEARCA,sector_etf
+XLF,Financial Select Sector SPDR Fund,ETF,NYSEARCA,sector_etf
+XLV,Health Care Select Sector SPDR Fund,ETF,NYSEARCA,sector_etf
+XLE,Energy Select Sector SPDR Fund,ETF,NYSEARCA,sector_etf
+AVGO,Broadcom Inc.,Information Technology,NASDAQ,sector_leader
+AMD,Advanced Micro Devices Inc.,Information Technology,NASDAQ,sector_leader
+TSM,Taiwan Semiconductor Manufacturing Company,Information Technology,NYSE,sector_leader
+MU,Micron Technology Inc.,Information Technology,NASDAQ,sector_leader
+SNDK,Sandisk Corporation,Information Technology,NASDAQ,sector_leader
+CRM,Salesforce Inc.,Information Technology,NYSE,sector_leader
+ORCL,Oracle Corporation,Information Technology,NYSE,sector_leader
+COST,Costco Wholesale Corporation,Consumer Staples,NASDAQ,sector_leader
+KO,The Coca-Cola Company,Consumer Staples,NYSE,sector_leader
+MCD,McDonald's Corporation,Consumer Discretionary,NYSE,sector_leader
+JPM,JPMorgan Chase & Co.,Financials,NYSE,sector_leader
+GS,The Goldman Sachs Group Inc.,Financials,NYSE,sector_leader
+BRK.B,Berkshire Hathaway Inc. Class B,Financials,NYSE,sector_leader
+LLY,Eli Lilly and Company,Health Care,NYSE,sector_leader
+UNH,UnitedHealth Group Incorporated,Health Care,NYSE,sector_leader
+XOM,Exxon Mobil Corporation,Energy,NYSE,sector_leader
+CVX,Chevron Corporation,Energy,NYSE,sector_leader

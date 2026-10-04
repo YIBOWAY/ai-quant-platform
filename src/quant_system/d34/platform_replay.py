@@ -35,6 +35,7 @@ class PlatformReplayReceipt:
     receipt_digest: str
     output_dir: Path
     engine_receipt: EngineReceipt
+    turnover_period: float | None
 
 
 class _TargetWeightStrategy:
@@ -150,11 +151,19 @@ def _from_manifest(output_dir: Path, raw: dict[str, object]) -> PlatformReplayRe
         receipt_digest=receipt_digest,
         output_dir=output_dir,
         engine_receipt=_engine_receipt(raw),
+        turnover_period=(
+            float(raw["metrics"]["turnover"])
+            if isinstance(raw.get("metrics"), dict)
+            and raw["metrics"].get("turnover") is not None
+            else None
+        ),
     )
 
 
 def run_platform_replay(
     *,
+    job_id: str,
+    run_id: str,
     snapshot_id: str,
     snapshot_digest: str,
     snapshot_parquet: str | Path,
@@ -169,7 +178,9 @@ def run_platform_replay(
     """Replay only weights/execution assumptions; factor code is never imported."""
     numeric = (initial_cash, commission_bps, slippage_bps, min_order_value)
     if (
-        not snapshot_id.startswith("snapshot-")
+        not job_id.startswith("job-")
+        or not run_id.startswith("attempt-")
+        or not snapshot_id.startswith("snapshot-")
         or len(snapshot_digest) != 64
         or any(char not in "0123456789abcdef" for char in snapshot_digest)
         or any(not math.isfinite(float(value)) for value in numeric)
@@ -209,6 +220,8 @@ def run_platform_replay(
     }
     replay_key = _digest(
         {
+            "job_id": job_id,
+            "run_id": run_id,
             "snapshot_digest": snapshot_digest,
             "target_weights_digest": target_digest,
             "config": config_document,
@@ -228,6 +241,8 @@ def run_platform_replay(
         if (
             receipt.snapshot_digest != snapshot_digest
             or receipt.target_weights_digest != target_digest
+            or existing.get("job_id") != job_id
+            or existing.get("run_id") != run_id
             or str(existing.get("snapshot_parquet_digest")) != _file_digest(snapshot_path)
         ):
             raise PlatformReplayError(
@@ -271,6 +286,8 @@ def run_platform_replay(
         receipt_body = {
             "contract": ENGINE_RECEIPT_CONTRACT,
             "engine": "platform",
+            "job_id": job_id,
+            "run_id": run_id,
             "snapshot_id": snapshot_id,
             "snapshot_digest": snapshot_digest,
             "snapshot_parquet_digest": _file_digest(snapshot_path),

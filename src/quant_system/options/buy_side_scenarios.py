@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from quant_system.options.models import (
     BuySideScenarioContribution,
@@ -26,11 +26,20 @@ VEGA_UNIT_ASSUMPTION = "vega is treated as option price change per 1 volatility 
 
 
 class BuySideUserScenarioPnL(BaseModel):
-    label: str
+    model_config = ConfigDict(allow_inf_nan=False)
+
+    label: str = Field(min_length=1)
     probability: float = Field(ge=0, le=1)
-    spot_change_pct: float
-    iv_change_vol_points: float
+    spot_change_pct: float = Field(ge=-100, le=1000)
+    iv_change_vol_points: float = Field(ge=-100, le=100)
     days_passed: int = Field(ge=0)
+
+    @field_validator("probability", "spot_change_pct", "iv_change_vol_points", mode="before")
+    @classmethod
+    def _sanitize_nonfinite_input(cls, value: object) -> object:
+        if isinstance(value, float) and not math.isfinite(value):
+            return None
+        return value
 
 
 class BuySideScenarioLabInput(BaseModel):
@@ -164,6 +173,11 @@ def _run_single_scenario(
         strategy_value += signed_value * leg.contract_size
         strategy_pnl += pnl * leg.contract_size
         warnings.extend(leg_warnings)
+    spread_limits = _debit_vertical_spread_limits(legs)
+    if spread_limits is not None:
+        entry_value, maximum_value = spread_limits
+        strategy_value = min(max(strategy_value, 0.0), maximum_value)
+        strategy_pnl = strategy_value - entry_value
     return BuySideScenarioPnLResult(
         spot_change_pct=spot_change_pct,
         iv_change_vol_points=iv_change_vol_points,
@@ -173,6 +187,33 @@ def _run_single_scenario(
         approximation_reliability=reliability,
         warnings=list(dict.fromkeys(warnings)),
     )
+
+
+def _debit_vertical_spread_limits(
+    legs: list[BuySideStrategyLeg],
+) -> tuple[float, float] | None:
+    if len(legs) != 2:
+        return None
+    long_legs = [leg for leg in legs if leg.side == "long"]
+    short_legs = [leg for leg in legs if leg.side == "short"]
+    if len(long_legs) != 1 or len(short_legs) != 1:
+        return None
+    long_leg, short_leg = long_legs[0], short_legs[0]
+    if (
+        long_leg.option_type != short_leg.option_type
+        or long_leg.expiry != short_leg.expiry
+        or long_leg.contract_size != short_leg.contract_size
+        or (long_leg.option_type == "CALL" and long_leg.strike >= short_leg.strike)
+        or (long_leg.option_type == "PUT" and long_leg.strike <= short_leg.strike)
+    ):
+        return None
+    entry_value = (
+        (long_leg.mid_price or 0.0) - (short_leg.mid_price or 0.0)
+    ) * long_leg.contract_size
+    maximum_value = abs(short_leg.strike - long_leg.strike) * long_leg.contract_size
+    if entry_value <= 0 or entry_value >= maximum_value:
+        return None
+    return entry_value, maximum_value
 
 
 def _estimate_leg(
@@ -190,6 +231,7 @@ def _estimate_leg(
         new_value = entry_value
     else:
         spot_change_abs = current_spot * (spot_change_pct / 100)
+        projected_spot = max(current_spot + spot_change_abs, 0.0)
         raw_value = (
             entry_value
             + leg.delta * spot_change_abs
@@ -197,10 +239,9 @@ def _estimate_leg(
             + leg.vega * iv_change_vol_points
             + leg.theta * days_passed
         )
-        new_value = max(raw_value, 0.0)
-    pnl_per_share = (
-        new_value - entry_value if leg.side == "long" else entry_value - new_value
-    )
+        no_arbitrage_cap = projected_spot if leg.option_type == "CALL" else leg.strike
+        new_value = min(max(raw_value, 0.0), no_arbitrage_cap)
+    pnl_per_share = new_value - entry_value if leg.side == "long" else entry_value - new_value
     return new_value, pnl_per_share, warnings
 
 

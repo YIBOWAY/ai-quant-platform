@@ -64,13 +64,16 @@ def run_paper_trading(
     blocked_symbols: list[str] | None = None,
     kill_switch: bool | None = None,
     max_fill_ratio_per_tick: float = 1.0,
-    commission_bps: float = 0.0,
-    slippage_bps: float = 0.0,
+    commission_bps: float | None = None,
+    slippage_bps: float | None = None,
     min_order_value: float = 0.0,
     provider: str | None = None,
     settings: Settings | None = None,
 ) -> PaperTradingRunResult:
     active_settings = settings or load_settings()
+    paper = active_settings.paper_account
+    resolved_commission = paper.commission_bps if commission_bps is None else commission_bps
+    resolved_slippage = paper.slippage_bps if slippage_bps is None else slippage_bps
     ohlcv_provider, source = build_ohlcv_provider(active_settings, requested=provider)
     try:
         ohlcv = ohlcv_provider.fetch_ohlcv(symbols, start=start, end=end)
@@ -98,8 +101,8 @@ def run_paper_trading(
         blocked_symbols=blocked_symbols,
         kill_switch=kill_switch,
         max_fill_ratio_per_tick=max_fill_ratio_per_tick,
-        commission_bps=commission_bps,
-        slippage_bps=slippage_bps,
+        commission_bps=resolved_commission,
+        slippage_bps=resolved_slippage,
         min_order_value=min_order_value,
     )
     return result.model_copy(

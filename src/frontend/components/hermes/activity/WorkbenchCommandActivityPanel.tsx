@@ -30,7 +30,7 @@ const MAX_ROWS = 12;
 /**
  * L4a Activity + L4b follow spine consumer.
  * Read-only command lifecycle from shared workspace follow (SSE preferred,
- * poll fallback). Task/Attempt authority rows still empty — not /hermes/tasks.
+ * poll fallback). Task/Attempt authority rows stay honest when empty.
  */
 export function WorkbenchCommandActivityPanel({
   locale,
@@ -53,8 +53,8 @@ export function WorkbenchCommandActivityPanel({
       data-hermes-task-drawer="l4a-m1"
       empty={
         isZh
-          ? "暂无 workspace 命令。发送一条本地对话后会出现 queued → delivered。"
-          : "No workspace commands yet. Send a local turn to see queued → delivered."
+          ? "暂无消息处理记录。发送对话后，可在这里查看处理进度。"
+          : "No message activity yet. Send a message to see its progress."
       }
       error={
         follow.error
@@ -94,8 +94,8 @@ export function WorkbenchCommandActivityPanel({
       <div data-hermes-command-activity-body id="hermes-command-activity-body">
         <p className="font-body-sm text-text-secondary break-words">
           {isZh
-            ? "只读：共享 follow spine（SSE 优先 / poll 回退）的 ledger commands。Task/Attempt 权威仍空；≠ 研究任务写入；无 assistant 正文。"
-            : "Read-only: ledger commands via shared follow spine (SSE preferred, poll fallback). Task/Attempt authority still empty; not research-task write; no assistant bodies."}
+            ? "以下为已保存的消息处理状态。消息发送成功，不等于研究已经完成。"
+            : "Saved message-processing states. Successful delivery does not mean the research has completed."}
         </p>
 
         {!open && commands.length ? (

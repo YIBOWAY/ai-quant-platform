@@ -11,7 +11,7 @@ from quant_system.data.provider_factory import (
     build_ohlcv_provider,
 )
 from quant_system.data.providers.futu import FutuProviderError
-from quant_system.data.providers.sample import SampleOHLCVProvider
+from quant_system.data.providers.longbridge import LongbridgeProviderError
 
 router = APIRouter()
 
@@ -43,37 +43,24 @@ def market_data_history(
         raise provider_unavailable_400(exc) from exc
     try:
         frame = active_provider.fetch_ohlcv([symbol], start=start, end=end, interval=freq)
+    except LongbridgeProviderError as exc:
+        raise HTTPException(
+            status_code=_status_for_longbridge_error(exc.code),
+            detail={"code": exc.code, "provider": "longbridge", "message": exc.message},
+        ) from exc
     except FutuProviderError as exc:
-        if provider is None and not _is_intraday(freq):
-            frame = SampleOHLCVProvider().fetch_ohlcv(
-                [symbol],
-                start=start,
-                end=end,
-                interval=freq,
-            )
-            source = f"sample ({source} failed: {exc.code})"
-        else:
-            raise HTTPException(
-                status_code=_status_for_futu_error(exc.code),
-                detail={"code": exc.code, "message": exc.message},
-            ) from exc
+        raise HTTPException(
+            status_code=_status_for_futu_error(exc.code),
+            detail={"code": exc.code, "message": exc.message},
+        ) from exc
     except Exception as exc:
-        if provider is None and not _is_intraday(freq):
-            frame = SampleOHLCVProvider().fetch_ohlcv(
-                [symbol],
-                start=start,
-                end=end,
-                interval=freq,
-            )
-            source = f"sample ({source} failed: {exc.__class__.__name__})"
-        else:
-            raise HTTPException(
-                status_code=502,
-                detail={
-                    "code": "market_data_provider_failed",
-                    "message": f"{source} provider failed: {exc.__class__.__name__}",
-                },
-            ) from exc
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "market_data_provider_failed",
+                "message": f"{source} provider failed: {exc.__class__.__name__}",
+            },
+        ) from exc
 
     return {
         "symbol": symbol,
@@ -97,7 +84,7 @@ def market_data_history(
 
 
 def _status_for_futu_error(code: str) -> int:
-    if code in {"opend_unavailable", "provider_timeout"}:
+    if code in {"opend_unavailable", "provider_timeout", "provider_unavailable"}:
         return 503
     if code in {"invalid_symbol", "unsupported_interval"}:
         return 400
@@ -110,3 +97,17 @@ def _status_for_futu_error(code: str) -> int:
 
 def _is_intraday(freq: str) -> bool:
     return freq.lower().strip() != "1d"
+
+
+def _status_for_longbridge_error(code: str) -> int:
+    if code in {"not_installed", "timeout"}:
+        return 503
+    if code in {"invalid_symbol", "invalid_params", "unsupported_interval"}:
+        return 400
+    if code == "permission_denied":
+        return 403
+    if code in {"quota_exceeded", "rate_limited"}:
+        return 429
+    if code == "empty":
+        return 404
+    return 502

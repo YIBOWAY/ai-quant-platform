@@ -3,32 +3,43 @@ import { DataPreviewTable } from "@/components/DataPreviewTable";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { OptionsRadarSymbolLive } from "@/components/forms/OptionsRadarSymbolLive";
 import { getOptionsDailyScanSymbol } from "@/lib/api";
+import { optionsReasonLabel } from "@/lib/optionsErrorPresentation";
 import { localizePath } from "@/lib/locale";
 import { getServerLocale } from "@/lib/serverLocale";
 
 const copy = {
   en: {
-    eyebrow: "Options Radar",
-    titleSuffix: "Options Detail",
-    intro: "Snapshot candidates plus read-only live option chain checks.",
-    back: "Back to Radar",
-    tableTitle: "Radar Candidates",
+    eyebrow: "Options Recommendations",
+    titleSuffix: "Recommendation Detail",
+    intro: "Saved recommendations plus read-only live option chain checks.",
+    back: "Back to Recommendations",
+    tableTitle: "Saved Recommendations",
     tableDescription: (symbol: string, runDate?: string | null) =>
-      `Latest saved Radar rows for ${symbol}${runDate ? ` on ${runDate}` : ""}.`,
-    emptyTitle: "No Radar candidates",
+      `Latest saved recommendation rows for ${symbol}${runDate ? ` on ${runDate}` : ""}.`,
+    emptyTitle: "No saved recommendations",
     emptyDescription:
-      "No saved Radar rows were found for this symbol. Run a scan from the Radar page first.",
+      "No saved recommendation rows were found for this symbol. Wait for the next scheduled scan.",
+    unavailableTitle: "Saved recommendations unavailable",
+    unavailableDescription: "The saved snapshot cannot be used as recommendations.",
+    provider: "Provider",
+    reasons: "Reasons",
+    coverage: "Coverage",
   },
   zh: {
-    eyebrow: "期权雷达",
-    titleSuffix: "期权明细",
-    intro: "已保存的雷达候选行,以及只读的实时期权链核对。",
-    back: "返回雷达",
-    tableTitle: "雷达候选",
+    eyebrow: "期权推荐",
+    titleSuffix: "推荐详情",
+    intro: "已保存的推荐行，以及只读的实时期权链核对。",
+    back: "返回期权推荐",
+    tableTitle: "已保存推荐",
     tableDescription: (symbol: string, runDate?: string | null) =>
-      `${symbol} 最近一次保存的雷达行${runDate ? `(${runDate})` : ""}。`,
-    emptyTitle: "暂无雷达候选",
-    emptyDescription: "该标的没有已保存的雷达行,请先在雷达页运行一次扫描。",
+      `${symbol} 最近一次保存的推荐行${runDate ? `（${runDate}）` : ""}。`,
+    emptyTitle: "暂无已保存推荐",
+    emptyDescription: "该标的没有已保存的推荐行，请等待下一次定时扫描。",
+    unavailableTitle: "已保存推荐不可用",
+    unavailableDescription: "该快照不能作为推荐使用。",
+    provider: "数据源",
+    reasons: "原因",
+    coverage: "扫描覆盖",
   },
 } as const;
 
@@ -54,6 +65,10 @@ export default async function OptionsRadarSymbolPage({
   const expiry = single(resolvedSearch.expiry);
   const optionType = single(resolvedSearch.option_type, "ALL").toUpperCase();
   const radar = await getOptionsDailyScanSymbol(symbol, date || undefined);
+  const unavailable = radar.status === "unavailable";
+  const reasons = Object.entries(radar.shortfall_reasons ?? {})
+    .map(([reason, count]) => `${optionsReasonLabel(reason, locale)}${count > 1 ? ` (${count})` : ""}`)
+    .join(" · ");
   const rows = radar.candidates.map((candidate) => ({
     ticker: candidate.ticker,
     symbol: candidate.symbol,
@@ -65,7 +80,6 @@ export default async function OptionsRadarSymbolPage({
     delta: candidate.delta,
     open_interest: candidate.open_interest,
     score: candidate.global_score,
-    rating: candidate.rating,
   }));
 
   return (
@@ -86,12 +100,27 @@ export default async function OptionsRadarSymbolPage({
         </Link>
       </header>
       <ErrorBanner messages={[radar.apiError]} />
-      <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
+      {unavailable ? (
+        <section
+          className="mb-4 rounded-lg border border-danger/40 bg-danger/10 p-4 font-body-sm text-danger"
+          data-options-recommendation-unavailable
+        >
+          <h2 className="font-label-caps">{text.unavailableTitle}</h2>
+          <p className="mt-1">{text.unavailableDescription}</p>
+          <p className="mt-2 font-data-mono text-xs">
+            {text.provider}: {radar.provider ?? "--"} · {text.coverage}: {radar.scanned_tickers}/
+            {radar.universe_size} · {text.reasons}: {reasons || "--"}
+          </p>
+        </section>
+      ) : null}
+      <div className="grid min-w-0 gap-4 [&>*]:min-w-0 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <DataPreviewTable
-          columns={["ticker", "symbol", "strategy", "expiry", "strike", "mid", "iv", "delta", "open_interest", "score", "rating"]}
+          columns={["ticker", "symbol", "strategy", "expiry", "strike", "mid", "iv", "delta", "open_interest", "score"]}
           description={text.tableDescription(symbol, radar.run_date)}
-          emptyDescription={text.emptyDescription}
-          emptyTitle={text.emptyTitle}
+          emptyDescription={
+            unavailable ? text.unavailableDescription : text.emptyDescription
+          }
+          emptyTitle={unavailable ? text.unavailableTitle : text.emptyTitle}
           maxRows={20}
           rows={rows}
           title={text.tableTitle}

@@ -342,6 +342,48 @@ def test_client_never_inherits_environment_proxy_settings(
     assert seen_kwargs["trust_env"] is False
 
 
+def test_session_summaries_hide_discord_trigger_transport_metadata(
+    tmp_path: Path,
+) -> None:
+    prefix = (
+        "[Triggering message id: `1524779911535923341` — use as "
+        "`message_id` for reply/react/pin via the discord tools.]"
+    )
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "object": "list",
+                "data": [
+                    {
+                        "id": "discord-full",
+                        "title": f"{prefix} 推荐一个 NVDA put",
+                        "preview": f"{prefix}\n\n推荐一个 NVDA put",
+                        "message_count": 2,
+                    },
+                    {
+                        "id": "discord-truncated",
+                        "title": "[Triggering message id: `1524779911535923341`…",
+                        "preview": "[Triggering message id: `1524779911535923341`…",
+                        "message_count": 2,
+                    },
+                ],
+                "has_more": False,
+            },
+        )
+
+    result = HermesApiReadClient(
+        _settings(tmp_path),
+        transport=httpx.MockTransport(handler),
+    ).list_sessions()
+
+    assert result["data"][0]["title"] == "推荐一个 NVDA put"
+    assert result["data"][0]["preview"] == "推荐一个 NVDA put"
+    assert result["data"][1]["title"] is None
+    assert result["data"][1]["preview"] is None
+
+
 def test_message_history_is_bounded_and_drops_tool_and_reasoning_payloads(
     tmp_path: Path,
 ) -> None:

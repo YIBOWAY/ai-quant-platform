@@ -270,7 +270,12 @@ curl "http://127.0.0.1:8765/api/options/tools/vol-smile/AAPL?provider=futu"
 刷新本地 Options Radar 标的池 CSV。支持的数据源：
 
 - `public` / `github`：公开的 S&P 500 + Nasdaq 100 CSV 快照
-- `sample`：用于本地测试的确定性离线样本标的池
+
+HTTP refresh 明确拒绝 `sample`（`400 sample_options_input_withdrawn`）。sample 只能走
+所有路径都隔离的 CLI 测试任务。
+
+这是维护 API，不是正式推荐页的按钮。`/options-radar` 固定使用 tracked exact 34
+策展名单；页面只单独提供财报和 VIX 的高级刷新。
 
 ### POST `/api/options/refresh/earnings`
 
@@ -278,28 +283,37 @@ curl "http://127.0.0.1:8765/api/options/tools/vol-smile/AAPL?provider=futu"
 
 - `public` / `nasdaq`：Nasdaq 公开日历查询
 - `yfinance`：显式的只读 yfinance 日历查询
-- `sample`：用于本地测试的确定性离线样本日历
+
+HTTP refresh 明确拒绝 `sample`；sample 日历只用于全隔离 CLI 测试。
 
 ### POST `/api/options/refresh/vix`
 
 刷新市场状态评分所使用的本地 VIX/VIX3M 历史 CSV。支持的数据源：
 
 - `public`：优先 Yahoo Chart，回退至 Cboe 公开 CSV
-- `sample`：用于本地测试的确定性离线样本 VIX 历史
+
+HTTP refresh 明确拒绝 `sample`；sample VIX 只用于全隔离 CLI 测试。
 
 这些刷新端点仅写入本地 CSV 缓存。它们不会提交、修改、签署或下达订单。
 
 计划任务入口使用 CLI 命令：
 
 ```powershell
-quant-system options daily-task --top 100 --universe-source public --earnings-source public --vix-source public
+quant-system options daily-task --provider futu --top 34 --universe-source existing --earnings-source public --dividend-source public --vix-source public
 ```
 
-该命令会串联标的池、财报、VIX 刷新和一次只读雷达扫描，并在雷达输出目录
+正式命令加载 tracked 34 标的，并串联财报、除息事件、VIX 刷新和一次只读雷达扫描，
+在雷达输出目录
 写入 `daily_task_status.json`。`GET /api/options/daily-scan/status` 和
-`/options-radar` 页面会读取这个状态文件，显示最近一次调度任务状态。可选的
-`QS_OPTIONS_RADAR_STARTUP_CATCHUP_ENABLED=true` 只在 API 启动时补最近一个常规美股
-交易日缺失快照；补跑会先刷新本地标的池、财报日历和 VIX 输入，再运行扫描。单个刷新端点和脚本仍用于维护或离线调试。
+`/options-radar` 页面会读取这个状态文件，显示排队、输入刷新、逐标的扫描和终态。
+现役 HQA Hermes cron 周一至周六 22:00 自动执行；周六先写正式 34 标的，再把
+top-100 宽池写入独立 `data/options_scans/wide`。页面的“立即更新今日推荐”调用
+`POST /api/options/daily-scan/run`，固定使用真实 Futu、34 个策展标的和同一输出目录，
+快速返回 `202` 后在后台继续。重复启动或与定时任务重叠返回 `409`，不会并发双扫。
+IV Rank 历史不足 30 个正式 session 时显示积累进度，但不会阻断现有正物理 EV ×
+流动性推荐；非法 IVR、陈旧报价和缺失事件证据仍拒绝。API 启动补跑已经退役。
+sample 的 universe、earnings、dividend、VIX、snapshot 和 IV history 必须全部隔离，
+不能进入正式推荐。单个刷新端点和脚本仍用于维护或离线调试。
 
 ## 复刻计划
 
@@ -357,8 +371,8 @@ quant-system options daily-task --top 100 --universe-source public --earnings-so
 
 仍未实现：
 
-- 定时刷新
-- 通知投递
+- AlphaGBM 风格 watchlist / alert 工具自身的定时评估与通知投递。期权推荐的
+  22:00 自动扫描是另一条已存在的 HQA 调度路径。
 
 ## 验证
 

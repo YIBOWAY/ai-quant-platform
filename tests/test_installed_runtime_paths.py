@@ -10,7 +10,6 @@ from quant_system.hermes.intent_payload_port import (
     IntentPayloadCliSettings,
     IntentPayloadPortError,
 )
-from quant_system.hermes.paper_gate_port import PaperGateCliSettings
 from quant_system.hermes.release_runtime import platform_runtime_root
 
 _PATH_ENV_KEYS = (
@@ -38,24 +37,14 @@ def test_unconfigured_installed_runtime_paths_fail_closed(
     settings = Settings()
 
     assert is_unconfigured_runtime_path(settings.hermes_artifacts.feed_path)
-    assert is_unconfigured_runtime_path(
-        settings.agent_v02_release.platform_runtime_root
-    )
+    assert is_unconfigured_runtime_path(settings.agent_v02_release.platform_runtime_root)
     assert is_unconfigured_runtime_path(settings.agent_v02_release.evidence_file)
-    assert is_unconfigured_runtime_path(
-        settings.candidate_admission.preflight_evidence_file
-    )
-    assert is_unconfigured_runtime_path(
-        settings.candidate_admission.final_evidence_file
-    )
+    assert is_unconfigured_runtime_path(settings.candidate_admission.preflight_evidence_file)
+    assert is_unconfigured_runtime_path(settings.candidate_admission.final_evidence_file)
     assert is_unconfigured_runtime_path(settings.intent_payload.hqa_root)
 
     with pytest.raises(IntentPayloadPortError, match="not configured"):
         IntentPayloadCliSettings.from_settings(settings)
-    paper = PaperGateCliSettings.from_settings(settings)
-    assert is_unconfigured_runtime_path(paper.python_executable)
-    assert is_unconfigured_runtime_path(paper.hqa_root)
-    assert is_unconfigured_runtime_path(paper.platform_root)
 
 
 def test_explicit_runtime_paths_resolve_without_source_layout_inference(
@@ -91,7 +80,6 @@ def test_explicit_runtime_paths_resolve_without_source_layout_inference(
 
     settings = Settings()
     intent = IntentPayloadCliSettings.from_settings(settings)
-    paper = PaperGateCliSettings.from_settings(settings)
 
     assert settings.hermes_artifacts.feed_path == feed
     assert settings.agent_v02_release.evidence_file == release
@@ -99,5 +87,4 @@ def test_explicit_runtime_paths_resolve_without_source_layout_inference(
     assert settings.candidate_admission.final_evidence_file == final
     assert intent.python_executable == python
     assert intent.hqa_root == hqa
-    assert paper.platform_root == platform
     assert platform_runtime_root(settings) == platform

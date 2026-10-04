@@ -35,6 +35,36 @@ def test_local_mac_stack_accepts_ambiguous_bootstrap_when_gateway_is_loaded() ->
     assert '"$LAUNCHCTL_BIN" print "$DOMAIN/ai.hermes.gateway"' in failure_branch
 
 
+def test_local_mac_stack_waits_for_runtime_readiness() -> None:
+    script = (ROOT / "scripts" / "local_mac_stack.sh").read_text(encoding="utf-8")
+
+    assert 'lsof -nP -t -iTCP:8642 -sTCP:LISTEN' in script
+    assert '! /bin/kill -0 "$old_listener_pid"' in script
+    assert '"$stable_free_count" -ge 64' in script
+    assert "for attempt_no in {1..180}" in script
+    assert "wait_for_connector_ready()" in script
+    connector_wait = script.split("wait_for_connector_ready()", 1)[1].split(
+        "start_stack()", 1
+    )[0]
+    assert 'print "$DOMAIN/com.aiquant.agent-v02-connector"' in connector_wait
+    assert '[[ "$state" == "running" && "$pid" =~ ^[0-9]+$ ]]' in connector_wait
+    assert '/bin/kill -0 "$pid"' in connector_wait
+    assert "http://127.0.0.1:8765/api/hermes/gateway" in connector_wait
+    assert '"chat_write_ready"' in connector_wait
+
+    start = script.split("start_stack()", 1)[1].split("bootout_job()", 1)[0]
+    connector_install = 'bash "$ROOT/scripts/install_agent_v02_connector_launchagent.sh"'
+    assert start.index('wait_for_url "backend_ready"') < start.index(
+        connector_install
+    )
+    assert start.index(connector_install) < start.index(
+        "wait_for_connector_ready"
+    )
+    assert start.index("wait_for_connector_ready") < start.index(
+        'bash "$ROOT/scripts/install_asia_radar_refresh_launchagent.sh"'
+    )
+
+
 def _copy_script(tmp_path: Path, name: str) -> tuple[Path, Path]:
     release_root = tmp_path / "release"
     scripts_dir = release_root / "scripts"

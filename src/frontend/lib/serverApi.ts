@@ -3,10 +3,12 @@ import { unstable_cache } from "next/cache";
 import {
   getEffectivePaperSafety,
   getHealth,
+  getHungSleeveEffect,
   getMarketDataHistory,
   getPaperAccount,
   getPaperAccountEquityCurve,
   getPaperAccountPerformance,
+  getRemoteBook,
   getSettings,
 } from "@/lib/api";
 
@@ -33,6 +35,18 @@ export const getCachedBriefPaperAccountEquityCurve = unstable_cache(
   () => getPaperAccountEquityCurve(7),
   ["brief-paper-account-equity-curve-v1"],
   { revalidate: 1 },
+);
+
+export const getCachedRemoteBook = unstable_cache(
+  () => getRemoteBook(),
+  ["brief-remote-book-v1"],
+  { revalidate: 5 },
+);
+
+export const getCachedHungSleeveEffect = unstable_cache(
+  () => getHungSleeveEffect(),
+  ["brief-hung-sleeve-effect-v1"],
+  { revalidate: 5 },
 );
 
 export const getCachedAsiaRadarSummary = unstable_cache(

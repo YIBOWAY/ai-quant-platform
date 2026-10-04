@@ -1,5 +1,6 @@
 import os
 import sys
+import tempfile
 
 # Keep this guard even though the package metadata requires Python 3.11+:
 # when pytest is launched from the wrong interpreter, this gives the user a
@@ -23,3 +24,13 @@ os.environ["QS_BACKTEST_JOBS_ENABLED"] = "false"
 # requires an explicit loopback bind declaration that plain TestClient apps
 # don't pass — every API test would fail before serving a single request.
 os.environ["QS_HERMES_GATEWAY_ENABLED"] = "false"
+# Same hermeticity for the live stack's data directory and trust/mutation gates.
+# The deployed .env points QS_DATA_DIR at the real "data/" (with live release
+# stamps, ledgers, and caches) and opens local trust/mutation for the running
+# gateway — state tests must not see and expectations that only hold for the
+# fail-closed defaults. Real environment variables beat env_file values, so
+# pinning here keeps every Settings() default hermetic on any machine.
+os.environ["QS_DATA_DIR"] = tempfile.mkdtemp(prefix="qs-hermetic-data-")
+os.environ["QS_LOCAL_TRUST_MODE"] = "false"
+os.environ["QS_LOCAL_MUTATION_ENABLED"] = "false"
+os.environ["QS_LOCAL_MUTATION_COMPOSER_OPEN"] = "false"

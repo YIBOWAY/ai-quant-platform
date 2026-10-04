@@ -7,10 +7,20 @@ import {
 } from "@/lib/hermes/featureFlags";
 import { getServerLocale } from "@/lib/serverLocale";
 
-export const metadata: Metadata = {
-  title: "值班 · 研究 · 模拟 · Hermes",
-  description: "个人量化助手工作台：值班、研究、模拟三本账，接线远程账。",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await getServerLocale();
+  if (locale === "zh") {
+    return {
+      title: "今日 · 研究 · 模拟 · Hermes 助手",
+      description: "个人量化助手：今日、研究、模拟三本账，接线远程账。",
+    };
+  }
+  return {
+    title: "Today · Research · Paper · Hermes Assistant",
+    description:
+      "Personal quant assistant: today, research, and paper ledgers wired to the remote book.",
+  };
+}
 
 export default async function HermesLayout({
   children,
@@ -29,6 +39,7 @@ export default async function HermesLayout({
   return (
     <HermesWorkbenchShell
       chatWriteReady={chatWriteReady}
+      sessionReadReady={gateway.connected === true && gateway.session_api_available === true && gateway.read_status === "available"}
       deliveryState={deliveryState}
       locale={locale}
     >

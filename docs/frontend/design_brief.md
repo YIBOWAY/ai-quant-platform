@@ -1,5 +1,9 @@
 # Frontend Design Brief — ai-quant-platform
 
+> **冻结的 2026-06 设计简报。** 正文中的页面清单、Agent Studio/Prediction Market
+> 占位形态和旧 IA 不是现役路由事实，不可再次当作实现 prompt。当前页面与 alias
+> 以 [文档索引](../INDEX.md#7-当前前端页面) 和 `src/frontend/app` 为准。
+
 > 这份文档是给设计 agent（Google Stitch / Figma Make / Gemini 3 Pro / v0.dev 等）以及实现 agent（Codex / Gemini 3 Pro）的**单一事实源**。  
 > 写作语言为中文，但里面的关键术语会保留英文，方便直接喂给设计工具。
 

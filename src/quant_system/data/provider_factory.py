@@ -5,6 +5,7 @@ import pandas as pd
 from quant_system.config.settings import Settings
 from quant_system.data.providers.base import HistoricalDataProvider
 from quant_system.data.providers.futu import FutuMarketDataProvider
+from quant_system.data.providers.longbridge import LongbridgeMarketDataProvider
 from quant_system.data.providers.sample import SampleOHLCVProvider
 from quant_system.data.providers.tiingo import TiingoEODProvider
 from quant_system.data.storage import LocalDataStorage
@@ -69,20 +70,18 @@ class CachedOHLCVProvider:
         end: str,
         interval: str,
     ) -> bool:
-        if cached.empty:
+        if cached.empty or not {"symbol", "timestamp", "provider", "interval"}.issubset(
+            cached.columns
+        ):
             return False
         normalized_symbols = {symbol.upper() for symbol in symbols}
         cached_symbols = set(cached["symbol"].astype(str).str.upper())
         if not normalized_symbols.issubset(cached_symbols):
             return False
-        if "provider" in cached.columns:
-            providers = set(cached["provider"].astype(str))
-            if providers != {self.provider_name}:
-                return False
-        if "interval" in cached.columns:
-            intervals = set(cached["interval"].astype(str))
-            if intervals != {interval}:
-                return False
+        if set(cached["provider"].astype(str)) != {self.provider_name}:
+            return False
+        if set(cached["interval"].astype(str)) != {interval}:
+            return False
         if self.provider_name == "tiingo":
             if "price_adjustment" not in cached.columns:
                 return False
@@ -112,11 +111,17 @@ def build_ohlcv_provider(
     *,
     requested: str | None = None,
 ) -> tuple[HistoricalDataProvider, str]:
-    """Pick a working OHLCV provider without exposing credentials."""
+    """Resolve the selected provider; unavailable real sources never become sample."""
 
-    name = (requested or settings.data.default_data_provider).lower().strip()
-    if requested is not None and name not in {"sample", "futu", "tiingo"}:
+    name = (
+        (requested if requested is not None else settings.data.default_data_provider)
+        .lower()
+        .strip()
+    )
+    if name not in {"sample", "futu", "tiingo", "longbridge"}:
         raise DataProviderUnavailableError(name, "unsupported provider")
+    if name == "longbridge":
+        return LongbridgeMarketDataProvider(), "longbridge"
     token = settings.api_keys.tiingo_api_token
     token_value = token.get_secret_value().strip() if token else ""
 
@@ -146,18 +151,14 @@ def build_ohlcv_provider(
                 ),
                 "futu",
             )
-        if requested is not None:
-            raise DataProviderUnavailableError("futu", "disabled")
-        return SampleOHLCVProvider(), "sample (futu: disabled)"
+        raise DataProviderUnavailableError("futu", "disabled")
     if name == "tiingo" and token_value:
         return _cached_provider(
             TiingoEODProvider(api_token=token),
             settings=settings,
         ), "tiingo"
     if name == "tiingo" and not token_value:
-        if requested is not None:
-            raise DataProviderUnavailableError("tiingo", "missing token")
-        return SampleOHLCVProvider(), "sample (tiingo: missing token)"
+        raise DataProviderUnavailableError("tiingo", "missing token")
     return SampleOHLCVProvider(), "sample"
 
 

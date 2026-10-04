@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.testclient import TestClient
@@ -556,7 +557,8 @@ def test_strategy_sleeve_execution_api_processes_pending_plan(
     assert payload["blocked_count"] == 0
     assert payload["executions"][0]["execution_id"] == pending["execution_id"]
     assert payload["executions"][0]["status"] == "filled"
-    assert payload["account"]["cash"] == pytest.approx(950_000.0)
+    # R3 parity: 250 shares slipped 200 -> 200.10 plus 1bp commission
+    assert payload["account"]["cash"] == pytest.approx(1_000_000.0 - 250.0 * 200.10 * (1 + 1.0 / 10_000))
     assert payload["account"]["positions"][0]["symbol"] == "AAPL"
     assert payload["account"]["positions"][0]["quantity"] == pytest.approx(250.0)
     assert payload["account"]["positions"][0]["source_breakdown"] == {
@@ -664,7 +666,8 @@ def test_strategy_sleeve_detail_is_observational_before_explicit_journal_recover
     assert recovered.status_code == 200
     reloaded_account = account_storage.load()
     assert reloaded_account is not None
-    assert reloaded_account.cash == pytest.approx(950_000.0)
+    # R3 parity: same fill math after journal recovery
+    assert reloaded_account.cash == pytest.approx(1_000_000.0 - 250.0 * 200.10 * (1 + 1.0 / 10_000))
     assert reloaded_account.positions["AAPL"].quantity == pytest.approx(250.0)
     assert storage.execution_journal_committed_path(
         sleeve["sleeve_id"],
@@ -811,6 +814,94 @@ def test_strategy_sleeve_ops_status_reports_due_pending_executions(tmp_path) -> 
     assert status["blocked_count"] == 0
     assert status["recovery_required_count"] == 0
     assert status["pending_journal_count"] == 0
+
+
+def test_hung_effect_is_empty_without_observation_marks_and_does_not_write(
+    tmp_path,
+) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+    before = _file_tree_snapshot(tmp_path)
+
+    response = client.get("/api/paper/strategy-sleeves/hung-effect")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["empty"] is True
+    assert payload["observation_day_count"] == 0
+    assert payload["sleeve_return_pct"] is None
+    assert payload["series"] == []
+    assert "观察日 0" in (payload.get("empty_label_zh") or "")
+    assert _file_tree_snapshot(tmp_path) == before
+
+
+def test_observation_calendar_is_read_only_and_reports_yesterday(tmp_path) -> None:
+    client = TestClient(create_app(output_dir=tmp_path))
+    before = _file_tree_snapshot(tmp_path)
+
+    response = client.get("/api/paper/strategy-sleeves/observation-calendar")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["yesterday"]["status"] in {
+        "absent",
+        "recorded",
+        "pending",
+        "not_scheduled",
+    }
+    assert payload["yesterday"]["is_no_signal"] is False
+    assert isinstance(payload["observation_day_count"], int)
+    assert payload["yesterday"]["counts_as_observation_day"] in {True, False}
+    assert _file_tree_snapshot(tmp_path) == before
+
+
+def test_observation_calendar_api_surfaces_persisted_data_unavailable(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    fixed_now = datetime(2026, 8, 21, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed_now if tz is None else fixed_now.astimezone(tz)
+
+    monkeypatch.setattr("quant_system.api.routes.paper.datetime", FixedDateTime)
+    storage = PaperStrategySleeveStorage(tmp_path / "api_runs")
+    config = make_config()
+    sleeve = make_sleeve(config)
+    sleeve.created_at = "2026-08-19T10:00:00+08:00"
+    sleeve.metadata = {
+        "automation_managed": True,
+        "automation_source": "d34",
+        "promotion_scope": "paper_only",
+        "candidate_code_digest": "a" * 64,
+    }
+    storage.save_strategy_config(config)
+    storage.save_sleeve(sleeve)
+    storage.append_signal(
+        StrategySignal.create(
+            sleeve=sleeve,
+            signal_date="2026-08-20",
+            data_provider="futu",
+            status=SignalStatus.DATA_UNAVAILABLE,
+            warnings=["provider unavailable"],
+        )
+    )
+    client = TestClient(create_app(output_dir=tmp_path))
+    before = _file_tree_snapshot(tmp_path)
+
+    response = client.get("/api/paper/strategy-sleeves/observation-calendar")
+
+    assert response.status_code == 200
+    yesterday = response.json()["yesterday"]
+    assert yesterday["status"] == "data_unavailable"
+    assert yesterday["counts_as_observation_day"] is False
+    assert response.json()["calendar_run_day_count"] == 1
+    assert response.json()["filled_day_count"] == 0
+    assert yesterday["is_no_signal"] is False
+    assert yesterday["reason"] == "signal_data_unavailable"
+    assert "信号数据不可用" in yesterday["label_zh"]
+    assert _file_tree_snapshot(tmp_path) == before
 
 
 def test_strategy_sleeve_ops_status_does_not_reconcile_or_write_pending_state(

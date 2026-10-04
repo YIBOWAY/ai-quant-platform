@@ -23,6 +23,10 @@ const hermesArtifactFixture = path.join(
   "hermes-artifacts.v1.json",
 );
 const reuseExistingServer = process.env.PW_REUSE_SERVER === "1";
+const productionFrontend = readOptionalFlag("PW_PRODUCTION_FRONTEND");
+if (productionFrontend && (!runE2E || reuseExistingServer)) {
+  throw new Error("production E2E requires an isolated managed test server");
+}
 const hermesWorkbenchFixture = readHermesWorkbenchFixture(
   process.env.PW_HERMES_WORKBENCH_FIXTURE,
 );
@@ -87,11 +91,11 @@ const rollbackFrontendUrl =
   rollbackPort !== null ? `http://127.0.0.1:${rollbackPort}` : null;
 const e2eCorsOrigins = Array.from(
   new Set([
+    frontendUrl,
     "http://127.0.0.1:3000",
     "http://127.0.0.1:3001",
     "http://localhost:3000",
     "http://localhost:3001",
-    frontendUrl,
     ...(rollbackFrontendUrl ? [rollbackFrontendUrl] : []),
   ]),
 );
@@ -115,7 +119,9 @@ function requireProviderFreeReadinessUrl(candidate: string): string {
 
 function buildFrontendCommand(port: number): string {
   const frontendDevCommand =
-    port === 3001
+    productionFrontend
+      ? `npm run build && npx next start --hostname 127.0.0.1 --port ${port}`
+      : port === 3001
       ? "npm run dev"
       : `npx next dev --hostname 127.0.0.1 --port ${port}`;
   return [
@@ -310,11 +316,49 @@ function buildWebServers(): WebServerConfig[] | undefined {
         : {
             env: {
               QS_ENVIRONMENT: "test",
+              QS_DRY_RUN: "true",
+              QS_PAPER_TRADING: "true",
+              QS_LIVE_TRADING_ENABLED: "false",
+              QS_KILL_SWITCH: "true",
               QS_DATABASE_ENABLED: "false",
               QS_DATABASE_AUTO_MIGRATE: "false",
+              QS_PAPER_ACCOUNT_DB_MODE: "file",
               QS_API_BIND_ADDRESS: "127.0.0.1",
+              QS_LOCAL_MUTATION_ENABLED: "true",
+              QS_LOCAL_MUTATION_COMPOSER_OPEN: "true",
+              QS_LOCAL_TRUST_MODE: "true",
+              QS_FUTU_HOST: "127.0.0.1",
+              QS_FUTU_PORT: process.env.PW_FUTU_SENTINEL_PORT ?? "19891",
+              QS_DEFAULT_DATA_PROVIDER: "sample",
+              QS_LLM_PROVIDER: "stub",
+              QS_LLM_API_KEY: "",
+              QS_LLM_BASE_URL: "",
+              QS_LLM_MODEL: "",
+              LLM_API_KEY: "",
+              LLM_BASE_URL: "",
+              LLM_MODEL: "",
+              QS_FINNHUB_API_KEY: "",
+              QS_ALPHA_VANTAGE_API_KEY: "",
+              QS_TIINGO_API_TOKEN: "",
+              QS_TWELVEDATA_API_KEY: "",
+              QS_POLYGON_API_KEY: "",
+              QS_NEWSAPI_KEY: "",
+              QS_TWITTER_API_KEY: "",
+              QS_TWITTER_API_KEY_SECRET: "",
+              QS_TWITTER_BEARER_TOKEN: "",
+              PYTHONPATH: [
+                path.join(repoRoot, "src"),
+                process.env.PYTHONPATH,
+              ]
+                .filter(Boolean)
+                .join(":"),
               QS_HERMES_GATEWAY_ENABLED: "false",
               QS_AIHOT_ENABLED: "false",
+              QS_MARKET_NEWS_ENABLED: "false",
+              QS_NEWS_FAILOVER_ENABLED: "false",
+              QS_HORIZON_ENABLED: "false",
+              QS_PAPER_ACCOUNT_AUTO_PROCESS_PENDING_ORDERS_ENABLED: "false",
+              QS_PREDICTION_MARKET_PROVIDER: "sample",
               QS_HERMES_ARTIFACT_FEED_PATH: hermesArtifactFixture,
               QS_HERMES_ARTIFACT_FRESHNESS_BUDGET_SECONDS: "315360000",
               QS_API_CORS_ORIGINS: JSON.stringify(e2eCorsOrigins),
@@ -322,6 +366,10 @@ function buildWebServers(): WebServerConfig[] | undefined {
               QS_AGENT_OUTPUT_DIR: path.join(e2eDataRoot, "agent-output"),
               QS_PARQUET_DIR: path.join(e2eDataRoot, "parquet"),
               QS_DUCKDB_PATH: path.join(e2eDataRoot, "quant_system.duckdb"),
+              QS_REPORTS_DIR: path.join(e2eDataRoot, "reports"),
+              QS_FUTU_CACHE_DIR: path.join(e2eDataRoot, "futu-cache"),
+              QS_POLYMARKET_CACHE_DIR: path.join(e2eDataRoot, "polymarket-cache"),
+              QS_PREDICTION_MARKET_HISTORY_DIR: path.join(e2eDataRoot, "prediction-history"),
               QS_OPTIONS_RADAR_OUTPUT_DIR: path.join(
                 e2eDataRoot,
                 "options_scans",
@@ -336,6 +384,16 @@ function buildWebServers(): WebServerConfig[] | undefined {
                 "options_universe",
                 "earnings_calendar.csv",
               ),
+              QS_OPTIONS_RADAR_DIVIDEND_EVENTS_PATH: path.join(
+                e2eDataRoot,
+                "options_universe",
+                "dividend_events.csv",
+              ),
+              QS_OPTIONS_RADAR_CURATED_UNIVERSE_PATH: path.join(
+                e2eDataRoot,
+                "options_universe",
+                "curated_wheel.csv",
+              ),
               QS_OPTIONS_RADAR_VIX_HISTORY_PATH: path.join(
                 e2eDataRoot,
                 "options_universe",
@@ -349,7 +407,7 @@ function buildWebServers(): WebServerConfig[] | undefined {
       cwd: frontendRoot,
       url: frontendUrl,
       reuseExistingServer: frontendReuse,
-      timeout: 120_000,
+      timeout: productionFrontend ? 180_000 : 120_000,
       env: {
         // Pin the API base for hermetic E2E runs: shell env beats .env.local
         // in Next.js, so this overrides any local override (e.g. 8800/8700).
@@ -403,11 +461,15 @@ export default defineConfig({
   use: {
     baseURL: frontendUrl,
     trace: "retain-on-failure",
+    screenshot: "only-on-failure",
   },
   projects: [
     {
       name: "chromium",
-      use: { ...devices["Desktop Chrome"] },
+      use: {
+        ...devices["Desktop Chrome"],
+        ...(process.env.PW_CHROMIUM_CHANNEL === "chrome" ? { channel: "chrome" } : {}),
+      },
     },
   ],
   // Safe per-run facts stay in Playwright process/config metadata so evidence

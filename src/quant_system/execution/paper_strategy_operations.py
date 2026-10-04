@@ -1,26 +1,28 @@
 from __future__ import annotations
 
+import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Any, Literal
+from typing import Any, Literal, NamedTuple
 
 from quant_system.config.settings import Settings
 from quant_system.execution.account import DEFAULT_INITIAL_CASH, PaperAccount
 from quant_system.execution.account_repository import PaperAccountBootstrapRequired
 from quant_system.execution.account_storage import PaperAccountStorage
-from quant_system.execution.d34_execution_context import (
-    resolve_d34_execution_policy_context,
-)
-from quant_system.execution.paper_observation import hung_observation_open_for_sleeve
 from quant_system.execution.paper_execution_policy import (
     PaperExecutionBatch,
     PaperExecutionDecision,
     PaperExecutionPolicy,
 )
+from quant_system.execution.paper_observation import hung_observation_open_for_sleeve
+from quant_system.execution.paper_observation_safety import (
+    resolve_paper_observation_policy_context,
+)
 from quant_system.execution.paper_strategy_execution_service import (
     PaperStrategyExecutionError,
     PaperStrategyExecutionService,
+    PreparedExecution,
 )
 from quant_system.execution.paper_strategy_signal_service import (
     PaperStrategySignalService,
@@ -46,6 +48,8 @@ class PaperStrategyOperationResult:
     recovered_count: int
     executions: list[StrategyExecutionPlan] = field(default_factory=list)
     account: PaperAccount | None = None
+    missed_window_count: int = 0
+    missed_window_executions: list[StrategyExecutionPlan] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -69,6 +73,16 @@ class _AccountReconcileResult:
     account: PaperAccount | None
     reconciled_sleeves: list[StrategySleeve] = field(default_factory=list)
     recovered: list[StrategyExecutionPlan] = field(default_factory=list)
+
+
+class _PendingExecutionCandidate(NamedTuple):
+    """Lock-free price evidence (or its terminal failure) for one plan."""
+
+    sleeve_id: str
+    execution_id: str
+    prepared: PreparedExecution | None
+    error_code: str | None
+    retry_record: dict[str, Any] | None
 
 
 @dataclass(frozen=True)
@@ -168,6 +182,7 @@ class PaperStrategyOpsObserver:
             execution
             for execution in executions
             if execution.status == StrategyExecutionStatus.BLOCKED
+            and execution.target_date == due_target_date
         ]
         filled = [
             execution
@@ -213,12 +228,24 @@ class PaperStrategyOperationsRunner:
         paper_execution_context_provider: Callable[[StrategySleeve], Mapping[str, Any]]
         | None = None,
         paper_policy_decision_recorder: Callable[..., None] | None = None,
+        definition_open_price_source=None,
+        price_retry_max_retries: int = 2,
+        price_retry_backoff_seconds: float = 30.0,
+        sleep_func: Callable[[float], None] = time.sleep,
     ) -> None:
         self.account_storage = account_storage
         self.sleeve_storage = sleeve_storage
         self.settings = settings
         self.price_source = price_source or PaperPriceSource(settings)
+        from quant_system.execution.definition_open_prices import DefinitionOpenPriceSource
+
+        self.definition_open_price_source = (
+            definition_open_price_source or DefinitionOpenPriceSource(settings)
+        )
         self.today = today
+        self.price_retry_max_retries = price_retry_max_retries
+        self.price_retry_backoff_seconds = price_retry_backoff_seconds
+        self.sleep_func = sleep_func
         self.paper_execution_context_provider = (
             paper_execution_context_provider or self._paper_execution_context
         )
@@ -248,7 +275,7 @@ class PaperStrategyOperationsRunner:
     def _paper_execution_context(self, sleeve: StrategySleeve) -> Mapping[str, Any]:
         if str(sleeve.metadata.get("automation_source", "d33")) != "d34":
             return {}
-        return resolve_d34_execution_policy_context(
+        return resolve_paper_observation_policy_context(
             self.settings,
             workspace_id=str(sleeve.metadata.get("workspace_id", "default")),
         )
@@ -312,8 +339,7 @@ class PaperStrategyOperationsRunner:
         source = str(sleeve.metadata.get("automation_source", "d33"))
         context = self.paper_execution_context_provider(sleeve) if source == "d34" else {}
         execution_prices = {
-            str(order["symbol"]).upper(): float(order["execution_price"])
-            for order in orders
+            str(order["symbol"]).upper(): float(order["execution_price"]) for order in orders
         }
         account_prices = {
             symbol: execution_prices.get(symbol, position.avg_cost)
@@ -325,8 +351,7 @@ class PaperStrategyOperationsRunner:
         }
         lots = self.sleeve_storage.load_sleeve_lots(sleeve.sleeve_id)
         sleeve_equity = sleeve.cash + sum(
-            lot.quantity * execution_prices.get(lot.symbol.upper(), lot.avg_cost)
-            for lot in lots
+            lot.quantity * execution_prices.get(lot.symbol.upper(), lot.avg_cost) for lot in lots
         )
         decision = PaperExecutionPolicy().evaluate_batch(
             PaperExecutionBatch(
@@ -339,9 +364,7 @@ class PaperStrategyOperationsRunner:
                 nav=account.equity(account_prices),
                 aggregate_symbol_values=aggregate_symbol_values,
                 emergency_stop=context.get("emergency_stop") is True,
-                paper_execution_enabled=(
-                    context.get("paper_execution_enabled", True) is True
-                ),
+                paper_execution_enabled=(context.get("paper_execution_enabled", True) is True),
                 mandate_active=context.get("mandate_active") is True,
                 mandate_paper_execution_allowed=(
                     context.get("mandate_paper_execution_allowed") is True
@@ -349,9 +372,7 @@ class PaperStrategyOperationsRunner:
                 hung_observation=self._hung_observation_open(sleeve),
             )
         )
-        plan.metadata["paper_execution_policy_decision_at_execution"] = (
-            decision.to_dict()
-        )
+        plan.metadata["paper_execution_policy_decision_at_execution"] = decision.to_dict()
         if source == "d34":
             mandate_id = str(sleeve.metadata.get("mandate_id", ""))
             workspace_id = str(sleeve.metadata.get("workspace_id", "default"))
@@ -521,10 +542,54 @@ class PaperStrategyOperationsRunner:
             storage=self.sleeve_storage,
             price_source=self.price_source,
             execution_policy_guard=self._current_automation_execution_blocker,
+            definition_open_price_source=self.definition_open_price_source,
+            price_retry_max_retries=self.price_retry_max_retries,
+            price_retry_backoff_seconds=self.price_retry_backoff_seconds,
+            sleep_func=self.sleep_func,
         )
+        due_target_date = self._target_date(target_date)
+
+        # Phase P -- lock-free: network price evidence and the bounded backoff
+        # sleep happen here, before any account/sleeve mutation lock is taken.
+        # Nothing is persisted; the result is re-validated in Phase C.
+        candidates = execution_service.pending_plans(
+            sleeve_id=sleeve_id,
+            execution_window=execution_window,
+            target_date=due_target_date,
+            limit=limit,
+        )
+        prepared_batch: list[_PendingExecutionCandidate] = []
+        for candidate_sleeve, candidate_plan in candidates:
+            prepared = None
+            error_code = None
+            try:
+                prepared = execution_service.prepare_with_retries(
+                    sleeve=candidate_sleeve,
+                    plan=candidate_plan,
+                    account_id=self.account_storage.account_id,
+                )
+            except PaperStrategyExecutionError as exc:
+                error_code = exc.code
+            prepared_batch.append(
+                _PendingExecutionCandidate(
+                    sleeve_id=candidate_sleeve.sleeve_id,
+                    execution_id=candidate_plan.execution_id,
+                    prepared=prepared,
+                    error_code=error_code,
+                    retry_record=(
+                        dict(candidate_plan.metadata["price_unavailable_retry"])
+                        if candidate_plan.metadata.get("price_unavailable_retry")
+                        else None
+                    ),
+                )
+            )
+
         processed: list[StrategyExecutionPlan] = []
         filled_count = 0
         blocked_count = 0
+        # Phase C -- account+sleeve lock: no network, no sleep. Each plan is
+        # re-read and re-validated against the freshly loaded account/sleeve, so
+        # a concurrent mutation in the window cannot be overwritten.
         with self.account_storage.mutation_lock(), self.sleeve_storage.mutation_lock():
             load_result = self._load_account_after_reconcile(
                 open_if_missing=True,
@@ -535,42 +600,71 @@ class PaperStrategyOperationsRunner:
                 raise RuntimeError("paper account could not be opened")
             recovered = load_result.recovered
 
-            candidates = execution_service.pending_plans(
-                sleeve_id=sleeve_id,
-                execution_window=execution_window,
-                target_date=self._target_date(target_date),
-                limit=limit,
+            # Expire before executing: a next_open plan is only ever
+            # executable on its target date. Older unexecuted plans are
+            # honestly marked missed_window, never filled late.
+            missed_window: list[StrategyExecutionPlan] = []
+            scanned_sleeves = (
+                [self.sleeve_storage.load_sleeve(sleeve_id)]
+                if sleeve_id is not None
+                else self.sleeve_storage.list_sleeves()
             )
-            for sleeve, plan in candidates:
-                blocker = self._current_d34_execution_blocker(sleeve)
+            for scanned_sleeve in scanned_sleeves:
+                for candidate in self.sleeve_storage.load_executions(scanned_sleeve.sleeve_id):
+                    if execution_service.mark_missed_window(
+                        candidate,
+                        processing_date=due_target_date,
+                    ):
+                        missed_window.append(candidate)
+
+            sleeve_cache: dict[str, StrategySleeve] = {}
+            for outcome in prepared_batch:
+                fresh_sleeve = sleeve_cache.get(outcome.sleeve_id)
+                if fresh_sleeve is None:
+                    fresh_sleeve = self.sleeve_storage.load_sleeve(outcome.sleeve_id)
+                    sleeve_cache[outcome.sleeve_id] = fresh_sleeve
+                fresh_plan = self._load_execution(fresh_sleeve.sleeve_id, outcome.execution_id)
+                if fresh_plan is None or fresh_plan.status != StrategyExecutionStatus.PENDING:
+                    # Externally decided inside the window: never overwrite a
+                    # terminal record, and never fill on stale evidence.
+                    continue
+                if outcome.retry_record is not None:
+                    fresh_plan.metadata["price_unavailable_retry"] = dict(outcome.retry_record)
+                blocker = self._current_d34_execution_blocker(fresh_sleeve)
                 if blocker is not None:
-                    execution_service.block_plan(plan, reason=blocker)
-                    processed.append(plan)
+                    execution_service.block_plan(fresh_plan, reason=blocker)
+                    processed.append(fresh_plan)
                     blocked_count += 1
                     continue
                 allow_frozen_account = False
                 if account.kill_switch:
-                    context = self.paper_execution_context_provider(sleeve)
+                    context = self.paper_execution_context_provider(fresh_sleeve)
                     allow_frozen_account = self._d34_scoped_frozen_account_authorized(
-                        sleeve,
+                        fresh_sleeve,
                         context,
                     )
-                try:
-                    execution = execution_service.execute_plan(
-                        account,
-                        sleeve=sleeve,
-                        plan=plan,
-                        allow_frozen_account=allow_frozen_account,
-                    )
-                except PaperStrategyExecutionError:
-                    execution = plan
+                if outcome.error_code is not None:
+                    execution_service.block_plan(fresh_plan, reason=outcome.error_code)
+                    execution = fresh_plan
+                else:
+                    try:
+                        execution = execution_service.commit_execution(
+                            account,
+                            sleeve=fresh_sleeve,
+                            plan=fresh_plan,
+                            prepared=outcome.prepared,
+                            allow_frozen_account=allow_frozen_account,
+                        )
+                    except PaperStrategyExecutionError:
+                        execution = fresh_plan
                 if execution.status == StrategyExecutionStatus.FILLED:
                     filled_count += 1
                 elif execution.status == StrategyExecutionStatus.BLOCKED:
                     blocked_count += 1
                 processed.append(execution)
 
-            self._save_account_snapshot(account)
+            if processed:
+                self._save_account_snapshot(account)
             for execution in processed:
                 if execution.status == StrategyExecutionStatus.FILLED:
                     execution_service.commit_execution_journal(execution)
@@ -582,7 +676,19 @@ class PaperStrategyOperationsRunner:
                 recovered_count=len(recovered),
                 executions=processed,
                 account=account,
+                missed_window_count=len(missed_window),
+                missed_window_executions=missed_window,
             )
+
+    def _load_execution(
+        self,
+        sleeve_id: str,
+        execution_id: str,
+    ) -> StrategyExecutionPlan | None:
+        for plan in self.sleeve_storage.load_executions(sleeve_id):
+            if plan.execution_id == execution_id:
+                return plan
+        return None
 
     def ops_status(
         self,
@@ -643,6 +749,7 @@ class PaperStrategyOperationsRunner:
         service = execution_service or PaperStrategyExecutionService(
             storage=self.sleeve_storage,
             price_source=self.price_source,
+            definition_open_price_source=self.definition_open_price_source,
         )
         recovered = service.reconcile_execution_journals(account, commit=False)
         if recovered:

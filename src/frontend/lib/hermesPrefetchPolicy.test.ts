@@ -5,16 +5,9 @@ import { describe, expect, it } from "vitest";
 const frontendRoot = process.cwd();
 
 const hermesLinkFiles = [
-  "components/hermes/approvals/CandidateApprovalWorkspace.tsx",
-  "components/hermes/gates/WorkbenchGateSurfacesPanel.tsx",
   "components/hermes/results/UnifiedResultDetail.tsx",
   "components/hermes/results/UnifiedResultsIndex.tsx",
-  "components/hermes/shell/HermesInternalNav.tsx",
-  "components/hermes/today/RecentResults.tsx",
-  "components/hermes/today/TodayAttention.tsx",
-  "components/hermes/today/TodayGreeting.tsx",
   "components/hermes/today/TodayResults.tsx",
-  "components/hermes/today/TodayRunning.tsx",
 ];
 
 function nextLinkTags(relativePath: string): string[] {
@@ -55,6 +48,6 @@ describe("Hermes workbench navigation prefetch policy", () => {
       "utf8",
     );
     expect(source).toContain('"/api/settings"');
-    expect(source).toContain("safety: validated.health.safety");
+    expect(source).toContain("safety: { ...validated.health.safety, paper_observation_enabled: !desk.offline }");
   });
 });

@@ -123,6 +123,43 @@ def _write_loaded_eio_launchctl(tmp_path: Path) -> tuple[Path, Path]:
     return launchctl, launchctl_log
 
 
+def _write_delayed_bootout_launchctl(tmp_path: Path) -> tuple[Path, Path]:
+    launchctl_log = tmp_path / "launchctl.log"
+    stale_generation = tmp_path / "launchctl-stale-generation"
+    bootstrap_count = tmp_path / "launchctl-bootstrap-count"
+    launchctl = tmp_path / "launchctl"
+    launchctl.write_text(
+        "#!/usr/bin/env bash\n"
+        f'printf "%s\\n" "$*" >> "{launchctl_log}"\n'
+        'if [[ "${1:-}" == "bootout" ]]; then\n'
+        f'  : > "{stale_generation}"\n'
+        "  exit 0\n"
+        "fi\n"
+        'if [[ "${1:-}" == "print" ]]; then\n'
+        f'  if [[ -f "{stale_generation}" ]]; then\n'
+        f'    rm "{stale_generation}"\n'
+        "    exit 0\n"
+        "  fi\n"
+        "  exit 1\n"
+        "fi\n"
+        'if [[ "${1:-}" == "bootstrap" ]]; then\n'
+        "  attempt=0\n"
+        f'  [[ ! -f "{bootstrap_count}" ]] || attempt="$(cat "{bootstrap_count}")"\n'
+        "  attempt=$((attempt + 1))\n"
+        f'  printf "%s\\n" "$attempt" > "{bootstrap_count}"\n'
+        "  if [[ \"$attempt\" -eq 1 ]]; then\n"
+        '    echo "Bootstrap failed: 37: Operation already in progress" >&2\n'
+        "    exit 37\n"
+        "  fi\n"
+        "  exit 0\n"
+        "fi\n"
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    launchctl.chmod(0o700)
+    return launchctl, launchctl_log
+
+
 def test_launchagent_is_supervised_without_fixed_smoke_input() -> None:
     wrapper = (ROOT / "scripts" / "run_agent_v02_connector.sh").read_text(
         encoding="utf-8"
@@ -324,7 +361,9 @@ def test_installer_checks_before_launchd_mutation_and_is_replay_safe(
     launchctl = tmp_path / "launchctl"
     launchctl.write_text(
         "#!/usr/bin/env bash\n"
-        f'printf "%s\\n" "$*" >> "{launchctl_log}"\n',
+        f'printf "%s\\n" "$*" >> "{launchctl_log}"\n'
+        '[[ "${1:-}" == "print" ]] && exit 1\n'
+        "exit 0\n",
         encoding="utf-8",
     )
     launchctl.chmod(0o700)
@@ -433,6 +472,47 @@ def test_connector_installer_retries_transient_launchctl_bootstrap_eio(
     assert result.stderr.count("launchctl_bootstrap_eio") == 1
 
 
+def test_connector_installer_waits_for_booted_out_generation_before_bootstrap(
+    tmp_path: Path,
+) -> None:
+    release_root, _, installer = _copy_connector_assets(tmp_path)
+    env_file = _write_connector_env(release_root)
+    python = _write_fake_python(tmp_path / "python", tmp_path / "python.log")
+    launchctl, launchctl_log = _write_delayed_bootout_launchctl(tmp_path)
+    plutil = tmp_path / "plutil"
+    plutil.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    plutil.chmod(0o700)
+    home = tmp_path / "home"
+    home.mkdir()
+
+    result = subprocess.run(
+        [str(installer)],
+        cwd=release_root,
+        env={
+            **os.environ,
+            "HOME": str(home),
+            "QS_AGENT_V02_CONNECTOR_ENV_FILE": str(env_file),
+            "QS_AGENT_V02_CONNECTOR_PYTHON": str(python),
+            "QS_LAUNCHCTL_BIN": str(launchctl),
+            "QS_PLUTIL_BIN": str(plutil),
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    calls = launchctl_log.read_text(encoding="utf-8").splitlines()
+    assert [call.split()[0] for call in calls] == [
+        "bootout",
+        "print",
+        "print",
+        "bootstrap",
+        "print",
+        "bootstrap",
+    ]
+
+
 def test_connector_installer_accepts_eio_when_launchd_loaded_the_job(
     tmp_path: Path,
 ) -> None:
@@ -466,7 +546,7 @@ def test_connector_installer_accepts_eio_when_launchd_loaded_the_job(
     calls = launchctl_log.read_text(encoding="utf-8")
     assert calls.count("bootout ") == 1
     assert calls.count("bootstrap ") == 1
-    assert calls.count("print ") == 1
+    assert calls.count("print ") == 2
     assert "launchctl_bootstrap_eio" not in result.stderr
 
 

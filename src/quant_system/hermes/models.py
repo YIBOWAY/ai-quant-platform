@@ -10,6 +10,7 @@ from pydantic import (
     BeforeValidator,
     ConfigDict,
     Field,
+    StrictBool,
     FiniteFloat,
     RootModel,
     StrictFloat,
@@ -102,6 +103,8 @@ class HermesPortfolioRiskData(_StrictPayload):
     betas: list[HermesRiskBeta] = Field(max_length=100)
     reason_codes: list[ShortCode] = Field(max_length=100)
     limitations: list[LimitationText] = Field(max_length=100)
+    account_equity: FiniteFloat | None = None
+    ledger_split: StrictBool = False
 
 
 class HermesPredictionData(_StrictPayload):

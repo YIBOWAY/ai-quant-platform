@@ -12,7 +12,7 @@ test.beforeEach(() => {
 test("brief empty archive DB shows no manual save control and shows empty digest", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("/zh/brief?range=7d");
-  await expect(page.getByRole("heading", { name: "每日晨报" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "量化日报" })).toBeVisible();
   await expect(page.getByRole("columnheader", { name: "日涨跌" })).toBeVisible();
 
   await expect(page.getByRole("link", { name: "近 7 日" })).toHaveAttribute(
@@ -43,8 +43,8 @@ test("brief empty archive DB shows no manual save control and shows empty digest
     fullPage: true,
   });
   const desktopPerformanceSection = page
-    .getByRole("heading", { name: "模拟盘收益" })
-    .locator("xpath=ancestor::section[1]");
+    .getByRole("navigation", { name: "收益曲线时间范围" })
+    .locator("xpath=ancestor::figure[1]");
   await desktopPerformanceSection.scrollIntoViewIfNeeded();
   await desktopPerformanceSection.screenshot({
     path: testInfo.outputPath("brief-performance-desktop-1440.png"),
@@ -63,7 +63,18 @@ test("brief empty archive DB shows no manual save control and shows empty digest
     "page",
   );
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.getByRole("heading", { name: "每日晨报" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "量化日报" })).toBeVisible();
+  const mobileHistory = page.getByRole("button", { name: "历史 · 日报" });
+  await expect(mobileHistory).toBeVisible();
+  await mobileHistory.click();
+  await page.getByRole("tab", { name: "周报" }).click();
+  const weeklyHistory = page.getByRole("button", { name: "历史 · 周报" });
+  await expect(weeklyHistory).toHaveAttribute("aria-expanded", "true");
+  await page.screenshot({
+    path: testInfo.outputPath("brief-mobile-history-open-390.png"),
+    fullPage: true,
+  });
+  await weeklyHistory.click();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
@@ -74,8 +85,8 @@ test("brief empty archive DB shows no manual save control and shows empty digest
     fullPage: true,
   });
   const mobilePerformanceSection = page
-    .getByRole("heading", { name: "模拟盘收益" })
-    .locator("xpath=ancestor::section[1]");
+    .getByRole("navigation", { name: "收益曲线时间范围" })
+    .locator("xpath=ancestor::figure[1]");
   await mobilePerformanceSection.scrollIntoViewIfNeeded();
   await mobilePerformanceSection.screenshot({
     path: testInfo.outputPath("brief-performance-mobile-390.png"),
@@ -86,7 +97,7 @@ test("brief empty archive DB shows no manual save control and shows empty digest
   // LaunchAgent, so the brief page no longer renders a save control.
   await expect(page.getByRole("button", { name: "保存今日归档" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "更新今日归档" })).toHaveCount(0);
-  await expect(page.getByText("本地 AI 情报源暂无条目。")).toBeVisible();
+  await expect(page.getByText("当前没有可用的 AI 新闻。")).toBeVisible();
 
   // Digest titles only become <a href="http(s):..."> when items exist with safe URLs.
   await expect(

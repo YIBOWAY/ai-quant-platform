@@ -7,25 +7,25 @@ const globalsCss = readFileSync(path.join(process.cwd(), "app/globals.css"), "ut
 describe("editorial design tokens", () => {
   it("defines the additive paper, Hermes stream, layout, and editorial radius tokens", () => {
     const expectedTokens = [
-      "--color-bg-base: #12110E;",
-      "--color-bg-sidebar: #1C1B20;",
-      "--color-bg-sidebar-muted: #25242A;",
-      "--color-bg-surface: #181714;",
-      "--color-bg-surface-muted: #23211C;",
+      "--color-bg-base: #111315;",
+      "--color-bg-sidebar: #17191c;",
+      "--color-bg-sidebar-muted: #222529;",
+      "--color-bg-surface: #1b1e21;",
+      "--color-bg-surface-muted: #24282c;",
       "--color-paper-ink: var(--color-bg-base);",
       "--color-paper-surface: var(--color-bg-surface);",
       "--color-paper-surface-muted: var(--color-bg-surface-muted);",
-      "--color-ink: #EDE7DA;",
-      "--color-ink-secondary: #A39E92;",
-      "--color-editorial-rule: #3A3733;",
-      "--color-editorial-accent: #7B8FD0;",
-      "--color-editorial-up: #2E9E6A;",
-      "--color-editorial-down: #C84A52;",
-      "--color-hermes: #9085E9;",
-      "--color-hermes-glow: rgba(144, 133, 233, 0.4);",
-      "--color-stream-bg: #17171C;",
-      "--color-stream-surface: #1F1F27;",
-      "--color-stream-surface-2: #262631;",
+      "--color-ink: #e2e8f0;",
+      "--color-ink-secondary: #94a0b2;",
+      "--color-editorial-rule: #2f3947;",
+      "--color-editorial-accent: #d6b37c;",
+      "--color-editorial-up: #2fbf87;",
+      "--color-editorial-down: #f2555f;",
+      "--color-hermes: #d6b37c;",
+      "--color-hermes-glow: rgba(214, 179, 124, 0.15);",
+      "--color-stream-bg: var(--color-bg-base);",
+      "--color-stream-surface: var(--color-bg-surface);",
+      "--color-stream-surface-2: var(--color-bg-surface-muted);",
       "--font-editorial-serif: var(--font-serif), var(--font-serif-sc), Georgia, 'Songti SC', serif;",
       "--spacing-rail-width: 208px;",
       "--spacing-right-panel: 340px;",
@@ -54,6 +54,16 @@ describe("Hermes shell accessibility and layout tokens", () => {
     expect(css).toContain(".app-touch-target");
     expect(css).toContain(":focus-visible");
     expect(css).toContain("@media (prefers-reduced-motion: reduce)");
+  });
+
+  it("defines the shared motion duration/easing contract for state continuity", () => {
+    expect(globalsCss).toContain("--duration-motion-micro: 120ms");
+    expect(globalsCss).toContain("--duration-motion-short: 220ms");
+    expect(globalsCss).toContain("--duration-motion-medium: 420ms");
+    expect(globalsCss).toContain("--ease-motion-out: cubic-bezier(0.16, 1, 0.3, 1)");
+    expect(globalsCss).toContain("--ease-motion-in: cubic-bezier(0.7, 0, 0.84, 0)");
+    expect(globalsCss).toContain(".motion-data-hold");
+    expect(globalsCss).toContain(".motion-panel-enter");
   });
 });
 

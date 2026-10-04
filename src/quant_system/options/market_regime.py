@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 StrategyName = Literal["sell_put", "covered_call"]
 BuyerStrategyName = Literal[
@@ -20,6 +23,15 @@ REGIME_W_VIX: dict[VolatilityRegime, float] = {
     "Elevated": 0.75,
     "Panic": 0.35,
     "Unknown": 1.0,
+}
+SPOT_ELEVATED_VIX = 35.0
+SPOT_PANIC_VIX = 45.0
+VIX_CACHE_MAX_AGE_TRADING_DAYS = 5
+_REGIME_RANK: dict[VolatilityRegime, int] = {
+    "Unknown": 0,
+    "Normal": 0,
+    "Elevated": 1,
+    "Panic": 2,
 }
 
 
@@ -78,6 +90,16 @@ def compute_vix_regime(
     else:
         regime = "Normal"
 
+    spot = float(vix_upto.iloc[-1])
+    if spot >= SPOT_PANIC_VIX:
+        spot_regime: VolatilityRegime = "Panic"
+    elif spot >= SPOT_ELEVATED_VIX:
+        spot_regime = "Elevated"
+    else:
+        spot_regime = "Normal"
+    if _REGIME_RANK[spot_regime] > _REGIME_RANK[regime]:
+        regime = spot_regime
+
     return VixRegimeSnapshot(
         volatility_regime=regime,
         w_vix=REGIME_W_VIX[regime],
@@ -124,7 +146,7 @@ def load_market_regime(
     Returns ``None`` when the CSV is missing or empty so callers can skip the
     penalty step without aborting the request.
     """
-    from quant_system.options.vix_data import load_vix_history
+    from quant_system.options.vix_data import load_vix_history, trading_day_age
 
     daily_vix, daily_vix3m = load_vix_history(vix_history_path)
     if daily_vix.empty:
@@ -135,7 +157,27 @@ def load_market_regime(
         except (TypeError, ValueError):
             signal_date = daily_vix.index.max()
     else:
-        signal_date = daily_vix.index.max()
+        signal_date = pd.Timestamp(
+            pd.Timestamp.now(tz="America/New_York").date()
+        )
+    last_obs = daily_vix.index.max()
+    age = trading_day_age(last_obs, signal_date)
+    if age > VIX_CACHE_MAX_AGE_TRADING_DAYS:
+        logger.warning(
+            "vix_cache_stale last=%s as_of=%s age_b=%s max=%s",
+            pd.Timestamp(last_obs).date(),
+            pd.Timestamp(signal_date).date(),
+            age,
+            VIX_CACHE_MAX_AGE_TRADING_DAYS,
+        )
+        return VixRegimeSnapshot(
+            volatility_regime="Unknown",
+            w_vix=1.0,
+            vix_density=0.0,
+            term_ratio=None,
+            vix_mean=None,
+            vix_threshold=20.0,
+        )
     return compute_vix_regime(daily_vix, daily_vix3m, signal_date=signal_date)
 
 

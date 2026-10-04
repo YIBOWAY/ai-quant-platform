@@ -2,6 +2,7 @@ from pathlib import Path
 
 API_TYPES = Path("src/frontend/lib/api.ts")
 SCREENER_FORM = Path("src/frontend/components/forms/OptionsScreenerForm.tsx")
+SCREENER_RESULTS = Path("src/frontend/components/forms/OptionsScreenerResults.tsx")
 
 
 def test_options_screener_form_uses_shared_response_types() -> None:
@@ -43,6 +44,7 @@ def test_shared_options_screener_types_include_backend_response_model_fields() -
 
 def test_options_screener_exposes_quality_filters_and_candidate_notes() -> None:
     component = SCREENER_FORM.read_text(encoding="utf-8")
+    results = SCREENER_RESULTS.read_text(encoding="utf-8")
 
     assert "minMarketCap" in component
     assert "minAdv" in component
@@ -50,5 +52,42 @@ def test_options_screener_exposes_quality_filters_and_candidate_notes() -> None:
     assert component.count("min_market_cap: 0") >= 4
     assert "include_rejected: false" in component
     assert "showRejected" in component
-    assert "candidate.notes.map" in component
-    assert "translateRejectionReason(note, locale)" in component
+    assert "candidate.notes.map" in results
+    assert "translateRejectionReason(note, locale)" in results
+
+
+def test_options_screener_displays_shared_ev_kernel_and_event_truth() -> None:
+    results = SCREENER_RESULTS.read_text(encoding="utf-8")
+
+    for field in [
+        "candidate.extrinsic_value",
+        "candidate.gross_annualized_yield",
+        "candidate.pop",
+        "candidate.expected_value",
+        "candidate.excess_annualized_ev",
+        "candidate.liquidity_factor",
+        "candidate.earnings_date",
+        "candidate.earnings_in_window",
+        "candidate.ex_dividend_date",
+        "candidate.ex_dividend_in_window",
+        "candidate.take_profit_50_price",
+        "candidate.manage_at_21_dte",
+        "candidate.recommendation_rejection_reasons",
+    ]:
+        assert field in results
+
+    assert '"POP≈"' in results
+    assert '"50% TP"' in results
+    assert '"乘法流动性"' in results
+
+
+def test_options_screener_keeps_wide_result_rows_compact_and_localizes_stale_errors() -> None:
+    component = SCREENER_FORM.read_text(encoding="utf-8")
+    results = SCREENER_RESULTS.read_text(encoding="utf-8")
+
+    assert 'resultHeaderClass = "whitespace-nowrap' in results
+    assert 'resultCellClass = "whitespace-nowrap' in results
+    assert "resultHeaderClass}" in results
+    assert "resultCellClass}" in results
+    assert "sticky left-0" in results
+    assert "optionsErrorMessage(mutation.error, locale)" in component

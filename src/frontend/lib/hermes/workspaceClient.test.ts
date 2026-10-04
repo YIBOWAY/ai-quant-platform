@@ -8,13 +8,13 @@ import {
 import {
   WorkspaceClientError,
   bootstrapOwnerSession,
-  confirmFormulaSource,
   ensureManagedSession,
   ensureOwnerSession,
   fetchHermesSessionMessages,
   fetchLatestAssistantText,
   fetchWorkspaceFollow,
   forkHermesSessionToManaged,
+  getOwnerSession,
   isTerminalCommandState,
   latestManagedSessionProjection,
   latestReadyManagedSessionProjection,
@@ -22,10 +22,8 @@ import {
   managedSessionIsReadyForHermesSession,
   pollCommandUntilTerminal,
   preflightPrompt,
-  preparePromotionReview,
   previewAssistantText,
   readCsrfToken,
-  reviewCandidateCAS,
   requireSameComposerHermesSession,
   sendComposerTurn,
   startFreshManagedSession,
@@ -33,6 +31,206 @@ import {
   utf8ByteLength,
   waitForManagedSessionReady,
 } from "./workspaceClient";
+
+describe("same-origin request deadlines", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  function hangUntilAbort(signal: AbortSignal | null | undefined) {
+    return new Promise<Response>((_resolve, reject) => {
+      const rejectAbort = () =>
+        reject(signal?.reason ?? new DOMException("aborted", "AbortError"));
+      if (signal?.aborted) {
+        rejectAbort();
+      } else {
+        signal?.addEventListener("abort", rejectAbort, { once: true });
+      }
+    });
+  }
+
+  it("bounds a hung owner GET without aborting the caller", async () => {
+    vi.useFakeTimers();
+    const caller = new AbortController();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_input: RequestInfo | URL, init?: RequestInit) =>
+        hangUntilAbort(init?.signal),
+      ),
+    );
+
+    const pending = getOwnerSession(caller.signal);
+    const rejected = expect(pending).rejects.toMatchObject({
+      code: "workspace_request_timeout",
+      status: 504,
+    });
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    await rejected;
+    expect(caller.signal.aborted).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("preserves an external abort instead of reporting an internal timeout", async () => {
+    vi.useFakeTimers();
+    const caller = new AbortController();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_input: RequestInfo | URL, init?: RequestInit) =>
+        hangUntilAbort(init?.signal),
+      ),
+    );
+
+    const pending = getOwnerSession(caller.signal);
+    const rejected = expect(pending).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    caller.abort();
+
+    await rejected;
+    expect(caller.signal.aborted).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("marks a timed-out new-session POST outcome unknown and keeps its action id", async () => {
+    vi.useFakeTimers();
+    const caller = new AbortController();
+    let postStarted!: () => void;
+    const sawPost = new Promise<void>((resolve) => {
+      postStarted = resolve;
+    });
+    const postBodies: Array<{ action: { client_action_id: string } }> = [];
+    vi.stubGlobal("document", { cookie: "qs_aw_csrf=deadline-csrf" });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = (init?.method ?? "GET").toUpperCase();
+        if (url === "/api/auth/owner/session" && method === "GET") {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                session_id: "owner-deadline",
+                mutation_enabled: true,
+                security_ready: true,
+              }),
+              { status: 200, headers: { "content-type": "application/json" } },
+            ),
+          );
+        }
+        if (url.endsWith("/act") && method === "POST") {
+          postBodies.push(JSON.parse(String(init?.body)));
+          postStarted();
+          return hangUntilAbort(init?.signal);
+        }
+        throw new Error(`unexpected fetch ${method} ${url}`);
+      }),
+    );
+
+    const pending = startFreshManagedSession({
+      clientActionId: "stable-new-session-attempt",
+      signal: caller.signal,
+    });
+    const rejected = expect(pending).rejects.toMatchObject({
+      code: "outcome_unknown",
+      status: 504,
+    });
+    await sawPost;
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    await rejected;
+    expect(postBodies).toEqual([
+      {
+        action: expect.objectContaining({
+          client_action_id: "stable-new-session-attempt",
+        }),
+      },
+    ]);
+    expect(caller.signal.aborted).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("makes one timed-out turn POST with the unchanged client action id", async () => {
+    vi.useFakeTimers();
+    const caller = new AbortController();
+    const hermesSessionId = "web_" + "9".repeat(40);
+    let postStarted!: () => void;
+    const sawPost = new Promise<void>((resolve) => {
+      postStarted = resolve;
+    });
+    const postBodies: Array<{ client_action_id: string }> = [];
+    vi.stubGlobal("document", { cookie: "qs_aw_csrf=turn-deadline-csrf" });
+    vi.stubGlobal("window", {
+      location: { search: "" },
+      sessionStorage: { getItem: () => null, setItem: vi.fn() },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = (init?.method ?? "GET").toUpperCase();
+        if (url === "/api/auth/owner/session" && method === "GET") {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                session_id: "owner-turn-deadline",
+                mutation_enabled: true,
+                security_ready: true,
+              }),
+              { status: 200, headers: { "content-type": "application/json" } },
+            ),
+          );
+        }
+        if (url.endsWith("/snapshot") && method === "GET") {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                managed_sessions: [
+                  {
+                    platform_session_id: "wm_turn_deadline",
+                    session_ref: "session:wm_turn_deadline",
+                    hermes_session_id: hermesSessionId,
+                    provision_state: "ready",
+                    web_writable: true,
+                    attempt_count: 1,
+                  },
+                ],
+              }),
+              { status: 200, headers: { "content-type": "application/json" } },
+            ),
+          );
+        }
+        if (url === "/api/agent/workspace/submit-turn" && method === "POST") {
+          postBodies.push(JSON.parse(String(init?.body)));
+          postStarted();
+          return hangUntilAbort(init?.signal);
+        }
+        throw new Error(`unexpected fetch ${method} ${url}`);
+      }),
+    );
+
+    const pending = sendComposerTurn({
+      prompt: "deadline test",
+      clientActionId: "stable-turn-attempt",
+      activeHermesSessionId: hermesSessionId,
+      signal: caller.signal,
+    });
+    const rejected = expect(pending).rejects.toMatchObject({
+      code: "outcome_unknown",
+      status: 504,
+    });
+    await sawPost;
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    await rejected;
+    expect(postBodies).toHaveLength(1);
+    expect(postBodies[0]?.client_action_id).toBe("stable-turn-attempt");
+    expect(caller.signal.aborted).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
 
 describe("owner bootstrap", () => {
   afterEach(() => {
@@ -190,226 +388,7 @@ describe("workspaceClient preflight", () => {
       }),
     );
   });
-});
-
-describe("paper Gate receipt exactness", () => {
-  const gate1ConfirmationId = `gate1-${"a".repeat(32)}`;
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    vi.restoreAllMocks();
-  });
-
-  function installReceipt(response: Record<string, unknown>) {
-    vi.stubGlobal("document", { cookie: "qs_aw_csrf=csrf-gate-token" });
-    const fetchMock = vi.fn(
-      async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
-        const method = (init?.method ?? "GET").toUpperCase();
-        if (url === "/api/auth/owner/session" && method === "GET") {
-          return new Response(
-            JSON.stringify({
-              session_id: "owner-session",
-              mutation_enabled: true,
-              security_ready: true,
-            }),
-            { status: 200, headers: { "content-type": "application/json" } },
-          );
-        }
-        if (
-          url === `/api/workspace/${PLATFORM_WORKSPACE_ID}/act` &&
-          method === "POST"
-        ) {
-          return new Response(JSON.stringify(response), {
-            status: 200,
-            headers: { "content-type": "application/json" },
-          });
-        }
-        throw new Error(`unexpected fetch ${method} ${url}`);
-      },
-    );
-    vi.stubGlobal("fetch", fetchMock);
-    return fetchMock;
-  }
-
-  function gate1Receipt(overrides: Record<string, unknown> = {}) {
-    return {
-      status: "accepted",
-      client_action_id: "gate1-action",
-      gate_id: "paper-gate-1",
-      task_version: 8,
-      gate1_confirmation_id: gate1ConfirmationId,
-      ...overrides,
-    };
-  }
-
-  async function callGate1() {
-    return confirmFormulaSource({
-      taskId: "paper-reversal",
-      reviewedSourceSha256: "b".repeat(64),
-      confirmationNote: "Reviewed exact source.",
-      clientActionId: "gate1-action",
-      expectedGateId: "paper-gate-1",
-    });
-  }
-
-  it("accepts an exactly bound Gate 1 continuation receipt", async () => {
-    installReceipt(gate1Receipt());
-
-    await expect(callGate1()).resolves.toMatchObject({
-      client_action_id: "gate1-action",
-      gate_id: "paper-gate-1",
-      task_version: 8,
-      gate1_confirmation_id: gate1ConfirmationId,
-    });
-  });
-
-  it.each([
-    [
-      "client action",
-      { client_action_id: "substituted-action" },
-      "paper_gate_receipt_identity_mismatch",
-    ],
-    [
-      "Gate",
-      { gate_id: "paper-gate-other" },
-      "paper_gate_receipt_identity_mismatch",
-    ],
-  ])("rejects a substituted %s receipt", async (_label, override, code) => {
-    installReceipt(gate1Receipt(override));
-
-    await expect(callGate1()).rejects.toMatchObject({ status: 503, code });
-  });
-
-  it.each([
-    ["missing", undefined],
-    ["zero", 0],
-    ["fractional", 8.5],
-    ["unsafe", Number.MAX_SAFE_INTEGER + 1],
-  ])(
-    "rejects an accepted Gate receipt with %s task_version",
-    async (_label, value) => {
-      installReceipt(gate1Receipt({ task_version: value }));
-
-      await expect(callGate1()).rejects.toMatchObject({
-        status: 503,
-        code: "paper_gate_receipt_continuation_invalid",
-      });
-    },
-  );
-
-  it.each([
-    ["missing", undefined],
-    ["malformed", "gate1-not-a-digest"],
-  ])(
-    "rejects an accepted Gate 1 receipt with %s confirmation",
-    async (_label, value) => {
-      installReceipt(gate1Receipt({ gate1_confirmation_id: value }));
-
-      await expect(callGate1()).rejects.toMatchObject({
-        status: 503,
-        code: "paper_gate_receipt_continuation_invalid",
-      });
-    },
-  );
-
-  it("requires Gate 2 to preserve the projected Gate 1 confirmation", async () => {
-    installReceipt({
-      status: "accepted",
-      client_action_id: "gate2-action",
-      gate_id: "paper-gate-2",
-      task_version: 9,
-      gate1_confirmation_id: `gate1-${"c".repeat(32)}`,
-    });
-
-    await expect(
-      reviewCandidateCAS({
-        candidateId: "paper-reversal",
-        expectedDigest: "d".repeat(64),
-        note: "Reviewed exact candidate.",
-        clientActionId: "gate2-action",
-        expectedGateId: "paper-gate-2",
-        expectedGate1ConfirmationId: gate1ConfirmationId,
-      }),
-    ).rejects.toMatchObject({
-      status: 503,
-      code: "paper_gate_receipt_continuation_mismatch",
-    });
-  });
-
-  it("accepts Gate 3 only with its projected Gate 1 confirmation", async () => {
-    installReceipt({
-      status: "accepted",
-      client_action_id: "gate3-action",
-      gate_id: "paper-gate-3",
-      task_version: 11,
-      gate1_confirmation_id: gate1ConfirmationId,
-    });
-
-    await expect(
-      preparePromotionReview({
-        candidateId: "paper-reversal",
-        expectedDigest: "e".repeat(64),
-        finalBacktestReceiptId: "final-receipt",
-        baseCommit: "f".repeat(40),
-        clientActionId: "gate3-action",
-        expectedGateId: "paper-gate-3",
-        expectedGate1ConfirmationId: gate1ConfirmationId,
-      }),
-    ).resolves.toMatchObject({
-      gate_id: "paper-gate-3",
-      task_version: 11,
-      gate1_confirmation_id: gate1ConfirmationId,
-    });
-  });
-
-  it("rejects Gate 3 when its receipt changes the Gate 1 continuation", async () => {
-    installReceipt({
-      status: "accepted",
-      client_action_id: "gate3-action",
-      gate_id: "paper-gate-3",
-      task_version: 11,
-      gate1_confirmation_id: `gate1-${"c".repeat(32)}`,
-    });
-
-    await expect(
-      preparePromotionReview({
-        candidateId: "paper-reversal",
-        expectedDigest: "e".repeat(64),
-        finalBacktestReceiptId: "final-receipt",
-        baseCommit: "f".repeat(40),
-        clientActionId: "gate3-action",
-        expectedGateId: "paper-gate-3",
-        expectedGate1ConfirmationId: gate1ConfirmationId,
-      }),
-    ).rejects.toMatchObject({
-      status: 503,
-      code: "paper_gate_receipt_continuation_mismatch",
-    });
-  });
-
-  it("rejects an invalid projected continuation before Gate 2 network access", async () => {
-    const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
-
-    await expect(
-      reviewCandidateCAS({
-        candidateId: "paper-reversal",
-        expectedDigest: "d".repeat(64),
-        note: "Reviewed exact candidate.",
-        clientActionId: "gate2-action",
-        expectedGateId: "paper-gate-2",
-        expectedGate1ConfirmationId: "",
-      }),
-    ).rejects.toMatchObject({
-      status: 400,
-      code: "validation",
-    });
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-});
-
-describe("sendComposerTurn", () => {
+});describe("sendComposerTurn", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();

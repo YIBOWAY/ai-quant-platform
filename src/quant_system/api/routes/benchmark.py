@@ -14,7 +14,6 @@ from quant_system.data.provider_factory import (
     DataProviderUnavailableError,
     build_ohlcv_provider,
 )
-from quant_system.data.providers.sample import SampleOHLCVProvider
 
 router = APIRouter()
 
@@ -35,12 +34,9 @@ def benchmark(
     try:
         ohlcv = active_provider.fetch_ohlcv([normalized_symbol], start=start, end=end)
     except Exception as exc:
-        if provider is not None:
-            raise provider_unavailable_400(
-                DataProviderUnavailableError(provider, exc.__class__.__name__)
-            ) from exc
-        ohlcv = SampleOHLCVProvider().fetch_ohlcv([normalized_symbol], start=start, end=end)
-        source = f"sample ({source} failed: {exc.__class__.__name__})"
+        raise provider_unavailable_400(
+            DataProviderUnavailableError(active_provider.provider_name, exc.__class__.__name__)
+        ) from exc
     curve = build_benchmark_curve(ohlcv, symbol=normalized_symbol)
     metrics = calculate_benchmark_metrics(curve)
     return {

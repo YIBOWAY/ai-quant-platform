@@ -1,16 +1,8 @@
-"""Read-only VIX/VIX3M history loader with Yahoo and Cboe public sources.
+"""Read-only VIX/VIX3M histories from Cboe's official daily CSV files.
 
-The fetcher mirrors the reference implementation at
-``E:\\programs\\APEXUSTech_Inter\\quantplatform\\backend\\app\\services\\
-data_fetcher.py::_fetch_yahoo_single``. It performs public HTTP GETs against
-Yahoo Chart first and Cboe daily CSV as a fallback — no Futu connection, no
-broker context — and is used purely to compute the daily seller-options regime
-weight.
-
-Tickers are CBOE indices ``^VIX`` and ``^VIX3M``. They are not exposed via
-Futu's ``US.VIX`` symbol (Futu returns ``unknown stock`` for those), so a
-direct Yahoo HTTP call is the closest reproducible source compatible with
-our read-only research mandate.
+The canonical refresh reads both tenors from Cboe. The standalone Yahoo
+parser remains available to its explicit callers; it does not select the
+source for the local VIX/VIX3M cache.
 """
 
 from __future__ import annotations
@@ -28,6 +20,17 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+
+
+def trading_day_age(
+    last_obs: date | datetime | pd.Timestamp, as_of: date | datetime | pd.Timestamp,
+) -> int:
+    """Business days in ``(last_obs, as_of]``. Zero when as-of is not after last."""
+    last = pd.Timestamp(last_obs).normalize()
+    current = pd.Timestamp(as_of).normalize()
+    if current <= last:
+        return 0
+    return int(len(pd.bdate_range(last + pd.Timedelta(days=1), current, freq="B")))
 CBOE_DAILY_PRICES_URL = (
     "https://cdn.cboe.com/api/global/us_indices/daily_prices/{symbol}_History.csv"
 )
@@ -239,18 +242,8 @@ def fetch_vix_history(
     lookback_days: int = 400,
     http_get: HttpGet | None = None,
 ) -> tuple[pd.Series, pd.Series]:
-    """Fetch ``^VIX`` and ``^VIX3M`` daily closes ending at ``end``.
-
-    Yahoo Chart is tried first because it was the original source. Some
-    networks return HTTP 403, so Cboe's public daily CSV endpoint is used as a
-    read-only fallback before the caller decides whether to keep an existing
-    local cache.
-    """
+    """Fetch both tenors from Cboe; missing dates remain missing in the cache."""
     start = end - timedelta(days=lookback_days)
-    vix = fetch_yahoo_chart(VIX_TICKER, start, end, http_get=http_get)
-    vix3m = fetch_yahoo_chart(VIX3M_TICKER, start, end, http_get=http_get)
-    if vix.empty:
-        vix = fetch_cboe_index_history("VIX", start, end, http_get=http_get)
-    if vix3m.empty:
-        vix3m = fetch_cboe_index_history("VIX3M", start, end, http_get=http_get)
+    vix = fetch_cboe_index_history("VIX", start, end, http_get=http_get)
+    vix3m = fetch_cboe_index_history("VIX3M", start, end, http_get=http_get)
     return vix, vix3m

@@ -165,7 +165,7 @@ export function MetricStat({
     );
   }
   return (
-    <div className="rounded-lg border border-border-subtle bg-bg-surface p-3" title={hint}>
+    <div className="min-w-0 border-l-2 border-border-subtle py-2 pl-4" title={hint}>
       <div className="font-label-caps text-text-secondary">{label}</div>
       <div className={`mt-2 font-data-mono text-lg font-bold ${toneText[tone]}`}>{value}</div>
       {delta ? <div className="mt-1 font-body-sm text-text-secondary">{delta}</div> : null}
@@ -206,17 +206,41 @@ const alignClass: Record<NonNullable<TerminalTableColumn["align"]>, string> = {
   center: "text-center",
 };
 
+/** Copy for the visible sideways-scroll cue on wide data tables. */
+export const tableScrollHintText = {
+  zh: "表格可左右滑动查看全部列",
+  en: "Swipe sideways to see every column",
+} as const;
+
+/**
+ * Narrow-screen cue that a wide table scrolls sideways. Pair it with the
+ * `scrollHint` prop of TerminalTable, or drop it in next to a bare
+ * `overflow-x-auto` table. Pass `tableScrollHintText[locale]` as the label.
+ */
+export function TableScrollHint({ label }: { label: string }) {
+  return (
+    <p
+      className="border-t border-border-subtle px-3 py-1.5 text-center font-label-caps uppercase text-text-secondary md:hidden"
+      data-table-scroll-hint="true"
+    >
+      {label}
+    </p>
+  );
+}
+
 /** Dense, internally scrolling data table for terminal-style operational pages. */
 export function TerminalTable({
   columns,
   children,
   minWidth = "880px",
   className = "",
+  scrollHint,
 }: {
   columns: TerminalTableColumn[];
   children: ReactNode;
   minWidth?: string;
   className?: string;
+  scrollHint?: ReactNode;
 }) {
   return (
     <div className={`overflow-hidden rounded-lg border border-border-subtle bg-bg-surface ${className}`}>
@@ -224,6 +248,7 @@ export function TerminalTable({
         aria-label="Scrollable data table"
         className="overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info"
         data-terminal-table-scroll="true"
+        role="region"
         tabIndex={0}
       >
         <table className="w-full border-collapse text-left" style={{ minWidth }}>
@@ -243,6 +268,7 @@ export function TerminalTable({
           <tbody className="font-data-mono text-sm text-text-primary">{children}</tbody>
         </table>
       </div>
+      {scrollHint ? <div data-table-scroll-hint="true">{scrollHint}</div> : null}
     </div>
   );
 }
@@ -318,7 +344,7 @@ export function TerminalToolbarButton({
 }) {
   return (
     <button
-      className={`inline-flex min-h-8 items-center justify-center gap-2 rounded-lg border px-3 font-body-sm transition-colors hover:bg-bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info disabled:cursor-not-allowed disabled:opacity-50 ${toneBorder[tone]} ${toneSurfaceTint[tone]} ${toneText[tone]} ${className}`}
+      className={`motion-pressable inline-flex min-h-8 items-center justify-center gap-2 rounded-lg border px-3 font-body-sm hover:bg-bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info disabled:cursor-not-allowed disabled:opacity-50 ${toneBorder[tone]} ${toneSurfaceTint[tone]} ${toneText[tone]} ${className}`}
       disabled={disabled}
       onClick={onClick}
       title={title}

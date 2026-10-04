@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import signal
 import socket
 import threading
@@ -14,12 +15,36 @@ import pandas as pd
 from quant_system.data.schema import normalize_ohlcv_dataframe
 from quant_system.storage.options_cache import OptionQuotesCache, OptionQuotesCacheKey
 
+logger = logging.getLogger(__name__)
+
+# Key used on the returned OHLCV frame's ``attrs`` when a non-strict batch
+# fetch skips one or more symbols. Only present on ``strict=False`` calls;
+# the default (strict) path never sets it, so existing callers stay unchanged.
+FAILED_SYMBOLS_ATTR = "failed_symbols"
+
+
+def _iv_units():
+    """Deferred import: the options package imports this provider module, so a
+    top-level import of an options submodule would be circular."""
+    from quant_system.options import iv_units
+
+    return iv_units
+
 
 class FutuProviderError(RuntimeError):
-    def __init__(self, code: str, message: str) -> None:
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        ret_code: object = None,
+        ret_msg: str | None = None,
+    ) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
+        self.ret_code = ret_code
+        self.ret_msg = ret_msg
 
 
 SdkBindings = SimpleNamespace
@@ -64,6 +89,24 @@ class FutuMarketDataProvider:
     # rejected. Acceptance is opt-in via normalize_symbol/fetch callers so the
     # generic US-only paths keep their exact historical behavior.
     local_market_prefixes: ClassVar[tuple[str, ...]] = ("HK.", "JP..")
+    # OpenD drops and re-establishes its quote connection on its own, often
+    # within a second. A scheduled paper-cycle slot has no second chance, so a
+    # failure carrying one of these markers is retried rather than surfaced as
+    # a missing observation day. Markers are matched against the lower-cased
+    # message; permanent failures stay out of this list on purpose.
+    transient_network_markers: ClassVar[tuple[str, ...]] = (
+        "网络中断",
+        "网络异常",
+        "连接失败",
+        "无法连接",
+        "socket",
+        "disconnect",
+        "connection",
+        "connect failed",
+        "econnreset",
+        "econnrefused",
+        "broken pipe",
+    )
     snapshot_batch_size = 400
     option_chain_max_span_days = 30
     option_quotes_cache_ttl_seconds = 900.0
@@ -81,6 +124,8 @@ class FutuMarketDataProvider:
         sdk_loader: SdkLoader = _default_sdk_loader,
         rate_limit_retry_seconds: float = 30.5,
         rate_limit_max_retries: int = 1,
+        transient_retry_seconds: float = 2.0,
+        transient_max_retries: int = 2,
         sleep_func: Callable[[float], None] = time.sleep,
         option_quotes_cache_path: str | Path | None = None,
     ) -> None:
@@ -93,6 +138,8 @@ class FutuMarketDataProvider:
         self._sdk_loader = sdk_loader
         self.rate_limit_retry_seconds = rate_limit_retry_seconds
         self.rate_limit_max_retries = rate_limit_max_retries
+        self.transient_retry_seconds = transient_retry_seconds
+        self.transient_max_retries = transient_max_retries
         self._sleep_func = sleep_func
         # OptionQuotesCache creates its DuckDB/schema in __init__. Keep plain
         # OHLCV and snapshot reads observational by constructing that cache
@@ -111,6 +158,7 @@ class FutuMarketDataProvider:
         start: str,
         end: str,
         interval: str = "1d",
+        strict: bool = True,
     ) -> pd.DataFrame:
         return self._fetch_ohlcv(
             symbols,
@@ -118,6 +166,7 @@ class FutuMarketDataProvider:
             end=end,
             interval=interval,
             allow_local_markets=False,
+            strict=strict,
         )
 
     def fetch_local_market_ohlcv(
@@ -127,6 +176,7 @@ class FutuMarketDataProvider:
         start: str,
         end: str,
         interval: str = "1d",
+        strict: bool = True,
     ) -> pd.DataFrame:
         """Fetch daily bars for whitelisted local-market codes (HK./JP..).
 
@@ -141,6 +191,7 @@ class FutuMarketDataProvider:
             end=end,
             interval=interval,
             allow_local_markets=True,
+            strict=strict,
         )
 
     def _fetch_ohlcv(
@@ -151,7 +202,21 @@ class FutuMarketDataProvider:
         end: str,
         interval: str,
         allow_local_markets: bool,
+        strict: bool = True,
     ) -> pd.DataFrame:
+        """Fetch a batch of symbols over one shared OpenD context.
+
+        ``strict=True`` (the default, and the exact historical behavior) lets
+        the first failing symbol abort the whole batch and bubble its
+        ``FutuProviderError`` up to the caller. ``strict=False`` isolates
+        failures per symbol: a failure is logged as a WARNING, recorded in the
+        result frame's ``attrs["failed_symbols"]`` as ``{symbol: error_code}``,
+        and the remaining symbols still return. If *every* requested symbol
+        fails under ``strict=False`` a single ``FutuProviderError`` with code
+        ``all_symbols_failed`` is raised and its message carries the whole
+        failure table. In no case is data substituted, fabricated, or silently
+        shrunk beyond the recorded ``failed_symbols`` set.
+        """
         if not symbols:
             raise FutuProviderError("invalid_symbol", "at least one symbol is required")
 
@@ -160,35 +225,64 @@ class FutuMarketDataProvider:
         session = self._resolve_session(sdk, interval)
         fetched_at = pd.Timestamp.now(tz="UTC")
         context = self._create_context(sdk)
+        failed_symbols: dict[str, str] = {}
         try:
             rows: list[dict[str, object]] = []
             for symbol in symbols:
-                plain_symbol, futu_symbol = self.normalize_symbol(
-                    symbol,
-                    allow_local_markets=allow_local_markets,
-                )
-                rows.extend(
-                    self._fetch_symbol_rows(
-                        context=context,
-                        sdk=sdk,
-                        plain_symbol=plain_symbol,
-                        futu_symbol=futu_symbol,
-                        start=start,
-                        end=end,
-                        interval=interval,
-                        kl_type=kl_type,
-                        session=session,
-                        fetched_at=fetched_at,
+                try:
+                    plain_symbol, futu_symbol = self.normalize_symbol(
+                        symbol,
+                        allow_local_markets=allow_local_markets,
                     )
-                )
+                    rows.extend(
+                        self._fetch_symbol_rows(
+                            context=context,
+                            sdk=sdk,
+                            plain_symbol=plain_symbol,
+                            futu_symbol=futu_symbol,
+                            start=start,
+                            end=end,
+                            interval=interval,
+                            kl_type=kl_type,
+                            session=session,
+                            fetched_at=fetched_at,
+                        )
+                    )
+                except Exception as exc:  # noqa: BLE001 - per-symbol isolation
+                    if strict:
+                        raise
+                    reason = str(getattr(exc, "code", type(exc).__name__))
+                    failed_symbols[symbol] = reason
+                    logger.warning(
+                        "Futu OHLCV fetch failed for symbol %s (%s): %s; "
+                        "skipping because strict=False",
+                        symbol,
+                        reason,
+                        exc,
+                    )
         finally:
+            # Context must close even when a symbol raises under strict=True.
             self._safe_close(context)
 
-        return normalize_ohlcv_dataframe(
+        # Today ``not rows`` implies every symbol raised (a first empty page is
+        # a no_data failure), but keep the guard exact so the
+        # "all failed" message can never mislabel a future empty-but-ok path.
+        if failed_symbols and len(failed_symbols) == len(symbols):
+            raise FutuProviderError(
+                "all_symbols_failed",
+                f"all {len(symbols)} requested symbols failed: {failed_symbols}",
+            )
+
+        frame = normalize_ohlcv_dataframe(
             pd.DataFrame(rows),
             provider=self.provider_name,
             interval=interval,
         )
+        if failed_symbols:
+            # Set after normalization: attrs are per-frame and pandas may not
+            # carry them through normalize_ohlcv_dataframe's copy/loc chain.
+            frame.attrs[FAILED_SYMBOLS_ATTR] = dict(failed_symbols)
+        return frame
 
     def fetch_option_expirations(self, underlying: str) -> pd.DataFrame:
         _plain_symbol, futu_symbol = self.normalize_symbol(underlying)
@@ -326,6 +420,7 @@ class FutuMarketDataProvider:
         end_expiration: str,
         option_type: str = "ALL",
     ) -> pd.DataFrame:
+        iv_units = _iv_units()
         cache_key = self._option_quotes_cache_key(
             underlying,
             start_expiration=start_expiration,
@@ -358,18 +453,18 @@ class FutuMarketDataProvider:
             self._write_option_quotes_cache(cache_key, chain)
             self._write_option_quotes_database_cache(database_cache_key, chain)
             self.last_option_quotes_cache_status = "live"
-            return chain
+            return iv_units.declare_unit(chain, iv_units.IV_UNIT_RATIO)
         snapshots = self.fetch_market_snapshots(codes)
         if snapshots.empty:
             self._write_option_quotes_cache(cache_key, chain)
             self._write_option_quotes_database_cache(database_cache_key, chain)
             self.last_option_quotes_cache_status = "live"
-            return chain
+            return iv_units.declare_unit(chain, iv_units.IV_UNIT_RATIO)
         merged = chain.merge(snapshots, how="left", on="symbol", suffixes=("", "_snapshot"))
         self._write_option_quotes_cache(cache_key, merged)
         self._write_option_quotes_database_cache(database_cache_key, merged)
         self.last_option_quotes_cache_status = "live"
-        return merged
+        return iv_units.declare_unit(merged, iv_units.IV_UNIT_RATIO)
 
     def fetch_market_snapshots(self, symbols: list[str]) -> pd.DataFrame:
         if not symbols:
@@ -413,6 +508,8 @@ class FutuMarketDataProvider:
         normalized = symbol.upper().strip()
         if not normalized:
             raise FutuProviderError("invalid_symbol", "symbol must not be empty")
+        if normalized in {"BRK.B", "US.BRK.B"}:
+            return "BRK.B", "US.BRK.B"
         if normalized.startswith("US."):
             plain_symbol = normalized.split(".", 1)[1]
             if not plain_symbol or "." in plain_symbol:
@@ -444,10 +541,26 @@ class FutuMarketDataProvider:
         symbol: str,
         action: Callable[[], tuple[Any, ...]],
     ) -> tuple[Any, ...]:
-        last_error: FutuProviderError | None = None
-        for attempt in range(self.rate_limit_max_retries + 1):
+        """Run a read-only OpenD call, retrying only failures that can clear.
+
+        Rate limiting waits out the SDK's documented window; a dropped OpenD
+        connection or read timeout is retried briefly because OpenD reconnects on its own and
+        a scheduled paper-cycle slot does not get a second run. Permanent
+        failures (bad symbol, missing permission) raise on the first attempt.
+        """
+        rate_limit_attempts = 0
+        transient_attempts = 0
+        while True:
             try:
                 result = self._run_with_request_timeout(action)
+            except TimeoutError as exc:
+                if transient_attempts < self.transient_max_retries:
+                    transient_attempts += 1
+                    self._sleep_func(self.transient_retry_seconds)
+                    continue
+                raise FutuProviderError(
+                    "provider_timeout", f"OpenD request timed out for {symbol}"
+                ) from exc
             except Exception as exc:
                 raise FutuProviderError(
                     "provider_timeout",
@@ -456,18 +569,20 @@ class FutuMarketDataProvider:
             if result and result[0] == sdk.RET_OK:
                 return result
             payload = result[1] if len(result) > 1 else result
-            error = self._map_provider_failure(symbol, payload)
-            if error.code == "rate_limited" and attempt < self.rate_limit_max_retries:
-                last_error = error
+            ret_code = result[0] if result else None
+            error = self._map_provider_failure(symbol, payload, ret_code=ret_code)
+            if error.code == "rate_limited" and rate_limit_attempts < self.rate_limit_max_retries:
+                rate_limit_attempts += 1
                 self._sleep_func(self.rate_limit_retry_seconds)
                 continue
+            if (
+                error.code in {"provider_unavailable", "provider_timeout"}
+                and transient_attempts < self.transient_max_retries
+            ):
+                transient_attempts += 1
+                self._sleep_func(self.transient_retry_seconds)
+                continue
             raise error
-        if last_error is not None:
-            raise last_error
-        raise FutuProviderError(
-            "provider_query_failed",
-            f"Futu request failed for {symbol}",
-        )
 
     def _create_context(self, sdk: SdkBindings) -> Any:
         # Pre-flight TCP probe so that a closed OpenD fails in <1s rather than
@@ -747,7 +862,18 @@ class FutuMarketDataProvider:
 
     @staticmethod
     def _normalize_snapshots(frame: pd.DataFrame) -> pd.DataFrame:
-        return pd.DataFrame(
+        iv_units = _iv_units()
+        numeric_iv = pd.to_numeric(frame.get("option_implied_volatility"), errors="coerce")
+        # Futu reports option_implied_volatility in percent (e.g. 42.0). The
+        # canonical internal unit is a decimal ratio, so convert once here, at
+        # the provider boundary.
+        if hasattr(numeric_iv, "map"):
+            ratio_iv = numeric_iv.map(
+                lambda value: iv_units.to_ratio(value, unit=iv_units.IV_UNIT_PERCENT)
+            )
+        else:
+            ratio_iv = iv_units.to_ratio(numeric_iv, unit=iv_units.IV_UNIT_PERCENT)
+        normalized = pd.DataFrame(
             {
                 "symbol": frame.get("code"),
                 "update_time": frame.get("update_time"),
@@ -770,10 +896,10 @@ class FutuMarketDataProvider:
                     frame.get("option_open_interest"),
                     errors="coerce",
                 ),
-                "implied_volatility": pd.to_numeric(
-                    frame.get("option_implied_volatility"),
-                    errors="coerce",
-                ),
+                # Futu reports option_implied_volatility in percent (e.g. 42.0).
+                # The canonical internal unit is a decimal ratio, so convert
+                # once here, at the provider boundary.
+                "implied_volatility": ratio_iv,
                 "delta": pd.to_numeric(frame.get("option_delta"), errors="coerce"),
                 "gamma": pd.to_numeric(frame.get("option_gamma"), errors="coerce"),
                 "theta": pd.to_numeric(frame.get("option_theta"), errors="coerce"),
@@ -785,6 +911,7 @@ class FutuMarketDataProvider:
                 ),
             }
         ).dropna(subset=["symbol"]).reset_index(drop=True)
+        return iv_units.declare_unit(normalized, iv_units.IV_UNIT_RATIO)
 
     @staticmethod
     def _expiration_windows(
@@ -812,9 +939,12 @@ class FutuMarketDataProvider:
         return windows
 
     @staticmethod
-    def _map_provider_failure(symbol: str, payload: object) -> FutuProviderError:
+    def _map_provider_failure(
+        symbol: str, payload: object, *, ret_code: object = None
+    ) -> FutuProviderError:
         message = str(payload)
         lowered = message.lower()
+        details = {"ret_code": ret_code, "ret_msg": message}
         if (
             "rate limit" in lowered
             or "too many" in lowered
@@ -825,25 +955,36 @@ class FutuMarketDataProvider:
             return FutuProviderError(
                 "rate_limited",
                 f"Futu rate limit for {symbol}: {message}",
+                **details,
             )
         if "permission" in lowered:
             return FutuProviderError(
                 "permission_denied",
                 f"Futu permission denied for {symbol}: {message}",
+                **details,
             )
         if "timeout" in lowered:
             return FutuProviderError(
                 "provider_timeout",
                 f"Futu request timed out for {symbol}: {message}",
+                **details,
             )
         if "security not found" in lowered or "stock code" in lowered:
             return FutuProviderError(
                 "invalid_symbol",
                 f"invalid Futu symbol {symbol}: {message}",
+                **details,
+            )
+        if any(marker in lowered for marker in FutuMarketDataProvider.transient_network_markers):
+            return FutuProviderError(
+                "provider_unavailable",
+                f"Futu connection unavailable for {symbol}: {message}",
+                **details,
             )
         return FutuProviderError(
             "provider_query_failed",
             f"Futu request failed for {symbol}: {message}",
+            **details,
         )
 
     @staticmethod

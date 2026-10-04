@@ -45,6 +45,8 @@ def test_platform_replays_target_weights_without_factor_formula(tmp_path: Path) 
     ).to_parquet(weights, index=False)
 
     result = run_platform_replay(
+        job_id="job-platform-replay-12345678",
+        run_id="attempt-platform-replay-12345678",
         snapshot_id="snapshot-0123456789abcdef0123456789abcdef",
         snapshot_digest="a" * 64,
         snapshot_parquet=snapshot,
@@ -85,6 +87,8 @@ def test_platform_replays_target_weights_without_factor_formula(tmp_path: Path) 
     receipt_path.write_text(json.dumps(tampered), encoding="utf-8")
     with pytest.raises(PlatformReplayError, match="existing replay receipt is unreadable"):
         run_platform_replay(
+            job_id="job-platform-replay-12345678",
+            run_id="attempt-platform-replay-12345678",
             snapshot_id="snapshot-0123456789abcdef0123456789abcdef",
             snapshot_digest="a" * 64,
             snapshot_parquet=snapshot,
@@ -104,6 +108,8 @@ def test_platform_replay_rejects_invalid_execution_assumptions(tmp_path: Path) -
 
     with pytest.raises(PlatformReplayError) as invalid:
         run_platform_replay(
+            job_id="job-platform-replay-12345678",
+            run_id="attempt-platform-replay-12345678",
             snapshot_id="snapshot-0123456789abcdef0123456789abcdef",
             snapshot_digest="a" * 64,
             snapshot_parquet=snapshot,

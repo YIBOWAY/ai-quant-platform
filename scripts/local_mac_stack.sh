@@ -10,6 +10,7 @@ FRONTEND_DIR="$ROOT/src/frontend"
 DOMAIN="gui/$(id -u)"
 DATABASE_CONTAINER="${QS_LOCAL_POSTGRES_CONTAINER:-quantplatform-db}"
 HERMES_PLIST="$HOME/Library/LaunchAgents/ai.hermes.gateway.plist"
+NATIVE_HERMES_PLIST="$HOME/Library/LaunchAgents/com.aiquant.hermes-native.plist"
 SCUTIL_BIN="/usr/sbin/scutil"
 
 fail() {
@@ -149,10 +150,6 @@ build_stack() {
 
 install_platform_jobs() {
   bash "$ROOT/scripts/install_agent_v02_stack_launchagents.sh"
-  bash "$ROOT/scripts/install_agent_v02_connector_launchagent.sh"
-  bash "$ROOT/scripts/install_factor_automation_launchagent.sh"
-  bash "$ROOT/scripts/install_d34_worker_launchagent.sh"
-  bash "$ROOT/scripts/install_asia_radar_refresh_launchagent.sh"
 }
 
 install_hermes_oauth_proxy() {
@@ -160,11 +157,22 @@ install_hermes_oauth_proxy() {
 }
 
 ensure_hermes_job() {
-  local attempt_no bootstrap_attempt bootstrap_output bootstrap_status old_pid
+  if [[ -f "$HOME/.local/state/hermes-official/installation.json" ]]; then
+    if ! "$LAUNCHCTL_BIN" print "$DOMAIN/com.aiquant.hermes-native" >/dev/null 2>&1; then
+      "$LAUNCHCTL_BIN" bootstrap "$DOMAIN" "$NATIVE_HERMES_PLIST"
+    fi
+    return
+  fi
+  local attempt_no bootstrap_attempt bootstrap_output bootstrap_status
+  local old_pid old_listener_pid
   local stable_free_count=0
   [[ -f "$HERMES_PLIST" && ! -L "$HERMES_PLIST" ]] ||
     fail "hermes_launchagent_missing"
   old_pid=""
+  old_listener_pid="$(
+    /usr/sbin/lsof -nP -t -iTCP:8642 -sTCP:LISTEN 2>/dev/null |
+      /usr/bin/head -n 1
+  )" || old_listener_pid=""
   if "$LAUNCHCTL_BIN" print "$DOMAIN/ai.hermes.gateway" >/dev/null 2>&1; then
     old_pid="$(
       "$LAUNCHCTL_BIN" print "$DOMAIN/ai.hermes.gateway" |
@@ -173,13 +181,13 @@ ensure_hermes_job() {
     "$LAUNCHCTL_BIN" bootout "$DOMAIN/ai.hermes.gateway"
   fi
   # kickstart -k can overlap old/new gateway lifetimes and make the new process
-  # lose the 8642 bind race. launchctl bootout can return before the previous
-  # PID has actually exited, and the kernel can briefly report no listener
-  # before the previous socket is safely reusable. Require both PID exit and a
-  # four-second stable-free window before bootstrapping one unambiguous process
-  # generation.
-  for attempt_no in {1..60}; do
-    if [[ -z "$old_pid" ]] || ! /bin/kill -0 "$old_pid" 2>/dev/null; then
+  # lose the 8642 bind race. launchctl tracks the wrapper PID, while lsof sees
+  # the real listener child. Require both to exit and the socket to stay free
+  # for 32 seconds before bootstrapping one generation; this clears the 30s
+  # reuse window observed on this Mac.
+  for attempt_no in {1..180}; do
+    if { [[ -z "$old_pid" ]] || ! /bin/kill -0 "$old_pid" 2>/dev/null; } &&
+      { [[ -z "$old_listener_pid" ]] || ! /bin/kill -0 "$old_listener_pid" 2>/dev/null; }; then
       if ! /usr/sbin/lsof -nP -iTCP:8642 -sTCP:LISTEN >/dev/null 2>&1; then
         stable_free_count=$((stable_free_count + 1))
       else
@@ -188,7 +196,7 @@ ensure_hermes_job() {
     else
       stable_free_count=0
     fi
-    if [[ "$stable_free_count" -ge 8 ]]; then
+    if [[ "$stable_free_count" -ge 64 ]]; then
       for bootstrap_attempt in {1..10}; do
         if bootstrap_output="$(
           "$LAUNCHCTL_BIN" bootstrap "$DOMAIN" "$HERMES_PLIST" 2>&1
@@ -248,6 +256,40 @@ wait_for_hermes_oauth_proxy() {
   fail "hermes_oauth_proxy_not_ready"
 }
 
+wait_for_connector_ready() {
+  local attempt_no gateway job pid state
+  for attempt_no in {1..30}; do
+    if job="$(
+      "$LAUNCHCTL_BIN" print "$DOMAIN/com.aiquant.agent-v02-connector" 2>/dev/null
+    )"; then
+      pid="$(
+        printf '%s\n' "$job" |
+          /usr/bin/awk '/^[[:space:]]*pid = / {print $3; exit}'
+      )"
+      state="$(
+        printf '%s\n' "$job" |
+          /usr/bin/awk '/^[[:space:]]*state = / {print $3; exit}'
+      )"
+    else
+      pid=""
+      state=""
+    fi
+    if [[ "$state" == "running" && "$pid" =~ ^[0-9]+$ ]] &&
+      /bin/kill -0 "$pid" 2>/dev/null &&
+      gateway="$(
+        "$CURL_BIN" --fail --silent --max-time 3 \
+          "http://127.0.0.1:8765/api/hermes/gateway"
+      )" &&
+      printf '%s\n' "$gateway" |
+        /usr/bin/grep -Eq '"chat_write_ready"[[:space:]]*:[[:space:]]*true'; then
+      echo "connector_ready=true"
+      return 0
+    fi
+    sleep 2
+  done
+  fail "connector_not_ready"
+}
+
 start_stack() {
   start_database
   build_stack
@@ -256,8 +298,15 @@ start_stack() {
   install_hermes_oauth_proxy
   wait_for_hermes_oauth_proxy
   install_platform_jobs
-  wait_for_url "hermes_ready" "http://127.0.0.1:8642/health"
+  if [[ -f "$HOME/.local/state/hermes-official/installation.json" ]]; then
+    wait_for_url "hermes_ready" "http://127.0.0.1:8652/health"
+  else
+    wait_for_url "hermes_ready" "http://127.0.0.1:8642/health"
+  fi
   wait_for_url "backend_ready" "http://127.0.0.1:8765/api/health"
+  bash "$ROOT/scripts/install_agent_v02_connector_launchagent.sh"
+  wait_for_connector_ready
+  bash "$ROOT/scripts/install_asia_radar_refresh_launchagent.sh"
   wait_for_url "frontend_ready" "http://127.0.0.1:3001/zh/hermes"
 }
 
@@ -270,13 +319,15 @@ bootout_job() {
 
 stop_stack() {
   bootout_job com.aiquant.asia-radar-refresh
-  bootout_job com.aiquant.d34-worker
   bootout_job com.aiquant.hermes-oauth-proxy
-  bootout_job com.aiquant.factor-automation
   bootout_job com.aiquant.agent-v02-connector
   bootout_job com.aiquant.frontend
   bootout_job com.aiquant.backend
-  bootout_job ai.hermes.gateway
+  if [[ -f "$HOME/.local/state/hermes-official/installation.json" ]]; then
+    bootout_job com.aiquant.hermes-native
+  else
+    bootout_job ai.hermes.gateway
+  fi
   if "$DOCKER_BIN" info >/dev/null 2>&1 && \
     "$DOCKER_BIN" inspect "$DATABASE_CONTAINER" >/dev/null 2>&1; then
     "$DOCKER_BIN" stop "$DATABASE_CONTAINER" >/dev/null
@@ -299,6 +350,10 @@ print_job_status() {
 }
 
 status_stack() {
+  local hermes_health_url="http://127.0.0.1:8642/health"
+  if [[ -f "$HOME/.local/state/hermes-official/installation.json" ]]; then
+    hermes_health_url="http://127.0.0.1:8652/health"
+  fi
   if "$DOCKER_BIN" info >/dev/null 2>&1; then
     echo "docker_ready=true"
     "$DOCKER_BIN" ps --filter "name=^/${DATABASE_CONTAINER}$" \
@@ -307,12 +362,11 @@ status_stack() {
     echo "docker_ready=false"
   fi
   print_job_status ai.hermes.gateway
+  print_job_status com.aiquant.hermes-native
   print_job_status com.aiquant.hermes-oauth-proxy
   print_job_status com.aiquant.backend
   print_job_status com.aiquant.frontend
   print_job_status com.aiquant.agent-v02-connector
-  print_job_status com.aiquant.factor-automation
-  print_job_status com.aiquant.d34-worker
   print_job_status com.aiquant.asia-radar-refresh
   if "$CURL_BIN" --fail --silent --max-time 2 \
     --header "Authorization: Bearer local-d34-proxy" \
@@ -322,7 +376,7 @@ status_stack() {
     echo "endpoint=hermes_oauth_proxy ready=false url=http://127.0.0.1:8645/v1/models"
   fi
   for endpoint in \
-    "hermes=http://127.0.0.1:8642/health" \
+    "hermes=$hermes_health_url" \
     "backend=http://127.0.0.1:8765/api/health" \
     "frontend=http://127.0.0.1:3001/zh/hermes"; do
     local name="${endpoint%%=*}"
@@ -336,15 +390,18 @@ status_stack() {
 }
 
 show_logs() {
-  echo "hermes_log=$HOME/.hermes/logs/gateway.log"
-  echo "hermes_error_log=$HOME/.hermes/logs/gateway.error.log"
+  if [[ -f "$HOME/.local/state/hermes-official/installation.json" ]]; then
+    echo "hermes_log=$HOME/.hermes-quant-native/logs/gateway.log"
+    echo "hermes_error_log=$HOME/.hermes-quant-native/gateway.stderr.log"
+  else
+    echo "hermes_log=$HOME/.hermes/logs/gateway.log"
+    echo "hermes_error_log=$HOME/.hermes/logs/gateway.error.log"
+  fi
   echo "hermes_oauth_proxy_log=$ROOT/data/_runtime/logs/hermes-oauth-proxy.launchd.out.log"
   echo "hermes_oauth_proxy_error_log=$ROOT/data/_runtime/logs/hermes-oauth-proxy.launchd.err.log"
   echo "backend_log=$ROOT/data/_runtime/logs/backend-api.launchd.log"
   echo "frontend_log=$ROOT/data/_runtime/logs/frontend-next.launchd.log"
   echo "connector_log=$ROOT/data/_runtime/logs/agent-v02-connector.launchd.out.log"
-  echo "factor_automation_log=$ROOT/data/_runtime/logs/factor-automation.launchd.out.log"
-  echo "d34_worker_log=$ROOT/data/_runtime/logs/d34-worker.launchd.out.log"
   echo "asia_radar_refresh_log=$ROOT/data/_runtime/logs/asia-radar-refresh.launchd.out.log"
 }
 

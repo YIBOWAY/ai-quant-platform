@@ -31,7 +31,6 @@ vi.mock("./workspaceClient", async () => {
     fetchWorkspaceFollow: (...args: unknown[]) => fetchWorkspaceFollow(...args),
   };
 });
-
 function baseCmd(
   partial: Partial<WorkspaceCommandProjection> & { command_id: string },
 ): WorkspaceCommandProjection {
@@ -152,6 +151,88 @@ describe("workspaceFollowSpine helpers (L4b)", () => {
       "a",
       "b",
     ]);
+  });
+});
+
+describe("workspace follow connection status", () => {
+  beforeEach(() => {
+    fetchWorkspaceSnapshot.mockReset();
+    fetchWorkspaceFollow.mockReset();
+    fetchWorkspaceSnapshot.mockResolvedValue(baseSnapshot());
+    fetchWorkspaceFollow.mockResolvedValue({
+      events: [],
+      next_cursor: 0,
+      resync_required: false,
+    });
+    vi.stubGlobal("window", {
+      setInterval: (fn: TimerHandler, ms?: number) =>
+        setInterval(fn as () => void, ms) as unknown as number,
+      clearInterval: (id: number) =>
+        clearInterval(id as unknown as NodeJS.Timeout),
+      setTimeout: (fn: TimerHandler, ms?: number) =>
+        setTimeout(fn as () => void, ms) as unknown as number,
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("reports SSE only after ready and clears reconnect errors after poll fallback", async () => {
+    let ready: (() => void) | null = null;
+    let source: { onerror: (() => void) | null } | null = null;
+    const seen: Array<Pick<FollowSpineState, "transport" | "error">> = [];
+
+    vi.stubGlobal(
+      "EventSource",
+      class {
+        onerror: (() => void) | null = null;
+
+        constructor() {
+          source = this;
+        }
+
+        close() {}
+
+        addEventListener(type: string, handler: EventListener) {
+          if (type === "ready") ready = handler as () => void;
+        }
+
+        removeEventListener() {}
+      },
+    );
+
+    const spine = createWorkspaceFollowSpine({
+      preferSse: true,
+      maxSseFailures: 1,
+      pollMs: 60_000,
+      snapshotReconcileMs: 0,
+    });
+    const unsubscribe = spine.subscribe(({ transport, error }) => {
+      seen.push({ transport, error });
+    });
+    try {
+      spine.start();
+      await vi.waitFor(() => expect(source).not.toBeNull());
+      expect(spine.getState().transport).toBe("idle");
+
+      (ready as unknown as () => void)();
+      expect(spine.getState()).toMatchObject({ transport: "sse", error: null });
+
+      (
+        source as unknown as { onerror: (() => void) | null }
+      ).onerror?.();
+      expect(seen).toContainEqual({
+        transport: "idle",
+        error: "sse_reconnecting",
+      });
+      await vi.waitFor(() =>
+        expect(spine.getState()).toMatchObject({ transport: "poll", error: null }),
+      );
+    } finally {
+      unsubscribe();
+      spine.stop();
+    }
   });
 });
 
@@ -521,189 +602,7 @@ describe("V7d durable approval projector on spine", () => {
       spine.stop();
     }
   });
-});
-
-describe("V7e Domain Gate surfaces on spine", () => {
-  beforeEach(() => {
-    fetchWorkspaceSnapshot.mockReset();
-    fetchWorkspaceFollow.mockReset();
-    fetchWorkspaceFollow.mockResolvedValue({
-      events: [],
-      next_cursor: 0,
-      resync_required: false,
-    });
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  it("emptyState carries honest empty gates", () => {
-    const s = emptyState();
-    expect(s.gates).toEqual([]);
-    expect(s.authorityHealth.gate_1).toBe("unavailable");
-    expect(s.authorityHealth.gate_2).toBe("unavailable");
-    expect(s.authorityHealth.gate_3).toBe("unavailable");
-  });
-
-  it("snapshot reconcile carries gates separate from approvals", async () => {
-    fetchWorkspaceSnapshot.mockResolvedValue(
-      baseSnapshot({
-        snapshot_workspace_cursor: 3,
-        approvals: [],
-        gates: [
-          {
-            gate_id: "g1-pend",
-            gate_kind: "gate1",
-            status: "pending",
-            task_id: "t1",
-            reviewed_source_sha256: "a".repeat(64),
-            kind: "gate1.formula_source",
-          },
-          {
-            gate_id: "g2-done",
-            gate_kind: "gate2",
-            status: "reviewed",
-            candidate_id: "c1",
-            expected_digest: "b".repeat(64),
-            note: "ok",
-            kind: "gate2.candidate",
-          },
-        ],
-        authority_health: {
-          ...EMPTY_AUTHORITY_HEALTH,
-          command_approval: "ready",
-          gate_1: "ready",
-          gate_2: "ready",
-          gate_3: "ready",
-        },
-      }),
-    );
-
-    vi.stubGlobal(
-      "EventSource",
-      class {
-        close() {}
-        addEventListener() {}
-        removeEventListener() {}
-      },
-    );
-
-    const spine = createWorkspaceFollowSpine({
-      preferSse: false,
-      pollMs: 60_000,
-      snapshotReconcileMs: 0,
-    });
-    try {
-      await spine.resyncNow();
-      const s = spine.getState();
-      expect(s.gates.length).toBe(2);
-      expect(s.gates[0].gate_id).toBe("g1-pend");
-      expect(s.gates[1].status).toBe("reviewed");
-      expect(s.approvals).toEqual([]);
-      expect(s.authorityHealth.gate_1).toBe("ready");
-      expect(s.authorityHealth.gate_2).toBe("ready");
-      expect(s.authorityHealth.gate_3).toBe("ready");
-      // No Task invention
-      expect(s.tasks).toEqual([]);
-    } finally {
-      spine.stop();
-    }
-  });
-
-  it("event:gates applies same-status continuation enrichment", async () => {
-    fetchWorkspaceSnapshot.mockResolvedValue(
-      baseSnapshot({
-        snapshot_workspace_cursor: 3,
-        gates: [
-          {
-            gate_id: "paper-gate-continuation",
-            gate_kind: "gate1",
-            status: "confirmed",
-            task_id: "paper-reversal",
-            reviewed_source_sha256: "a".repeat(64),
-            kind: "gate1.formula_source",
-          },
-        ],
-        authority_health: {
-          ...EMPTY_AUTHORITY_HEALTH,
-          gate_1: "ready",
-          gate_2: "ready",
-          gate_3: "ready",
-        },
-      }),
-    );
-    vi.stubGlobal("window", {
-      setInterval: (fn: TimerHandler, ms?: number) =>
-        setInterval(fn as () => void, ms) as unknown as number,
-      clearInterval: (id: number) =>
-        clearInterval(id as unknown as NodeJS.Timeout),
-      setTimeout: (fn: TimerHandler, ms?: number) =>
-        setTimeout(fn as () => void, ms) as unknown as number,
-      clearTimeout: (id: number) =>
-        clearTimeout(id as unknown as NodeJS.Timeout),
-    });
-    type Handler = (ev: MessageEvent) => void;
-    const handlers: Record<string, Handler[]> = {};
-    vi.stubGlobal(
-      "EventSource",
-      class {
-        close() {}
-        addEventListener(type: string, handler: Handler) {
-          (handlers[type] ||= []).push(handler);
-        }
-        removeEventListener() {}
-      },
-    );
-
-    const spine = createWorkspaceFollowSpine({
-      preferSse: true,
-      pollMs: 60_000,
-      snapshotReconcileMs: 0,
-    });
-    try {
-      spine.start();
-      await new Promise((resolve) => setTimeout(resolve, 20));
-      expect(spine.getState().gates[0]?.task_version).toBeUndefined();
-      const gateHandlers = handlers["gates"] || [];
-      expect(gateHandlers.length).toBeGreaterThan(0);
-      for (const handler of gateHandlers) {
-        handler({
-          data: JSON.stringify({
-            gates: [
-              {
-                gate_id: "paper-gate-continuation",
-                gate_kind: "gate1",
-                status: "confirmed",
-                task_id: "paper-reversal",
-                reviewed_source_sha256: "a".repeat(64),
-                kind: "gate1.formula_source",
-                task_version: 8,
-                gate1_confirmation_id: `gate1-${"d".repeat(32)}`,
-              },
-            ],
-            authority_health: {
-              gate_1: "ready",
-              gate_2: "ready",
-              gate_3: "ready",
-            },
-          }),
-        } as MessageEvent);
-      }
-
-      expect(spine.getState().gates[0]).toMatchObject({
-        gate_id: "paper-gate-continuation",
-        status: "confirmed",
-        task_version: 8,
-        gate1_confirmation_id: `gate1-${"d".repeat(32)}`,
-      });
-    } finally {
-      spine.stop();
-    }
-  });
-});
-
-describe("V7g Vertical A ids on spine", () => {
+});describe("V7g Vertical A ids on spine", () => {
   beforeEach(() => {
     fetchWorkspaceSnapshot.mockReset();
     fetchWorkspaceFollow.mockReset();

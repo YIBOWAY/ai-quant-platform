@@ -10,7 +10,6 @@ from quant_system.data.provider_factory import (
     DataProviderUnavailableError,
     build_ohlcv_provider,
 )
-from quant_system.data.providers.sample import SampleOHLCVProvider
 from quant_system.data.storage import LocalDataStorage
 
 router = APIRouter()
@@ -35,15 +34,24 @@ _DEFAULT_LIVE_SYMBOLS = [
 
 @router.get("/symbols", response_model=SymbolsResponse)
 def symbols(output_dir: OutputDirDep, settings: SettingsDep) -> dict:
+    try:
+        active_provider, active_source = build_ohlcv_provider(settings)
+    except DataProviderUnavailableError as exc:
+        raise provider_unavailable_400(exc) from exc
     storage = LocalDataStorage(base_dir=output_dir)
     if storage.parquet_path.exists():
         frame = storage.load_ohlcv()
+        if {"provider", "interval"}.issubset(frame.columns):
+            frame = frame[
+                (frame["provider"] == active_provider.provider_name) & (frame["interval"] == "1d")
+            ]
+        else:
+            frame = frame.iloc[:0]
         local_symbols = sorted(frame["symbol"].dropna().astype(str).str.upper().unique())
         if local_symbols:
-            return {"symbols": local_symbols, "source": "local"}
+            return {"symbols": local_symbols, "source": f"{active_provider.provider_name} (cached)"}
     # Reflect the actual active provider so the UI does not silently fall
     # back to the 5-ticker sample basket when Tiingo/Futu are available.
-    _, active_source = build_ohlcv_provider(settings)
     base_label = active_source.split()[0]
     if base_label in {"tiingo", "futu"}:
         return {
@@ -63,32 +71,16 @@ def ohlcv(
     provider: str | None = None,
 ) -> dict:
     normalized_symbol = symbol.upper().strip()
-    storage = LocalDataStorage(base_dir=output_dir)
-    frame = None
-    source = "sample"
-    if storage.parquet_path.exists():
-        local = storage.load_ohlcv(symbols=[normalized_symbol], start=start, end=end)
-        if not local.empty:
-            frame = local
-            source = "local"
-    if frame is None:
-        try:
-            active_provider, source = build_ohlcv_provider(settings, requested=provider)
-        except DataProviderUnavailableError as exc:
-            raise provider_unavailable_400(exc) from exc
-        try:
-            frame = active_provider.fetch_ohlcv([normalized_symbol], start=start, end=end)
-        except Exception as exc:
-            if provider is not None:
-                raise provider_unavailable_400(
-                    DataProviderUnavailableError(provider, exc.__class__.__name__)
-                ) from exc
-            frame = SampleOHLCVProvider().fetch_ohlcv(
-                [normalized_symbol],
-                start=start,
-                end=end,
-            )
-            source = f"sample ({source} failed: {exc.__class__.__name__})"
+    try:
+        active_provider, source = build_ohlcv_provider(settings, requested=provider)
+    except DataProviderUnavailableError as exc:
+        raise provider_unavailable_400(exc) from exc
+    try:
+        frame = active_provider.fetch_ohlcv([normalized_symbol], start=start, end=end)
+    except Exception as exc:
+        raise provider_unavailable_400(
+            DataProviderUnavailableError(active_provider.provider_name, exc.__class__.__name__)
+        ) from exc
     return {
         "symbol": normalized_symbol,
         "source": source,

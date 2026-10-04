@@ -251,7 +251,7 @@ def test_overlays_available_for_hk_and_adr_leaders() -> None:
 
     hong_kong = overlays["hong-kong"]
     assert hong_kong["status"] == "available"
-    assert hong_kong["label_zh"] == "龙头篮子——非指数替代"
+    assert hong_kong["label_zh"] == "相关龙头股票"
     assert "unweighted" in hong_kong["basket_note"]
     assert len(hong_kong["leaders"]) == 3
     tencent = hong_kong["leaders"][0]

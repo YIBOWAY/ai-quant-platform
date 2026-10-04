@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
@@ -212,7 +213,7 @@ def test_workspace_snapshot_and_follow_require_owner_session(tmp_path: Path) -> 
     assert body["authority_health"]["mutation"] == "disabled"
     # V7/V8 process-local authorities are never mounted by the production BFF.
     assert body.get("approvals") == []
-    assert body.get("gates") == []
+    assert "gates" not in body
     assert body.get("canary_grants") == []
     assert body.get("public_cutovers") == []
     assert body.get("tasks") == []
@@ -221,9 +222,6 @@ def test_workspace_snapshot_and_follow_require_owner_session(tmp_path: Path) -> 
     assert body.get("results") == []
     for name in (
         "command_approval",
-        "gate_1",
-        "gate_2",
-        "gate_3",
         "task",
         "attempt",
         "run",
@@ -248,6 +246,172 @@ def test_workspace_snapshot_and_follow_require_owner_session(tmp_path: Path) -> 
     )
     assert authorities.status_code == 200
     assert authorities.json()["mutation_enabled"] is False
+
+
+def test_workspace_command_activity_is_owner_bound_and_redacted(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    client = _client(tmp_path)
+    command_id = "00000000-0000-4000-8000-000000000123"
+
+    denied = client.get(
+        f"/api/workspace/{WORKSPACE_ID}/commands/{command_id}/activity",
+        headers=_browser_headers(),
+    )
+    assert denied.status_code == 401
+    _bootstrap(client, tmp_path)
+
+    class FakeLedger:
+        def __init__(self, _settings):
+            pass
+
+        def get_command(self, _command_id):
+            return SimpleNamespace(
+                platform_session_id="wm_activity_1",
+                hermes_run_id="run_activity_1",
+            )
+
+    monkeypatch.setattr(workspace_routes, "HermesCommandLedger", FakeLedger)
+    monkeypatch.setattr(
+        workspace_routes,
+        "get_workspace_session",
+        lambda _settings, *, platform_session_id: SimpleNamespace(
+            platform_session_id=platform_session_id,
+            workspace_id=WORKSPACE_ID,
+        ),
+    )
+
+    class FakeRunClient:
+        def __init__(self, _settings):
+            pass
+
+        def run_status(self, run_id: str) -> dict[str, object]:
+            assert run_id == "run_activity_1"
+            return {
+                "object": "hermes.run",
+                "run_id": run_id,
+                "status": "running",
+                "session_id": "web_activity_1",
+            }
+
+        def run_events(self, run_id: str) -> tuple[dict[str, object], ...]:
+            assert run_id == "run_activity_1"
+            return (
+                {
+                    "seq": 1,
+                    "event": "reasoning.available",
+                    "event_id": "evt_1",
+                    "run_id": run_id,
+                    "timestamp": 1.0,
+                    "text": "private reasoning must not escape",
+                },
+                {
+                    "seq": 2,
+                    "event": "tool.started",
+                    "event_id": "evt_2",
+                    "run_id": run_id,
+                    "timestamp": 2.0,
+                    "tool": "dangerous_shell",
+                    "preview": "secret command",
+                },
+            )
+
+    monkeypatch.setattr(
+        workspace_routes,
+        "OfficialHermesRunControlClient",
+        FakeRunClient,
+        raising=False,
+    )
+
+    response = client.get(
+        f"/api/workspace/{WORKSPACE_ID}/commands/{command_id}/activity",
+        headers=_browser_headers(),
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert {
+        key: body[key]
+        for key in (
+            "command_id",
+            "stage",
+            "terminal",
+            "last_activity_at",
+            "tool_state",
+            "tool_duration_seconds",
+        )
+    } == {
+        "command_id": command_id,
+        "stage": "using_tool",
+        "terminal": False,
+        "last_activity_at": 2.0,
+        "tool_state": "active",
+        "tool_duration_seconds": None,
+    }
+    assert body["safety"]["live_trading_enabled"] is False
+    encoded = response.text
+    for secret in (
+        "run_activity_1",
+        "web_activity_1",
+        "dangerous_shell",
+        "private reasoning",
+        "secret command",
+    ):
+        assert secret not in encoded
+
+    wrong_workspace = client.get(
+        f"/api/workspace/other-workspace/commands/{command_id}/activity",
+        headers=_browser_headers(),
+    )
+    assert wrong_workspace.status_code == 404
+
+    class InvalidEndpointRunClient:
+        def __init__(self, _settings):
+            raise workspace_routes.HermesApiReadError(
+                "invalid_endpoint",
+                "private endpoint detail",
+            )
+
+    monkeypatch.setattr(
+        workspace_routes,
+        "OfficialHermesRunControlClient",
+        InvalidEndpointRunClient,
+    )
+    unavailable = client.get(
+        f"/api/workspace/{WORKSPACE_ID}/commands/{command_id}/activity",
+        headers=_browser_headers(),
+    )
+    assert unavailable.status_code == 503
+    assert unavailable.json()["detail"]["code"] == "run_activity_unavailable"
+    assert "private endpoint detail" not in unavailable.text
+
+
+def test_workspace_command_activity_collapses_to_safe_current_state() -> None:
+    activity = workspace_routes._summarize_run_activity(
+        (
+            {"seq": 1, "event": "message.delta", "timestamp": 1.0, "delta": "a"},
+            {"seq": 2, "event": "message.delta", "timestamp": 2.0, "delta": "b"},
+            {"seq": 3, "event": "tool.started", "timestamp": 3.0, "tool": "terminal"},
+            {
+                "seq": 4,
+                "event": "tool.completed",
+                "timestamp": 4.0,
+                "duration": 1.25,
+                "error": False,
+                "result": "must not escape",
+            },
+            {"seq": 5, "event": "run.completed", "timestamp": 5.0},
+        )
+    )
+
+    assert activity == {
+        "stage": "succeeded",
+        "last_activity_at": 5.0,
+        "tool_state": "completed",
+        "tool_duration_seconds": 1.25,
+    }
+    assert workspace_routes._run_activity_stage("succeeded", None, activity["stage"]) == "succeeded"
 
 
 def test_workspace_cross_origin_snapshot_fails(tmp_path: Path) -> None:
@@ -280,7 +444,8 @@ def test_workspace_follow_stream_requires_owner_and_emits_sse(tmp_path: Path) ->
     body = response.text
     assert "event: ready" in body
     assert "command_lifecycle" in body
-    assert "event: reconnect" in body
+    assert "event: resync" in body
+    assert "event: reconnect" not in body
     # No assistant token / message body channel in this stream.
     assert "assistant_token" not in body
     assert "message_body" not in body
@@ -300,7 +465,8 @@ def test_workspace_follow_stream_resumes_from_numeric_last_event_id(
     assert response.status_code == 200, response.text
     assert "id: 41\nevent: ready" in response.text
     assert '"after_cursor":41' in response.text
-    assert "id: 41\nevent: reconnect" in response.text
+    assert "id: 41\nevent: resync" in response.text
+    assert "event: reconnect" not in response.text
 
 
 def test_workspace_follow_stream_rejects_non_numeric_last_event_id(
@@ -337,7 +503,7 @@ def test_hermes_gateway_blockers_drop_csrf_unavailable(tmp_path: Path) -> None:
     assert "local_mutation_disabled" in blockers
     assert "active_release_stamp_missing" in blockers
     assert "open_public_cutover_missing" in blockers
-    assert "connector_liveness_unavailable" in blockers
+    assert "connector_liveness_unavailable" not in blockers
     assert "research_workflow_submission_unavailable" not in blockers
     assert "csrf_protection_unavailable" not in blockers
 
@@ -356,6 +522,7 @@ def test_workspace_authorities_include_research_and_blockers(tmp_path: Path) -> 
     assert body["chat_write_ready"] is False
     assert body["research_binding_ready"] is False
     assert "active_release_stamp_missing" in body["platform_delivery_blockers"]
-    assert "connector_liveness_unavailable" in body["platform_delivery_blockers"]
+    assert body["connector_liveness_reason"] == "connector_liveness_unavailable"
+    assert "connector_liveness_unavailable" not in body["platform_delivery_blockers"]
     assert "research_workflow_submission_unavailable" not in body["platform_delivery_blockers"]
     assert body["platform_delivery_blocker_count"] == len(body["platform_delivery_blockers"])

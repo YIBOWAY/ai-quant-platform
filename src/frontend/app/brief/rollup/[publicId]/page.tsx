@@ -31,12 +31,15 @@ export default async function BriefRollupArchivePage({ params }: Props) {
   }
 
   return (
-    <div className="flex h-full bg-paper-ink text-ink">
+    <div className="flex h-full flex-col bg-paper-ink text-ink md:flex-row">
       <BriefArchiveSidebar
+        activeIssueDate={rollup.periodStart}
+        activePeriodKey={rollup.periodKey}
         activePublicId={rollup.publicId || publicId}
+        documentKind={rollup.kind}
         locale={locale}
       />
-      <main className="h-full min-w-0 flex-1 overflow-y-auto">
+      <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">
         <BriefRollupDocument
           locale={locale}
           next={next}

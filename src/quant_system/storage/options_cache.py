@@ -10,6 +10,18 @@ import duckdb
 import pandas as pd
 
 
+def _iv_units():
+    """Deferred import of the IV unit helpers.
+
+    The ``quant_system.options`` package eagerly imports the screener, which
+    imports the Futu provider, which imports this cache module. A top-level
+    import here would therefore be circular.
+    """
+    from quant_system.options import iv_units
+
+    return iv_units
+
+
 @dataclass(frozen=True)
 class OptionQuotesCacheKey:
     provider: str
@@ -56,7 +68,7 @@ class OptionQuotesCache:
             self._ensure_schema(connection)
             metadata = connection.execute(
                 """
-                SELECT expires_at, columns_json
+                SELECT expires_at, columns_json, implied_volatility_unit
                 FROM option_chain_snapshots
                 WHERE snapshot_id = ?
                 """,
@@ -78,8 +90,15 @@ class OptionQuotesCache:
             ).fetchall()
 
         columns = json.loads(metadata[1])
+        iv_units = _iv_units()
+        # Rows persisted before the unit column existed are, as a schema-level
+        # fact, Futu percent quotes -- not a magnitude guess.
+        stored_unit = (
+            metadata[2] if metadata[2] in iv_units.KNOWN_IV_UNITS else iv_units.legacy_cache_unit()
+        )
         if not rows:
-            return pd.DataFrame(columns=columns)
+            frame = pd.DataFrame(columns=columns)
+            return iv_units.declare_unit(frame, iv_units.IV_UNIT_RATIO)
         frame = pd.DataFrame([json.loads(row[0]) for row in rows])
         for column in columns:
             if column not in frame.columns:
@@ -88,7 +107,11 @@ class OptionQuotesCache:
         for column in _NUMERIC_COLUMNS:
             if column in frame.columns:
                 frame[column] = pd.to_numeric(frame[column], errors="coerce")
-        return frame
+        if "implied_volatility" in frame.columns:
+            frame["implied_volatility"] = frame["implied_volatility"].map(
+                lambda value: iv_units.to_ratio(value, unit=stored_unit)
+            )
+        return iv_units.declare_unit(frame, iv_units.IV_UNIT_RATIO)
 
     def write_option_quotes(
         self,
@@ -102,8 +125,9 @@ class OptionQuotesCache:
         snapshot_id = key.snapshot_id()
         fetched = _utc_timestamp(fetched_at or pd.Timestamp.now(tz="UTC"))
         expires = fetched + pd.Timedelta(seconds=float(ttl_seconds))
-        records = _frame_records(frame)
-        columns = [str(column) for column in frame.columns]
+        ratio_frame = _ratio_frame(frame)
+        records = _frame_records(ratio_frame)
+        columns = [str(column) for column in ratio_frame.columns]
 
         with duckdb.connect(str(self.duckdb_path)) as connection:
             self._ensure_schema(connection)
@@ -130,9 +154,10 @@ class OptionQuotesCache:
                     expires_at,
                     source_label,
                     row_count,
-                    columns_json
+                    columns_json,
+                    implied_volatility_unit
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     snapshot_id,
@@ -148,6 +173,7 @@ class OptionQuotesCache:
                     source_label,
                     len(records),
                     json.dumps(columns, separators=(",", ":")),
+                    _iv_units().IV_UNIT_RATIO,
                 ],
             )
             if records:
@@ -235,8 +261,17 @@ class OptionQuotesCache:
                     expires_at VARCHAR NOT NULL,
                     source_label VARCHAR NOT NULL,
                     row_count INTEGER NOT NULL,
-                    columns_json VARCHAR NOT NULL
+                    columns_json VARCHAR NOT NULL,
+                    implied_volatility_unit VARCHAR
                 )
+                """
+            )
+            # Existing databases predate the unit column. Add it in place; every
+            # pre-existing row stays NULL and is read back as legacy percent.
+            active_connection.execute(
+                """
+                ALTER TABLE option_chain_snapshots
+                ADD COLUMN IF NOT EXISTS implied_volatility_unit VARCHAR
                 """
             )
             active_connection.execute(
@@ -269,6 +304,11 @@ class OptionQuotesCache:
         finally:
             if owns_connection:
                 active_connection.close()
+
+
+def _ratio_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    """Normalize a frame's IV column to the canonical ratio before persisting."""
+    return _iv_units().frame_to_ratio(frame)
 
 
 def _contract_quote_row(

@@ -2,7 +2,8 @@
 
 Last reviewed: 2026-07-01
 
-This note captures the visual direction validated on `/position-map`. The goal is a
+This note captures the visual direction validated on the position-map surface, now
+served at `/paper-trading?view=map` (`/position-map` is a 301 alias). The goal is a
 neutral trading-terminal surface inspired by market tools, not a copy of any
 specific product.
 
@@ -49,7 +50,7 @@ read-only source warnings, and original-link access. Visually, converge it to
 the terminal system:
 
 - Replace page/header gradients and shadow glow with flat terminal surfaces.
-- Make the header match the `/position-map` shell: title/subtitle left, status
+- Make the header match the `/paper-trading?view=map` shell: title/subtitle left, status
   pills and refresh right.
 - Turn filters into a compact toolbar instead of luminous segmented controls.
 - Restyle feed cards as dense market-news rows with mono time/source metadata,

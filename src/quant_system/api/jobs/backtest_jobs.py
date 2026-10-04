@@ -106,6 +106,7 @@ def execute_backtest_run(
         sector_map=request.sector_map,
         settings=settings,
         cancel_event=cancel_event,
+        run_id=run_id,
     )
     return {
         "run_id": run_id,
@@ -136,6 +137,8 @@ def execute_backtest_run(
             "sector_cap": request.sector_cap,
             "sector_map": request.sector_map,
         },
+        "input_prices_sha256": result.input_prices_sha256,
+        "history_start": result.history_start,
         "metrics": {
             "total_return": result.total_return,
             "sharpe": result.sharpe,
@@ -148,6 +151,7 @@ def execute_backtest_run(
             "metrics": result.benchmark_metrics.model_dump(),
         },
         "paths": {
+            "input_prices": str(result.input_prices_path) if result.input_prices_path else None,
             "equity_curve": str(result.equity_curve_path),
             "trade_blotter": str(result.trade_blotter_path),
             "orders": str(result.orders_path),

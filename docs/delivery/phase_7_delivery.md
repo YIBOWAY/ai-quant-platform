@@ -1,7 +1,7 @@
 # Phase 7 交付记录
 
 > 历史文档提示（2026-07-03）：HQA D-19 已将因子源码生成职责收归
-> `/Users/sunyibo/programs/Hermes-quant-agent`。新 Scene-B 流程不要走
+> [Hermes-quant-agent](https://github.com/YIBOWAY/Hermes-quant-agent/tree/main/)。新 Scene-B 流程不要走
 > 平台 `--llm openai`；使用 `agent propose-factor --source-file <path>`。
 
 ## 本阶段完成内容

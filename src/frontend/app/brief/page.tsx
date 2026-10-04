@@ -24,6 +24,7 @@ import {
   type RecentRun,
 } from "@/lib/api";
 import { buildAsiaRadarNote } from "@/lib/briefAsiaRadarNote";
+import { composeBriefLede, hungSleeveMark, marketBarsAsOf, officialHungCount } from "@/lib/briefLede";
 import {
   dashboardRunHref,
   dashboardRunKindLabel,
@@ -46,15 +47,18 @@ import {
   getCachedBriefPaperAccount,
   getCachedBriefPaperAccountEquityCurve,
   getCachedBriefPaperAccountPerformance,
+  getCachedHungSleeveEffect,
+  getCachedRemoteBook,
   getCachedSettings,
 } from "@/lib/serverApi";
 import { getServerLocale } from "@/lib/serverLocale";
+import { accountValuation, hasMarketPrice, valuationWarning } from "@/lib/accountValuation";
 
 const copy = {
   en: {
     volume: "VOL. CXXIII",
     edition: "U.S. research edition",
-    title: "Daily Morning Brief",
+    title: "Daily Brief",
     subtitle: "HERMES MORNING BRIEF · A QUANTITATIVE LETTER",
     author: "Platform factual desk",
     subscriber: "subscriber one · private use",
@@ -110,17 +114,18 @@ const copy = {
     neverActive: "never implied active",
     on: "on",
     off: "off",
+    available: "available",
     unavailable: "unavailable",
   },
   zh: {
     volume: "VOL. CXXIII",
     edition: "美股研究版",
-    title: "每日晨报",
+    title: "量化日报",
     subtitle: "HERMES MORNING BRIEF · A QUANTITATIVE LETTER",
-    author: "平台事实台",
+    author: "平台自动汇总",
     subscriber: "订户一人 · 自用",
-    safetyLine: "本刊为模拟盘刊物 · DRY-RUN 演练 · live trading never implied active",
-    ledeByline: "导语由平台事实排印",
+    safetyLine: "本页展示模拟账户与研究信息，未启用实盘交易",
+    ledeByline: "根据已取得的账户、行情和新闻数据汇总",
     account: "账户",
     accountEn: "THE ACCOUNT",
     equity: "权益",
@@ -155,21 +160,22 @@ const copy = {
     topicsEn: "MARKET TOPICS WIRE",
     noTopics: "市场新闻源暂无可匹配要闻。",
     topicsUnconfigured: "市场新闻源未配置，本期要闻略。",
-    quoteSig: "平台市场手记",
+    quoteSig: "市场概况",
     quote:
       "市场涨跌数据暂不完整；待 SPY、QQQ、SOXX、IGV 四组日线全部刷新后再形成完整判断。",
-    digest: "AI 情报摘要",
+    digest: "AI 新闻摘要",
     digestEn: "INTELLIGENCE DIGEST",
-    noDigest: "本地 AI 情报源暂无条目。",
+    noDigest: "当前没有可用的 AI 新闻。",
     score: "评分",
     log: "运行记录",
-    logEn: "THE LOG · 勘误式",
+    logEn: "RUN RECORD",
     noRuns: "暂无近期运行。",
-    footer: "一人量化研究刊物 · 模拟盘 · 非投资建议 · 印刷于本地",
-    liveTrading: "live trading",
-    neverActive: "never implied active",
+    footer: "个人量化日报 · 模拟交易 · 非投资建议",
+    liveTrading: "实盘交易",
+    neverActive: "绝不暗示已启用",
     on: "开",
     off: "关",
+    available: "可用",
     unavailable: "不可用",
   },
 } as const;
@@ -185,7 +191,7 @@ type MarketSnapshot = {
 
 type BriefLogEntry = {
   timestamp?: string | null;
-  status: "ok" | "warn";
+  status: "ok" | "warn" | "info";
   text: string;
   href?: string;
   summary?: string;
@@ -200,7 +206,7 @@ function formatDate(value: Date, locale: "en" | "zh") {
   }).format(value);
 }
 
-function formatTimestamp(value?: string | null) {
+function formatTimestamp(value: string | null | undefined, locale: "en" | "zh") {
   if (!value) {
     return "--";
   }
@@ -208,7 +214,7 @@ function formatTimestamp(value?: string | null) {
   if (Number.isNaN(date.getTime())) {
     return value;
   }
-  return new Intl.DateTimeFormat("en-US", {
+  return new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-US", {
     month: "short",
     day: "2-digit",
     hour: "2-digit",
@@ -353,41 +359,7 @@ function _semisVsSoftwareNote(
 // Asia Radar note builder lives in lib/briefAsiaRadarNote.ts so spread_pct
 // (already percentage points) is never double-scaled by formatPercent.
 
-function buildLede({
-  text,
-  equity,
-  paperReturn,
-  performanceLabel,
-  marketNote,
-  asiaRadarNote,
-  digestCount,
-}: {
-  text: BriefCopy;
-  equity: string;
-  paperReturn: string;
-  performanceLabel: string;
-  marketNote: string;
-  asiaRadarNote: string;
-  digestCount: number;
-}) {
-  if (text === copy.zh) {
-    return (
-      <>
-        今晨，模拟盘权益报 <strong>{equity}</strong>，{performanceLabel}收益{" "}
-        <strong>{paperReturn}</strong>；平台市场手记：{marketNote} {asiaRadarNote}{" "}
-        另整理 <strong>{formatCount(digestCount)}</strong> 条 AI 业内情报。
-      </>
-    );
-  }
-  return (
-    <>
-      This morning, paper equity prints at <strong>{equity}</strong> with a{" "}
-      <strong>{paperReturn}</strong> {performanceLabel} paper return; platform market note: {marketNote}{" "}
-      {asiaRadarNote} It has set{" "}
-      <strong>{formatCount(digestCount)}</strong> AI intelligence items in type.
-    </>
-  );
-}
+
 
 function SectionHeader({ title, en }: { title: string; en: string }) {
   return (
@@ -402,9 +374,11 @@ function SectionHeader({ title, en }: { title: string; en: string }) {
 function AccountTable({
   positions,
   text,
+  locale,
 }: {
   positions: AccountPositionResponse[];
   text: BriefCopy;
+  locale: "en" | "zh";
 }) {
   return (
     <div className="overflow-x-auto">
@@ -425,11 +399,12 @@ function AccountTable({
               <tr key={position.symbol} className="border-b border-editorial-rule">
                 <td className="py-2 pr-3 text-left font-semibold text-ink">
                   {position.symbol}
+                  {!hasMarketPrice(position) && <span className="block text-[10px] font-normal text-warning">{locale === "zh" ? "缺行情，成本不作现价" : "No quote; cost is not price"}</span>}
                 </td>
                 <td className="px-3 py-2">{formatCount(position.quantity)}</td>
                 <td className="px-3 py-2">{formatMoney(position.avg_cost)}</td>
-                <td className="px-3 py-2">{formatMoney(position.last_price)}</td>
-                <td className="px-3 py-2">{formatMoney(position.market_value)}</td>
+                <td className="px-3 py-2">{hasMarketPrice(position) ? formatMoney(position.last_price) : "--"}</td>
+                <td className="px-3 py-2">{hasMarketPrice(position) ? formatMoney(position.market_value) : "--"}</td>
                 <td className="py-2 pl-3">
                   <BriefDailyChange value={position.day_change_ratio} />
                 </td>
@@ -561,8 +536,8 @@ function buildBriefLogEntries({
   }
   entries.push({
     timestamp: new Date().toISOString(),
-    status: "warn",
-    text: locale === "zh" ? "晨报已排印 · 当日事实" : "Morning brief printed · same-day facts",
+    status: "info",
+    text: locale === "zh" ? "晨报已生成 · 当日数据" : "Morning brief printed · same-day facts",
   });
   return entries.slice(0, 8);
 }
@@ -584,19 +559,27 @@ function RunLog({
       {entries.map((entry, index) => (
         <div className="flex gap-4 border-b border-dotted border-editorial-rule py-1.5" key={`${entry.text}-${index}`}>
           <span className="w-[72px] shrink-0 text-ink-secondary">{formatLogTime(entry.timestamp, locale)}</span>
-          <span className={entry.status === "ok" ? "text-editorial-up" : "text-warning"}>
-            {entry.status === "ok" ? "✓" : "△"}
+          <span
+            className={
+              entry.status === "ok"
+                ? "text-editorial-up"
+                : entry.status === "warn"
+                  ? "text-warning"
+                  : "text-ink-secondary"
+            }
+          >
+            {entry.status === "ok" ? "✓" : entry.status === "warn" ? "△" : "•"}
           </span>
           {entry.href ? (
             <Link
-              className="min-w-0 flex-1 text-ink transition-colors hover:text-editorial-accent"
+              className="min-w-0 flex-1 break-words text-ink transition-colors hover:text-editorial-accent"
               href={localizePath(entry.href, locale)}
             >
               {entry.text}
               <ArrowUpRight className="ml-1 inline h-3 w-3" aria-hidden="true" />
             </Link>
           ) : (
-            <span className="min-w-0 flex-1 text-ink">{entry.text}</span>
+            <span className="min-w-0 flex-1 break-words text-ink">{entry.text}</span>
           )}
           {entry.summary ? <span className="hidden max-w-[360px] truncate lg:inline">{entry.summary}</span> : null}
         </div>
@@ -608,10 +591,12 @@ function RunLog({
 function DigestArticle({
   item,
   index,
+  locale,
   text,
 }: {
   item: BriefArchivePayload["ai_news"][number];
   index: number;
+  locale: "en" | "zh";
   text: BriefCopy;
 }) {
   const sourceUrl = safeExternalUrl(item.url);
@@ -636,7 +621,7 @@ function DigestArticle({
         )}
       </h3>
       <div className="mt-1 font-data-mono text-[11px] text-ink-secondary">
-        {formatTimestamp(item.published_at)} · {text.score} {item.score ?? "--"}
+        {formatTimestamp(item.published_at, locale)} · {text.score} {item.score ?? "--"}
       </div>
       <p className={index === 0 ? "mt-1 first-letter:float-left first-letter:pr-2 first-letter:font-editorial-display first-letter:text-4xl first-letter:font-bold first-letter:text-editorial-accent" : "mt-1"}>
         {item.summary ?? item.url}
@@ -674,6 +659,8 @@ export default async function BriefPage({ searchParams }: BriefPageProps) {
     soxxHistory,
     igvHistory,
     asiaRadar,
+    remoteBook,
+    hungEffect,
   ] = await Promise.all([
     getCachedSettings(),
     getSymbols(),
@@ -693,15 +680,19 @@ export default async function BriefPage({ searchParams }: BriefPageProps) {
     getCachedBriefMarketDataHistory("SOXX", briefDateKey(marketStart), briefDateKey(today), "1d"),
     getCachedBriefMarketDataHistory("IGV", briefDateKey(marketStart), briefDateKey(today), "1d"),
     getCachedAsiaRadarSummary(),
+    getCachedRemoteBook(),
+    getCachedHungSleeveEffect(),
   ]);
   const selectedPerformance = selectBriefPerformanceResponse(
     masterPerformance,
     selectedRange,
   );
   const text = copy[locale];
+  const accountMark = accountValuation(paperAccount);
+  const accountMarkWarning = valuationWarning(paperAccount, locale);
   const settingsSafety =
     settings.apiError || !settings.safety ? null : settings.safety;
-  const settingsStatus = settingsSafety ? "available" : "unavailable";
+  const settingsStatus = settingsSafety ? text.available : text.unavailable;
   const liveTradingStatus =
     settingsSafety === null
       ? text.unavailable
@@ -711,6 +702,8 @@ export default async function BriefPage({ searchParams }: BriefPageProps) {
   const selectedPaperSeries = selectedPerformance.series.find(
     (series) => series.id === "paper",
   );
+  const { hungCount, bookAvailable } = officialHungCount(remoteBook);
+  const officialHung = bookAvailable && hungCount > 0;
   const marketSnapshots = [
     marketSnapshot("SPY", spyHistory),
     marketSnapshot("QQQ", qqqHistory),
@@ -732,11 +725,16 @@ export default async function BriefPage({ searchParams }: BriefPageProps) {
   const rangeLabel = performanceRangeLabel(selectedRange, locale);
   const { items: digestItems } = buildBriefAiNewsDigest(digest);
   const marketTopicItems = mapDigestToBriefAiNews(marketTopics);
+  const hungMark = hungSleeveMark(
+    hungCount,
+    hungEffect,
+    locale,
+  );
 
   return (
-    <div className="flex h-full bg-paper-ink text-ink">
-      <BriefArchiveSidebar locale={locale} />
-      <div className="h-full min-w-0 flex-1 overflow-y-auto">
+    <div className="flex h-full flex-col bg-paper-ink text-ink md:flex-row">
+      <BriefArchiveSidebar documentKind="daily" locale={locale} />
+      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
       <div className="mx-auto max-w-[var(--spacing-editorial-column)] px-4 pb-12 md:px-8 lg:px-10">
         <ErrorBanner
           locale={locale}
@@ -758,6 +756,8 @@ export default async function BriefPage({ searchParams }: BriefPageProps) {
             qqqHistory.apiError,
             soxxHistory.apiError,
             igvHistory.apiError,
+            remoteBook.apiError,
+            hungEffect.apiError,
           ]}
         />
 
@@ -780,14 +780,19 @@ export default async function BriefPage({ searchParams }: BriefPageProps) {
 
         <section className="border-b border-editorial-rule px-0 py-7 text-center md:px-14">
           <p className="font-editorial-body text-xl leading-9 text-ink">
-            {buildLede({
-              text,
-              equity: paperAccount.apiError ? "--" : formatMoney(paperAccount.equity),
+            {composeBriefLede({
+              locale,
+              hungCount,
+              bookAvailable,
+              equity: paperAccount.apiError || !accountMark.complete ? "--" : formatMoney(paperAccount.equity),
               paperReturn: formatSignedPointReturn(paperPeriodReturn),
               performanceLabel: rangeLabel,
               marketNote,
               asiaRadarNote,
               digestCount: digestItems.length,
+              marketAsOf: marketBarsAsOf(marketSnapshots.map((item) => item.asOf)),
+              sleeveEquity: hungMark.equity,
+              sleeveObservation: hungMark.observation,
             })}
           </p>
           <div className="mt-3 font-data-mono text-xs text-ink-secondary">
@@ -796,17 +801,22 @@ export default async function BriefPage({ searchParams }: BriefPageProps) {
         </section>
 
         <section className="border-b border-editorial-rule py-7">
-          <SectionHeader title={text.account} en={text.accountEn} />
+          <SectionHeader
+            title={officialHung ? text.account : locale === "zh" ? "账户库存" : "Inventory"}
+            en={officialHung ? text.accountEn : locale === "zh" ? "NOT OFFICIAL HUNG P&L" : "NOT OFFICIAL HUNG P&L"}
+          />
           <div className="grid gap-8 lg:grid-cols-[1.2fr_2fr]">
             <div>
               <div className="font-data-mono text-[11px] uppercase tracking-[0.18em] text-ink-secondary">
                 {text.equity}
               </div>
               <div className="mt-1 font-editorial-display text-5xl leading-tight text-ink">
-                {paperAccount.apiError ? "--" : formatMoney(paperAccount.equity)}
+                {paperAccount.apiError || !accountMark.complete ? "--" : formatMoney(paperAccount.equity)}
               </div>
               {paperAccount.apiError ? (
                 <div className="font-data-mono text-sm text-warning">{text.accountUnavailable}</div>
+              ) : !accountMark.complete ? (
+                <p className="mt-3 text-sm leading-6 text-warning" role="status">{accountMarkWarning}</p>
               ) : (
                 <div className={paperAccount.pnl_abs >= 0 ? "font-data-mono text-sm text-editorial-up" : "font-data-mono text-sm text-editorial-down"}>
                   {paperAccount.pnl_abs >= 0 ? "▲ " : "▼ "}
@@ -818,19 +828,22 @@ export default async function BriefPage({ searchParams }: BriefPageProps) {
                   {text.cash} <span className="text-ink">{paperAccount.apiError ? "--" : formatMoney(paperAccount.cash)}</span>
                 </div>
                 <div>
-                  {text.invested} <span className="text-ink">{paperAccount.apiError ? "--" : formatPercent(paperAccount.invested_pct)}</span>
+                  {text.invested} <span className="text-ink">{paperAccount.apiError || !accountMark.complete ? "--" : formatPercent(paperAccount.invested_pct)}</span>
                 </div>
                 <div>
                   {text.priceSource} <span className="text-ink">{paperAccount.apiError ? "--" : paperAccount.price_source?.kind ?? "--"}</span>
                 </div>
               </dl>
             </div>
-            <AccountTable positions={paperAccount.positions} text={text} />
+            <AccountTable positions={paperAccount.positions} text={text} locale={locale} />
           </div>
         </section>
 
         <section className="border-b border-editorial-rule py-7">
-          <SectionHeader title={text.backtest} en={text.backtestEn} />
+          <SectionHeader
+            title={officialHung ? text.backtest : locale === "zh" ? "账户库存 vs 大盘" : "Inventory vs SPY · QQQ"}
+            en={officialHung ? text.backtestEn : "INVENTORY VS SPY · QQQ"}
+          />
           <figure>
             <div className="mb-3 flex flex-col gap-3 font-data-mono text-[11px] text-ink-secondary sm:flex-row sm:items-center sm:justify-between">
               <span>
@@ -855,6 +868,7 @@ export default async function BriefPage({ searchParams }: BriefPageProps) {
               <BriefPerformanceChart
                 ariaLabel={`${text.figureTitle} · ${rangeLabel}`}
                 emptyLabel={text.noChart}
+                locale={locale}
                 series={selectedPerformance.series}
               />
               <figcaption className="mt-2 text-center font-editorial-caps text-sm text-ink-secondary">
@@ -862,7 +876,7 @@ export default async function BriefPage({ searchParams }: BriefPageProps) {
                 {text.cumulativeReturn} <strong className="text-ink">{formatSignedPointReturn(paperPeriodReturn)}</strong> ·{" "}
                 {text.sharpe} <strong className="text-ink">{formatCount(selectedPaperSeries?.points.length ?? 0)}</strong> ·{" "}
                 {selectedPerformance.actual_start ?? "--"} → {selectedPerformance.actual_end ?? "--"} · {text.maxDrawdown}{" "}
-                <strong className="text-ink">{formatMoney(paperAccount.equity)}</strong>
+                <strong className="text-ink">{accountMark.complete ? formatMoney(paperAccount.equity) : "--"}</strong>
               </figcaption>
               <p className="mt-2 text-center font-data-mono text-[11px] text-ink-secondary">{text.chartNote}</p>
             </PaperEquityFigureState>
@@ -910,7 +924,7 @@ export default async function BriefPage({ searchParams }: BriefPageProps) {
                         item.title
                       )}
                       <span className="ml-2 font-data-mono text-[11px] text-ink-secondary">
-                        {item.source} · {formatTimestamp(item.published_at)}
+                        {item.source} · {formatTimestamp(item.published_at, locale)}
                       </span>
                     </li>
                   );
@@ -932,7 +946,7 @@ export default async function BriefPage({ searchParams }: BriefPageProps) {
           {digestItems.length ? (
             <div className="gap-8 text-sm leading-7 text-ink-secondary md:columns-2 md:[column-rule:1px_solid_var(--color-editorial-rule)]">
               {digestItems.map((item, index) => (
-                <DigestArticle index={index} item={item} key={item.id} text={text} />
+                <DigestArticle index={index} item={item} key={item.id} locale={locale} text={text} />
               ))}
             </div>
           ) : (

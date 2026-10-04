@@ -42,21 +42,15 @@ class IntentPayloadPort(Protocol):
 
     def put_intent(self, request: Mapping[str, Any]) -> dict[str, Any]: ...
 
-    def bind_and_resolve_prompt(
-        self, request: Mapping[str, Any]
-    ) -> dict[str, Any]: ...
+    def bind_and_resolve_prompt(self, request: Mapping[str, Any]) -> dict[str, Any]: ...
 
 
 @dataclass(frozen=True)
 class ResolvedIntentPayload:
-    """Trusted-pipe dispatch body plus optional body-free paper contract."""
+    """Trusted-pipe conversation dispatch body."""
 
     prompt: str
     kind: str = "conversation_turn"
-    execution_contract: Mapping[str, object] | None = None
-    execution_contract_digest: str | None = None
-    research_claim_digest: str | None = None
-    execution_instructions: str | None = None
 
 
 def _as_path(value: object, *, field: str) -> Path:
@@ -317,9 +311,7 @@ class SubprocessIntentPayloadPort:
         # Ensure hqa is importable from the sibling checkout.
         existing = env.get("PYTHONPATH", "")
         root_str = str(hqa_root)
-        env["PYTHONPATH"] = (
-            root_str if not existing else root_str + os.pathsep + existing
-        )
+        env["PYTHONPATH"] = root_str if not existing else root_str + os.pathsep + existing
         # Never pass prompt via env; strip accidental overrides of secrets.
         if self.cli_settings.extra_env:
             for key, value in self.cli_settings.extra_env.items():
@@ -513,22 +505,6 @@ class FakeIntentPayloadPort:
             "prompt": match["prompt"],
             "consumer_ref": consumer_ref,
             "kind": match["body"].get("kind", "conversation_turn"),
-            **(
-                {
-                    "execution_contract": match["body"]["execution_contract"],
-                    "execution_contract_digest": match["body"][
-                        "execution_contract_digest"
-                    ],
-                    "research_claim_digest": match["body"][
-                        "research_claim_digest"
-                    ],
-                    "execution_instructions": match["body"][
-                        "execution_instructions"
-                    ],
-                }
-                if match["body"].get("kind") == "paper_intake"
-                else {}
-            ),
         }
 
 
@@ -611,66 +587,25 @@ def intent_payload_input_resolver(
                 retryable=False,
             )
         kind = receipt.get("kind", "conversation_turn")
-        if kind == "conversation_turn":
-            forbidden = {
-                "execution_contract",
-                "execution_contract_digest",
-                "research_claim_digest",
-                "execution_instructions",
-            }
-            if forbidden & set(receipt):
-                raise IntentPayloadPortError(
-                    "intent_cli_invalid_receipt",
-                    "ordinary intent receipt carries paper metadata",
-                    retryable=False,
-                )
-            return ResolvedIntentPayload(prompt=prompt, kind=kind)
-        if kind != "paper_intake":
+        if kind != "conversation_turn":
             raise IntentPayloadPortError(
                 "intent_cli_invalid_receipt",
                 "dispatch intent kind is unsupported",
                 retryable=False,
             )
-        contract = receipt.get("execution_contract")
-        contract_digest = receipt.get("execution_contract_digest")
-        claim_digest = receipt.get("research_claim_digest")
-        instructions = receipt.get("execution_instructions")
-        if (
-            not isinstance(contract, Mapping)
-            or set(contract) != {
-                "schema_version",
-                "minimum_full_text_bytes",
-                "source_file_ref",
-            }
-            or contract.get("schema_version") != "hqa.paper_intake/v1"
-            or contract.get("minimum_full_text_bytes") != 4096
-            or type(contract.get("source_file_ref")) is not str
-            or not str(contract["source_file_ref"]).startswith("/")
-            or type(contract_digest) is not str
-            or len(contract_digest) != 64
-            or any(char not in "0123456789abcdef" for char in contract_digest)
-            or type(claim_digest) is not str
-            or len(claim_digest) != 64
-            or any(char not in "0123456789abcdef" for char in claim_digest)
-            or type(instructions) is not str
-            or not instructions.startswith(
-                "This run is governed by hqa.paper_intake/v1."
-            )
-            or len(instructions.encode("utf-8")) > 4_096
-        ):
+        forbidden = {
+            "execution_contract",
+            "execution_contract_digest",
+            "research_claim_digest",
+            "execution_instructions",
+        }
+        if forbidden & set(receipt):
             raise IntentPayloadPortError(
                 "intent_cli_invalid_receipt",
-                "paper intake dispatch receipt is invalid",
+                "ordinary intent receipt carries retired research metadata",
                 retryable=False,
             )
-        return ResolvedIntentPayload(
-            prompt=prompt,
-            kind=kind,
-            execution_contract=dict(contract),
-            execution_contract_digest=contract_digest,
-            research_claim_digest=claim_digest,
-            execution_instructions=instructions,
-        )
+        return ResolvedIntentPayload(prompt=prompt, kind=kind)
 
     return _resolve
 

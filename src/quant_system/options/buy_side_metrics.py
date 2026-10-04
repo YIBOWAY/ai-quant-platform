@@ -62,8 +62,8 @@ class BuySideContractMetrics(BaseModel):
     theta_burn_7d_pct: float | None = None
     days_to_lose_30pct: float | None = None
     vega_pct_of_premium: float | None = None
-    estimated_iv_crush_loss: float | None = None
-    estimated_iv_crush_loss_pct: float | None = None
+    estimated_iv_change_pnl: float | None = None
+    estimated_iv_change_pct: float | None = None
     delta_per_dollar: float | None = None
     gamma_per_dollar: float | None = None
     gamma_theta_ratio: float | None = None
@@ -113,9 +113,7 @@ def score_buy_side_contract(
     spread_abs = leg.spread_abs
     spread_pct = leg.spread_pct
     intrinsic_value = _intrinsic_value_call(spot=leg.spot, strike=leg.strike)
-    extrinsic_value = (
-        max(mid_price - intrinsic_value, 0.0) if mid_price is not None else None
-    )
+    extrinsic_value = max(mid_price - intrinsic_value, 0.0) if mid_price is not None else None
     break_even = leg.strike + mid_price if mid_price is not None else None
     required_move_pct = (
         break_even / leg.spot - 1 if break_even is not None and leg.spot > 0 else None
@@ -140,12 +138,10 @@ def score_buy_side_contract(
         else None
     )
     vega_pct = _safe_div(abs(leg.vega) if leg.vega is not None else None, mid_price)
-    iv_crush_loss = (
-        abs(leg.vega) * abs(iv_crush_vol_points)
-        if leg.vega is not None and mid_price is not None
-        else None
+    iv_change_pnl = (
+        leg.vega * iv_crush_vol_points if leg.vega is not None and mid_price is not None else None
     )
-    iv_crush_loss_pct = _safe_div(iv_crush_loss, mid_price)
+    iv_change_pct = _safe_div(iv_change_pnl, mid_price)
     delta_per_dollar = (
         leg.delta * leg.spot / mid_price
         if leg.delta is not None and mid_price is not None and mid_price > 0
@@ -263,8 +259,8 @@ def score_buy_side_contract(
         theta_burn_7d_pct=theta_burn_7d_pct,
         days_to_lose_30pct=days_to_lose_30pct,
         vega_pct_of_premium=vega_pct,
-        estimated_iv_crush_loss=iv_crush_loss,
-        estimated_iv_crush_loss_pct=iv_crush_loss_pct,
+        estimated_iv_change_pnl=iv_change_pnl,
+        estimated_iv_change_pct=iv_change_pct,
         delta_per_dollar=delta_per_dollar,
         gamma_per_dollar=gamma_per_dollar,
         gamma_theta_ratio=gamma_theta_ratio,
@@ -313,11 +309,7 @@ def _target_vs_expected_move_ratio(
     user_target_move_pct: float | None,
     expected_move_pct: float | None,
 ) -> float | None:
-    if (
-        user_target_move_pct is None
-        or expected_move_pct is None
-        or expected_move_pct <= 0
-    ):
+    if user_target_move_pct is None or expected_move_pct is None or expected_move_pct <= 0:
         return None
     return user_target_move_pct / expected_move_pct
 
@@ -391,11 +383,7 @@ def _liquidity_score(
         ),
     ]
     if quote_staleness_minutes is not None:
-        stale_score = (
-            100.0
-            if quote_staleness_minutes <= thresholds.stale_quote_minutes
-            else 35.0
-        )
+        stale_score = 100.0 if quote_staleness_minutes <= thresholds.stale_quote_minutes else 35.0
         components.append(stale_score)
     return _average_score(components)
 
@@ -467,9 +455,7 @@ def _greek_efficiency_score(
         [
             (_clip((delta_per_dollar or 0.0) * 8) if delta_per_dollar is not None else None, 0.65),
             (
-                _clip((gamma_per_dollar or 0.0) * 100)
-                if gamma_per_dollar is not None
-                else None,
+                _clip((gamma_per_dollar or 0.0) * 100) if gamma_per_dollar is not None else None,
                 0.35,
             ),
         ]

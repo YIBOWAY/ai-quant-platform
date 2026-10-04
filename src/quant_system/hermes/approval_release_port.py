@@ -29,7 +29,7 @@ from quant_system.hermes.command_approval_authority import (
 )
 
 ReleaseChoice = Literal["once", "deny"]
-DecisionStatus = Literal["committed"]
+DecisionStatus = Literal["committed", "accepted"]
 WaiterSignalStatus = Literal["confirmed", "unknown"]
 
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")

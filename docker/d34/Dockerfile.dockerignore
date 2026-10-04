@@ -9,3 +9,5 @@
 !docker
 !docker/d34
 !docker/d34/container_entrypoint.py
+!docker/d34/rdagent-grok-reasoning.patch
+!docker/d34/check_reasoning_wire.py

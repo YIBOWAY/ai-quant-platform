@@ -5,6 +5,8 @@ from typing import Any, Literal
 
 import pandas as pd
 
+from quant_system.options.iv_units import frame_unit, to_ratio
+
 OptionType = Literal["call", "put"]
 Action = Literal["buy", "sell"]
 
@@ -322,18 +324,22 @@ def build_strategy_from_template(
     }
 
 
-def compute_options_snapshot(provider, ticker: str) -> dict[str, Any]:
+def compute_options_snapshot(
+    provider, ticker: str, *, expiration: str | None = None
+) -> dict[str, Any]:
     symbol, _futu_symbol = provider.normalize_symbol(ticker)
     spot = _spot_price(provider.fetch_underlying_snapshot(symbol))
-    expirations = _select_expirations(provider.fetch_option_expirations(symbol), limit=1)
+    expirations = _select_expirations(provider.fetch_option_expirations(symbol), limit=1000)
     if not expirations:
         raise ValueError(f"no option expiration is available for {symbol}")
     nearest_expiry = expirations[0]
-    chain = provider.fetch_option_quotes(symbol, expiration=nearest_expiry, option_type="ALL")
+    iv_expiry = expiration or nearest_expiry
+    if iv_expiry not in expirations:
+        raise ValueError("requested_expiration_unavailable")
+    chain = provider.fetch_option_quotes(symbol, expiration=iv_expiry, option_type="ALL")
     atm_iv = _atm_iv(chain, spot)
     history = _fetch_history(provider, symbol)
     hv_30d = _historical_volatility(history, window=30)
-    iv_rank, iv_percentile = _iv_rank_from_hv_proxy(history, atm_iv)
     vrp = atm_iv - hv_30d if atm_iv is not None and hv_30d is not None else None
     return {
         "success": True,
@@ -341,16 +347,18 @@ def compute_options_snapshot(provider, ticker: str) -> dict[str, Any]:
         "source": "futu",
         "price": spot,
         "nearest_expiry": nearest_expiry,
+        "iv_expiry": iv_expiry,
         "atm_iv": atm_iv,
         "hv_30d": hv_30d,
-        "iv_rank": iv_rank,
-        "iv_percentile": iv_percentile,
-        "iv_rank_source": "local_hv_proxy" if iv_rank is not None else "unavailable",
+        "iv_rank": None,
+        "iv_percentile": None,
+        "iv_rank_source": "unavailable",
         "vrp": vrp,
         "vrp_level": _vrp_level(vrp),
         "assumptions": [
-            "Futu provides current option IV; historical IV is approximated locally "
-            "from price history unless a persisted IV cache is available.",
+            "ATM IV and VRP use iv_expiry. Futu IV percent values are converted to ratios.",
+            "No expiry-matched historical option IV is loaded here; IV Rank is unknown. "
+            "Equity historical volatility is not substituted for historical option IV.",
             "This endpoint is read-only and does not place orders.",
         ],
     }
@@ -804,19 +812,19 @@ def _atm_iv(chain: pd.DataFrame, spot: float) -> float | None:
 
 def _with_normalized_iv(frame: pd.DataFrame) -> pd.DataFrame:
     active = frame.copy()
+    unit = frame_unit(frame)
     active["implied_volatility"] = pd.to_numeric(
         active.get("implied_volatility"),
         errors="coerce",
-    ).map(_normalize_iv)
+    ).map(lambda value: _normalize_iv(value, unit=unit))
     active["strike"] = pd.to_numeric(active.get("strike"), errors="coerce")
     return active
 
 
-def _normalize_iv(value: float | None) -> float | None:
-    parsed = _safe_float(value)
-    if parsed is None:
-        return None
-    return parsed / 100.0 if parsed > 5 else parsed
+def _normalize_iv(value: float | None, *, unit: str | None = None) -> float | None:
+    # Provider frames declare their unit; when undeclared the canonical ratio
+    # is assumed. No magnitude heuristic is applied.
+    return to_ratio(value, unit=unit) if unit is not None else to_ratio(value)
 
 
 def _surface_points(chain: pd.DataFrame, spot: float) -> list[dict[str, Any]]:

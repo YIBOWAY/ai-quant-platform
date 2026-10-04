@@ -1,13 +1,17 @@
-import Link from "next/link";
 import { Card, StatusPill } from "@/components/ui/primitives";
 import { FocusedArtifactCard } from "@/components/hermes/artifacts";
 import type { HermesArtifact, HermesArtifactShelfEnvelope } from "@/lib/api";
 import { hermesWorkbenchCopy } from "@/lib/hermes/copy";
-import { hermesRouteHref } from "@/lib/hermes/routes";
 import type { HermesHqaConclusionSummary } from "@/lib/hermes/types";
 import type { Locale } from "@/lib/locale";
 import { artifactCopy } from "@/components/hermes/artifacts/copy";
 import { qualityTone } from "@/components/hermes/artifacts/formatters";
+import {
+  resultDisplayTitle,
+  resultStatusLabel,
+  resultSummaryText,
+} from "@/lib/hermes/resultsPresentation";
+import { isHermesResultKind } from "@/lib/hermes/resultsTypes";
 
 export type RecentResultsProps = {
   results: HermesHqaConclusionSummary[];
@@ -48,24 +52,25 @@ export function RecentResults({
       aria-labelledby="hermes-hqa-conclusions-title"
       data-hermes-hqa-conclusions
     >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2
-          className="font-label-caps text-text-secondary"
-          id="hermes-hqa-conclusions-title"
-        >
-          {workbench.labels.hqaConclusions}
-        </h2>
-        <Link
-          className="app-touch-target inline-flex items-center font-body-sm text-info underline-offset-2 hover:underline"
-          href={hermesRouteHref("results", locale)}
-          prefetch={false}
-        >
-          {workbench.labels.viewUnifiedResults}
-        </Link>
-      </div>
+      <h2
+        className="font-label-caps text-text-secondary"
+        id="hermes-hqa-conclusions-title"
+      >
+        {workbench.labels.hqaConclusions}
+      </h2>
 
       <ul aria-label={text.timelineAria} className="mt-2 space-y-3">
         {nonAutomation.map((result) => {
+          const kind = isHermesResultKind(result.kind) ? result.kind : "market_foresight";
+          const presentationItem = {
+            kind,
+            resource_id: result.id,
+            display_title: result.title,
+            summary: result.summary,
+            status: result.status,
+            freshness: "unknown" as const,
+            occurred_at: result.occurredAt,
+          };
           const artifact = preferFocusedCards
             ? findArtifact(artifacts, result.id)
             : null;
@@ -85,10 +90,12 @@ export function RecentResults({
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
                       <h3 className="font-body-sm font-semibold text-text-primary">
-                        {result.title}
+                        {resultDisplayTitle(presentationItem, locale)}
                       </h3>
-                      <p className="mt-1 font-body-sm text-text-secondary">{result.summary}</p>
-                      {result.limitations.length ? (
+                      <p className="mt-1 font-body-sm text-text-secondary">
+                        {resultSummaryText(presentationItem, locale)}
+                      </p>
+                      {locale === "en" && result.limitations.length ? (
                         <ul className="mt-2 space-y-1 font-body-sm text-text-secondary">
                           {result.limitations.map((limitation) => (
                             <li key={limitation}>{limitation}</li>
@@ -98,7 +105,7 @@ export function RecentResults({
                     </div>
                     <StatusPill
                       label={text.status}
-                      value={result.status}
+                      value={resultStatusLabel(result.status, locale)}
                       tone={qualityTone(result.status)}
                     />
                   </div>

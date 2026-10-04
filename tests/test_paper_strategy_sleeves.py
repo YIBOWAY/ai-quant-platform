@@ -10,7 +10,7 @@ from quant_system.api.schemas.paper import (
     StrategyConfigResponse,
     StrategySleeveResponse,
 )
-from quant_system.execution.account import PaperAccount
+from quant_system.execution.account import PaperAccount, PendingAccountOrder
 from quant_system.execution.paper_strategy_sleeve_storage import (
     PaperStrategySleeveStorage,
 )
@@ -111,6 +111,38 @@ def test_sleeve_creation_modes_handle_account_cash_without_execution(tmp_path) -
             mode=StrategySleeveMode.ALLOCATED,
             allocated_cash=80_000.0,
         )
+
+
+def test_sleeve_allocation_respects_manual_pending_cash_reservation(tmp_path) -> None:
+    account = PaperAccount.open_new(initial_cash=1_000.0)
+    account.sleeve_cash = {"manual": 200.0, "existing-sleeve": 800.0}
+    account.pending_orders = [
+        PendingAccountOrder(
+            order_id="manual-pending",
+            created_at="2026-08-27T00:00:00Z",
+            symbol="AAPL",
+            side="buy",
+            quantity=1.0,
+            limit_price=100.0,
+            reserved_cash=100.0,
+            source="manual",
+        )
+    ]
+    storage = PaperStrategySleeveStorage(tmp_path)
+    service = PaperStrategySleeveService(storage)
+    config = _config()
+    storage.save_strategy_config(config)
+
+    with pytest.raises(CashAllocationError):
+        service.create_sleeve(
+            account,
+            config=config,
+            mode=StrategySleeveMode.ALLOCATED,
+            allocated_cash=150.0,
+        )
+
+    assert account.sleeve_cash == {"manual": 200.0, "existing-sleeve": 800.0}
+    assert account.ledger[-1].kind == "deposit"
 
 
 def test_sleeve_lot_book_keeps_same_symbol_lots_isolated() -> None:

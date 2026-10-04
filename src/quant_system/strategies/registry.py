@@ -13,6 +13,8 @@ class StrategyMetadata(BaseModel):
     run_endpoint: str
     result_type: str
     supports_account_rebalance: bool = False
+    runnable: bool = True
+    execution_blocker: str | None = None
     parameter_schema: dict = Field(default_factory=dict)
     default_payload: dict = Field(default_factory=dict)
 
@@ -63,7 +65,7 @@ def build_default_strategy_registry() -> StrategyRegistry:
                     "benchmark_symbol": {"type": "symbol", "default": "SPY"},
                     "start": {"type": "date", "default": "2024-01-02"},
                     "end": {"type": "date", "default": "2024-06-28"},
-                    "provider": {"type": "provider", "default": "sample"},
+                    "provider": {"type": "provider", "default": "futu"},
                 }
             },
             default_payload={
@@ -73,7 +75,7 @@ def build_default_strategy_registry() -> StrategyRegistry:
                 "weights": {"momentum": 1.0, "volatility": 0.5, "liquidity": 0.5},
                 "benchmark_symbol": "SPY",
                 "top_n": 3,
-                "provider": "sample",
+                "provider": "futu",
             },
         )
     )
@@ -136,7 +138,7 @@ def build_default_strategy_registry() -> StrategyRegistry:
                     "benchmark_symbol": {"type": "symbol", "default": "SPY"},
                     "start": {"type": "date", "default": "2024-01-02"},
                     "end": {"type": "date", "default": "2024-06-28"},
-                    "provider": {"type": "provider", "default": "sample"},
+                    "provider": {"type": "provider", "default": "futu"},
                 }
             },
             default_payload={
@@ -146,14 +148,12 @@ def build_default_strategy_registry() -> StrategyRegistry:
                 "weights": {"momentum": 1.0, "volatility": 0.5, "liquidity": 0.5},
                 "benchmark_symbol": "SPY",
                 "top_n": 3,
-                "provider": "sample",
+                "provider": "futu",
             },
         )
     )
-    # Research draft only. Factor is Gate-2 approved candidate, not Gate-3
-    # promoted; default payload keeps a runnable resident blend so catalog
-    # listing does not break /api/backtests/run. Full candidate binding and
-    # sample evidence live under strategies/drafts/.
+    # Research draft only. No resident strategy builder exists. Keep its exact
+    # identity so execution rejects it rather than running another strategy.
     registry.register(
         StrategyMetadata(
             id="drift_regime_reversal_top_n_v1",
@@ -163,8 +163,7 @@ def build_default_strategy_registry() -> StrategyRegistry:
                 "RESEARCH DRAFT — long-only Top-N inspired by arXiv:2511.12490 "
                 "(drift-regime gated value + short-term reversal). Candidate "
                 "factor_id=drift_regime_reversal_edge_v1 is approved but not "
-                "resident-promoted. Catalog default_payload uses resident "
-                "momentum as a placeholder so the UI remains runnable; see "
+                "resident-promoted. No runnable strategy builder exists; see "
                 "strategies/drafts/drift_regime_reversal_top_n_v1.json for the "
                 "true candidate binding and sample-lab evidence. Not paper/live."
             ),
@@ -175,6 +174,8 @@ def build_default_strategy_registry() -> StrategyRegistry:
             run_endpoint="/api/backtests/run",
             result_type="backtest",
             supports_account_rebalance=False,
+            runnable=False,
+            execution_blocker="strategy_executor_unavailable",
             parameter_schema={
                 "fields": {
                     "universe_id": {"type": "universe", "required": True},
@@ -184,19 +185,17 @@ def build_default_strategy_registry() -> StrategyRegistry:
                     "benchmark_symbol": {"type": "symbol", "default": "SPY"},
                     "start": {"type": "date", "default": "2024-01-02"},
                     "end": {"type": "date", "default": "2024-12-31"},
-                    "provider": {"type": "provider", "default": "sample"},
+                    "provider": {"type": "provider", "default": "futu"},
                 }
             },
             default_payload={
-                "strategy_id": "cross_sectional_top_n",
+                "strategy_id": "drift_regime_reversal_top_n_v1",
                 "universe_id": "etf",
-                # Placeholder resident factor — true research factor is still
-                # candidate-only (drift_regime_reversal_edge_v1).
-                "factor_ids": ["momentum"],
-                "weights": {"momentum": 1.0},
+                "factor_ids": ["drift_regime_reversal_edge_v1"],
+                "weights": {"drift_regime_reversal_edge_v1": 1.0},
                 "benchmark_symbol": "SPY",
                 "top_n": 3,
-                "provider": "sample",
+                "provider": "futu",
                 "start": "2024-01-02",
                 "end": "2024-12-31",
             },

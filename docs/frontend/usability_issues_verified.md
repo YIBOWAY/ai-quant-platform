@@ -1,4 +1,10 @@
 # 前端可用性问题验证与优化方案
+
+> **历史审查快照。** 本文保留 2026-06 当时的问题、建议与设计片段，不是现役页面
+> 验收。尤其是“期权雷达移除手动按钮”的讨论已被当前产品合同替代：现役页保留
+> 「立即更新今日推荐」，后台返回 202、重叠返回 409，并由 22:00 自动任务兜底。
+> 当前状态见 [optimization_log.md](optimization_log.md) 与
+> [期权推荐指南](../guides/options-recommendations.md)。
 > Web Design Engineer 审查报告 — 2026-06-07  
 > 基于 `docs/design/frontend_workflow_usability_review_2026-06-07.md` 的代码验证
 >

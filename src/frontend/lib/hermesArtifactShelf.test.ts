@@ -2,8 +2,12 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { ArtifactShelf, HermesTodayView } from "@/components/hermes";
+import { ArtifactShelf } from "@/components/hermes";
 import { TodayAutomation, TodayResults } from "@/components/hermes/today";
+import {
+  artifactStatusLabel,
+  humanizeReasonCode,
+} from "@/components/hermes/artifacts/formatters";
 import {
   ArtifactFeed,
   artifactFeedReadState,
@@ -14,14 +18,11 @@ import type {
 } from "./api";
 import {
   buildAutomation,
-  buildHermesTodayOverviewModel,
   buildHqaConclusions,
   buildUnifiedResultsPreview,
   pickLatestAutomation,
 } from "./hermes/viewModel";
 import {
-  candidateFixture,
-  gatewayFixture,
   healthyArtifacts,
   degradedArtifacts,
 } from "./hermes/viewModelFixtures";
@@ -39,6 +40,7 @@ const availableShelf = {
       status: "available",
       data: {
         account_id: "default",
+        ledger_split: false,
         currency: "USD",
         gross_value: 315.32,
         gross_pct_equity: 0.000315,
@@ -200,69 +202,24 @@ const unavailableUnifiedResults = {
   apiError: "api_unavailable",
 } satisfies HermesResultsResponse;
 
-describe("Hermes Today hierarchy (UI-1 Direction A)", () => {
-  const now = new Date("2026-07-24T01:00:00Z");
-
-  it("greets, aggregates one status line, and keeps the action lane markers", () => {
-    const candidates = {
-      candidates: [
-        candidateFixture({
-          candidate_id: "factor-momentum_20d_reversal-323b045e4b",
-          artifact_type: "factor",
-          goal: "Evaluate a deterministic reversal factor on AAPL",
-          universe: ["AAPL"],
-          status: "pending",
-          integrity_state: "verified",
-          manifest_digest: "a".repeat(64),
-          observed_manifest_digest: null,
-          approval_binding: "pending",
-          approval_enabled: true,
-          integrity_error_code: null,
-        }),
-      ],
-    };
-    const model = buildHermesTodayOverviewModel({
-      artifacts: healthyArtifacts,
-      candidates,
-      gateway: gatewayFixture({ chat_write_ready: true }),
-      now,
-    });
-    const html = renderToStaticMarkup(
-      createElement(HermesTodayView, {
-        model,
-        artifacts: healthyArtifacts,
-        locale: "zh",
-      }),
+describe("Hermes Chinese limitation copy", () => {
+  it("does not expose live portfolio limitation prose in English", () => {
+    expect(humanizeReasonCode("no risk policy thresholds configured", "zh")).toBe(
+      "未配置风险阈值",
     );
-
-    expect(model.state).toBe("normal");
-    expect(model.gateway.chatWriteReady).toBe(true);
-    expect(html).toContain("早上好");
-    expect(html).toContain("系统正常，");
-    expect(html).toContain("有 1 件事需要你处理");
-    expect(html).toContain("Hermes 正在值班");
-    expect(html).toContain("发送前请先新建受管对话");
-    expect(html).not.toContain("提交仍保持禁用");
-    expect(html).toContain('data-hermes-chat-write-ready="true"');
-    expect(html).toContain('data-hermes-status-item="sources"');
-    expect(html).toContain('data-hermes-status-item="automation"');
-    expect(html).toContain('href="#hermes-technical-details"');
-    expect(html).toContain('id="hermes-technical-details"');
-    expect(html).toContain("研究审批项");
-    expect(html).toContain("Gate 2");
-    expect(html).toContain('href="/zh/hermes/approvals"');
-    expect(html).not.toContain('href="/hermes/approvals"');
-    expect(html).toContain('data-hermes-attention-id="factor-momentum_20d_reversal-323b045e4b"');
-    expect(html).toContain('data-testid="hermes-today-brief-entry"');
-    expect(html).toContain('href="/zh/brief"');
-    expect(html).toContain("每日晨报");
-    expect(html).toContain('aria-label="打开每日晨报"');
-    expect(html).toContain('data-testid="hermes-today-state"');
-    expect(html).toContain('data-state="normal"');
-    // Machine digests stay out of the action lane.
-    expect(html).not.toContain("a".repeat(64));
+    expect(humanizeReasonCode("account base currency only no fx conversion", "zh")).toBe(
+      "仅按账户本位币统计，未做汇率换算",
+    );
+    expect(humanizeReasonCode("price_freshness_age_unavailable", "zh")).toBe(
+      "无法确认价格时效",
+    );
+    expect(humanizeReasonCode("unknown internal limitation", "zh")).toBe("其他技术限制");
+    expect(artifactStatusLabel("available", "zh")).toBe("可用");
+    expect(artifactStatusLabel("degraded", "zh")).toBe("已降级");
   });
+});
 
+describe("Hermes Today hierarchy (UI-1 Direction A)", () => {
   it("merges recent results into one bounded list with kind tags and detail links", () => {
     const html = renderToStaticMarkup(
       createElement(TodayResults, {
@@ -273,13 +230,40 @@ describe("Hermes Today hierarchy (UI-1 Direction A)", () => {
     );
 
     expect(html).toContain("最近结果");
-    expect(html).toContain("AAPL momentum backtest");
-    expect(html).toContain("backtest");
+    expect(html).toContain("回测");
+    expect(html).toContain("已完成");
+    expect(html).not.toContain("AAPL momentum backtest");
+    expect(html).not.toContain(">backtest<");
     expect(html).toContain("/zh/hermes/results/backtest/backtest-wave3-001");
     expect(html).toContain("查看全部");
     expect(html).toContain('href="/zh/hermes/results"');
     // One list only — the artifact-feed duplicate preview is not rendered.
     expect(html).not.toContain("HQA 结论产物");
+  });
+
+  it("labels stale automation as an expired historical snapshot", () => {
+    const preview = buildUnifiedResultsPreview({
+      ...availableUnifiedResults,
+      items: [
+        {
+          ...availableUnifiedResults.items[0],
+          kind: "automation_status",
+          resource_id: "automation_status:cd47dc43c404f7b3730fcce2",
+          display_title: "Automation · fresh",
+          summary: "4 scheduled jobs",
+          freshness: "stale",
+          occurred_at: "2026-08-17T09:07:25Z",
+        },
+      ],
+    } as unknown as HermesResultsResponse);
+    const html = renderToStaticMarkup(
+      createElement(TodayResults, { preview, hqaConclusions: [], locale: "zh" }),
+    );
+
+    expect(html).toContain("自动化历史快照");
+    expect(html).toContain("历史快照 · 已过期");
+    expect(html).not.toContain("Automation · fresh");
+    expect(html).not.toContain("4 scheduled jobs");
   });
 
   it("shows an unknown catalog state in one honest line, then the independent feed", () => {
@@ -294,7 +278,8 @@ describe("Hermes Today hierarchy (UI-1 Direction A)", () => {
 
     expect(preview.total).toBeNull();
     expect(html).toContain("结果目录当前不可用");
-    expect(html).toContain("api_unavailable");
+    expect(html).toContain("结果来源异常");
+    expect(html).not.toContain("api_unavailable");
     expect(html).toContain("以下条目来自独立的只读产物 feed");
     expect(html).toContain("data-hermes-result-id");
     expect(html).not.toContain("今天还没有新的研究结果");
@@ -324,7 +309,8 @@ describe("Hermes Today hierarchy (UI-1 Direction A)", () => {
     expect(preview.total).toBeNull();
     expect(html).toContain("可能延迟");
     expect(html).toContain("统一结果目录已降级");
-    expect(html).toContain("source_scan_incomplete");
+    expect(html).toContain("结果来源异常");
+    expect(html).not.toContain("source_scan_incomplete");
     expect(html).not.toContain("今天还没有新的研究结果");
   });
 
@@ -337,7 +323,7 @@ describe("Hermes Today hierarchy (UI-1 Direction A)", () => {
       }),
     );
     expect(healthy).toContain("自动化 4/4 正常");
-    expect(healthy).toContain("daily_close · freshness · weekly · notification_drain");
+    expect(healthy).toContain("每日收盘研究 · 时效巡检 · 每周复盘 · 通知投递");
     expect(healthy).toContain("上次成功");
     expect(healthy).not.toContain("data-hermes-automation-exception");
     expect(healthy).not.toContain("0 9 * * 0</");
@@ -354,6 +340,22 @@ describe("Hermes Today hierarchy (UI-1 Direction A)", () => {
     expect(degraded).toContain('open=""');
     expect(degraded).toContain("<details");
     expect(degraded).toContain("超过时效窗口");
+  });
+
+  it("does not present a stale automation artifact as currently healthy", () => {
+    const html = renderToStaticMarkup(
+      createElement(TodayAutomation, {
+        summary: buildAutomation(healthyArtifacts),
+        artifact: pickLatestAutomation(healthyArtifacts.items),
+        locale: "zh",
+        stale: true,
+      }),
+    );
+    expect(html).toContain("历史快照 · 已过期");
+    expect(html).toContain("每日收盘");
+    expect(html).not.toContain("daily_close");
+    expect(html).not.toContain("4/4 fresh");
+    expect(html).not.toContain("自动化 4/4 正常");
   });
 });
 

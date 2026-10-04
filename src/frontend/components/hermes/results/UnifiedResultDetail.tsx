@@ -8,12 +8,18 @@ import {
 import Link from "next/link";
 
 import { Card, SectionTitle, StatusPill } from "@/components/ui/primitives";
+import { formatDateTime } from "@/components/hermes/artifacts/formatters";
 import {
   resultAuthorityLabel,
+  resultDisplayTitle,
+  resultFreshnessLabel,
   resultFreshnessTone,
   resultKindLabel,
+  resultReadStatusLabel,
   resultReadStatusTone,
   resultSourceLabel,
+  resultStatusLabel,
+  resultSummaryText,
   resultWarningText,
 } from "@/lib/hermes/resultsPresentation";
 import {
@@ -40,6 +46,7 @@ const copy = {
     source: "source",
     authority: "Authority",
     occurredAt: "Occurred at",
+    resourceId: "Resource ID",
     provenance: "Provenance",
     detailHref: "Unified detail endpoint",
     originalHref: "Original resource endpoint",
@@ -65,6 +72,8 @@ const copy = {
     corruptBody: "Integrity checks failed. The payload is not rendered as evidence.",
     unavailableTitle: "Result source unavailable",
     unavailableBody: "The authoritative adapter could not read this resource.",
+    savedFailureTitle: "Saved failure record",
+    savedFailureBody: "This result was unavailable when generated. The saved record below preserves the original failure reason; it is not a successful risk assessment.",
     degradedTitle: "Result detail is degraded",
     degradedBody: "Readable evidence is shown with its exact limitations and warnings.",
     payloadWithheld: "Payload withheld",
@@ -75,9 +84,10 @@ const copy = {
     read: "读取",
     freshness: "新鲜度",
     source: "来源",
-    authority: "权威来源",
+    authority: "原始记录来源",
     occurredAt: "发生时间",
-    provenance: "来源证明",
+    resourceId: "资源编号",
+    provenance: "来源记录",
     detailHref: "统一详情端点",
     originalHref: "原始资源端点",
     openOriginal: "打开原始结果界面",
@@ -92,14 +102,16 @@ const copy = {
     digest: "关联摘要",
     sourceEvent: "来源事件",
     observed: "记录时间",
-    resource: "资源载荷",
-    resourceHint: "权威资源适配器返回的只读 JSON。",
+    resource: "原始内容",
+    resourceHint: "下面是已保存的原始数据，供核对；读取不会更改记录。",
     missingTitle: "结果资源不存在",
     missingBody: "该类型与资源 ID 没有对应的权威资源。",
     corruptTitle: "结果资源已损坏",
     corruptBody: "完整性校验失败，相关载荷不会作为证据展示。",
     unavailableTitle: "结果来源不可用",
     unavailableBody: "权威资源适配器当前无法读取该资源。",
+    savedFailureTitle: "已保存的失败记录",
+    savedFailureBody: "这次任务生成结果时未成功。下面保留当时的失败原因，不代表已经得到有效评估。",
     degradedTitle: "结果详情已降级",
     degradedBody: "仍可读取的证据会连同精确限制与警告一起展示。",
     payloadWithheld: "载荷已安全隐藏",
@@ -165,13 +177,16 @@ export function UnifiedResultDetail({
         data-hermes-result-detail-failure={failureStatus}
         role="alert"
       >
-        <Link
+        {/* Plain anchor on purpose: back navigation must stay a real document
+            navigation even when the client router is unhealthy (a soft
+            navigation that never resolves must not swallow this control). */}
+        <a
           className={`inline-flex min-h-11 items-center gap-2 rounded-lg px-2 font-body-sm text-info hover:bg-info/10 ${focusClass}`}
+          data-hermes-result-back
           href={backHref}
-          prefetch={false}
         >
           <ArrowLeft size={15} /> {text.back}
-        </Link>
+        </a>
         <Card tone="danger">
           <p className="font-body-sm font-semibold text-danger">{failureCopy.title}</p>
           <p className="mt-1 font-body-sm text-text-secondary">{failureCopy.body}</p>
@@ -189,7 +204,7 @@ export function UnifiedResultDetail({
             <ul className="mt-2 space-y-1 font-data-mono text-xs text-text-secondary">
               {envelope.warnings.map((warning, index) => (
                 <li key={`${warning.source}:${warning.code}:${warning.resource_id ?? index}`}>
-                  {resultWarningText(warning)}
+                  {resultWarningText(warning, locale)}
                 </li>
               ))}
             </ul>
@@ -199,6 +214,7 @@ export function UnifiedResultDetail({
     );
   }
   const runLinks = item.run_links ?? null;
+  const hasSavedFailure = envelope.read_status === "unavailable" && envelope.resource !== null;
 
   return (
     <article
@@ -206,13 +222,16 @@ export function UnifiedResultDetail({
       data-hermes-result-detail={hermesResultKey(item)}
       data-hermes-result-detail-read-status={envelope.read_status}
     >
-      <Link
+      {/* Plain anchor on purpose: back navigation must stay a real document
+          navigation even when the client router is unhealthy (a soft
+          navigation that never resolves must not swallow this control). */}
+      <a
         className={`inline-flex min-h-11 items-center gap-2 rounded-lg px-2 font-body-sm text-info hover:bg-info/10 ${focusClass}`}
+        data-hermes-result-back
         href={backHref}
-        prefetch={false}
       >
         <ArrowLeft size={15} /> {text.back}
-      </Link>
+      </a>
 
       <Card>
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -220,24 +239,26 @@ export function UnifiedResultDetail({
             <p className="font-label-caps uppercase text-info">
               {resultKindLabel(item.kind, locale)}
             </p>
-            <h1 className="mt-1 font-headline-lg text-text-primary">{item.display_title}</h1>
-            {item.summary ? (
-              <p className="mt-2 max-w-3xl font-body-sm text-text-secondary">{item.summary}</p>
+            <h1 className="mt-1 font-headline-lg text-text-primary">
+              {resultDisplayTitle(item, locale)}
+            </h1>
+            {resultSummaryText(item, locale) ? (
+              <p className="mt-2 max-w-3xl font-body-sm text-text-secondary">
+                {resultSummaryText(item, locale)}
+              </p>
             ) : null}
-            <p className="mt-2 break-all font-data-mono text-xs text-text-secondary">
-              {item.resource_id}
-            </p>
           </div>
           <div className="flex max-w-xl flex-wrap gap-1.5">
-            <StatusPill label={text.status} value={item.status} />
+            {item.data_mode === "sample" && <StatusPill label="" value={locale === "zh" ? "样例数据 · 非真实表现" : "SAMPLE · NOT REAL PERFORMANCE"} tone="warning" />}
+            <StatusPill label={text.status} value={resultStatusLabel(item.status, locale)} />
             <StatusPill
               label={text.read}
-              value={envelope.read_status}
+              value={resultReadStatusLabel(envelope.read_status, locale)}
               tone={resultReadStatusTone(envelope.read_status)}
             />
             <StatusPill
               label={text.freshness}
-              value={item.freshness}
+              value={resultFreshnessLabel(item.freshness, locale)}
               tone={resultFreshnessTone(item.freshness)}
             />
             <StatusPill label={text.source} value={resultSourceLabel(item.source, locale)} />
@@ -262,6 +283,8 @@ export function UnifiedResultDetail({
                 ? text.degradedTitle
                 : envelope.read_status === "corrupt"
                   ? text.corruptTitle
+                  : hasSavedFailure
+                    ? text.savedFailureTitle
                   : text.unavailableTitle}
             </p>
             <p className="mt-1 font-body-sm text-text-secondary">
@@ -269,13 +292,15 @@ export function UnifiedResultDetail({
                 ? text.degradedBody
                 : envelope.read_status === "corrupt"
                   ? text.corruptBody
+                  : hasSavedFailure
+                    ? text.savedFailureBody
                   : text.unavailableBody}
             </p>
             {envelope.warnings.length ? (
               <ul className="mt-2 space-y-1 font-data-mono text-xs text-text-secondary">
                 {envelope.warnings.map((warning, index) => (
                   <li key={`${warning.source}:${warning.code}:${warning.resource_id ?? index}`}>
-                    {resultWarningText(warning)}
+                    {resultWarningText(warning, locale)}
                   </li>
                 ))}
               </ul>
@@ -291,6 +316,12 @@ export function UnifiedResultDetail({
         />
         <dl className="grid gap-4 lg:grid-cols-2">
           <div>
+            <dt className="font-label-caps text-text-secondary">{text.resourceId}</dt>
+            <dd className="mt-1 break-all font-data-mono text-xs text-text-primary">
+              {item.resource_id}
+            </dd>
+          </div>
+          <div>
             <dt className="font-label-caps text-text-secondary">{text.authority}</dt>
             <dd className="mt-1 font-body-sm text-text-primary">
               {resultAuthorityLabel(item.authority, locale)}
@@ -299,7 +330,7 @@ export function UnifiedResultDetail({
           <div>
             <dt className="font-label-caps text-text-secondary">{text.occurredAt}</dt>
             <dd className="mt-1 font-data-mono text-xs text-text-primary">
-              <time dateTime={item.occurred_at}>{item.occurred_at}</time>
+              <time dateTime={item.occurred_at}>{formatDateTime(item.occurred_at, locale)}</time>
             </dd>
           </div>
           <div className="min-w-0">
@@ -366,7 +397,7 @@ export function UnifiedResultDetail({
           title={text.resource}
         />
         {envelope.resource &&
-        (envelope.read_status === "available" || envelope.read_status === "degraded") ? (
+        (envelope.read_status === "available" || envelope.read_status === "degraded" || hasSavedFailure) ? (
           <pre
             aria-label={text.resource}
             className={`max-h-[38rem] overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border-subtle bg-bg-base p-4 font-code-sm text-text-primary ${focusClass}`}

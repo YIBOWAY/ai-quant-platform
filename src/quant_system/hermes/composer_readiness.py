@@ -21,15 +21,13 @@ from dataclasses import dataclass
 from typing import Final
 
 from quant_system.config.settings import Settings
-from quant_system.hermes.candidate_admission_gate import (
-    current_candidate_decision,
-)
 from quant_system.hermes.command_ledger import command_ledger_schema_version
 from quant_system.hermes.connector_liveness import ConnectorLivenessAuthority
 from quant_system.hermes.dark_identity_profile import PLATFORM_WORKSPACE_ID
 from quant_system.hermes.local_trust import (
     trust_mode_active,
     trust_mode_requested_but_refused,
+    trust_runtime_digest,
 )
 from quant_system.hermes.release_runtime import (
     current_release_decision,
@@ -56,7 +54,6 @@ _CACHE_LOCK = threading.Lock()
 @dataclass(frozen=True)
 class _EffectiveAdmission:
     release_ready: bool
-    candidate_ready: bool
     connector_ready: bool
     ready: bool
     admission_mode: str
@@ -64,8 +61,6 @@ class _EffectiveAdmission:
     final_release_blockers: tuple[str, ...]
     release_stamp_id: str | None
     public_cutover_id: str | None
-    candidate_admission_id: str | None
-    candidate_admission_digest: str | None
     release_event_cursor: int
     connector_reason: str
     connector_worker_id: str | None
@@ -96,117 +91,59 @@ def _observe_effective_admission(settings: Settings) -> _EffectiveAdmission:
     local_trust_active = trust_mode_active(settings)
     final_blockers: list[str] = []
     release = None
-    release_workspace_id = settings.agent_v02_release.workspace_id
-    workspace_profile_ready = release_workspace_id == PLATFORM_WORKSPACE_ID
+    workspace_profile_ready = settings.agent_v02_release.workspace_id == PLATFORM_WORKSPACE_ID
     if not workspace_profile_ready:
         final_blockers.append("release_workspace_profile_mismatch")
     else:
         try:
             release = current_release_decision(settings)
             final_blockers.extend(str(item) for item in release.blockers)
-        except Exception:  # noqa: BLE001 - admission probes always fail closed
+        except Exception:  # noqa: BLE001 - readiness probes fail closed
             final_blockers.append("effective_release_gate_unavailable")
 
-    connector = None
-    release_ready = bool(release is not None and release.ready)
-    candidate = None
-    candidate_probe_failed = False
-    if workspace_profile_ready and (
-        settings.candidate_admission.enabled is True
-        or trust_mode_active(settings)
-    ):
-        try:
-            candidate = current_candidate_decision(
-                settings,
-                require_connector=True,
-            )
-        except Exception:  # noqa: BLE001 - candidate uncertainty closes writes
-            candidate = None
-            candidate_probe_failed = True
-
-    active_candidate = bool(
-        candidate is not None
-        and isinstance(candidate.admission_id, str)
-        and candidate.admission_id
-    )
-    admission_split_brain = release_ready and active_candidate
-    candidate_authority_unavailable = bool(
-        release_ready
-        and (
-            candidate_probe_failed
-            or (
-                candidate is not None
-                and "candidate_authority_unavailable" in candidate.blockers
-            )
-        )
-    )
-    candidate_ready = bool(
-        candidate is not None
-        and candidate.ready
-        and not admission_split_brain
-    )
+    release_ready = bool(release is not None and release.ready and not local_trust_active)
     admission_mode = (
-        "closed"
-        if admission_split_brain or candidate_authority_unavailable
-        else (
-            "release"
-            if release_ready
-            else (
-                "local_trust"
-                if candidate_ready and local_trust_active
-                else ("candidate" if candidate_ready else "closed")
-            )
-        )
+        "local_trust" if local_trust_active else ("release" if release_ready else "closed")
     )
     blockers: list[str] = []
-    if admission_split_brain:
-        blockers.append("candidate_release_split_brain")
-    if candidate_authority_unavailable:
-        blockers.append("candidate_authority_unavailable")
-    if not blockers:
-        if not workspace_profile_ready:
-            blockers.extend(final_blockers)
-        elif release_ready or candidate is None:
-            if not release_ready:
-                blockers.extend(final_blockers)
-            try:
-                platform_digest = runtime_identity_observation(settings).platform_runtime_digest
-                max_age = float(
-                    getattr(
-                        settings.agent_v02_release,
-                        "connector_heartbeat_max_age_seconds",
-                        30.0,
-                    )
-                )
-                connector = ConnectorLivenessAuthority(settings).probe(
-                    workspace_id=settings.agent_v02_release.workspace_id,
-                    expected_runtime_digest=platform_digest,
-                    max_heartbeat_age_seconds=max_age,
-                )
-                if connector.ready is not True:
-                    blockers.append(str(connector.reason))
-            except Exception:  # noqa: BLE001 - liveness uncertainty closes writes
-                blockers.append("connector_liveness_unavailable")
-        elif candidate is not None:
-            blockers.extend(str(item) for item in candidate.blockers)
-        else:
-            blockers.extend(final_blockers)
+    if not workspace_profile_ready or (not release_ready and not local_trust_active):
+        blockers.extend(final_blockers)
+    if local_trust_active:
+        if settings.local_mutation.enabled is not True:
+            blockers.append("local_mutation_disabled")
+        if settings.local_mutation.composer_open is not True:
+            blockers.append("local_composer_closed")
 
-    connector_ready = bool(
-        (connector is not None and connector.ready)
-        or (candidate is not None and candidate.connector_ready)
-    )
+    connector = None
+    if release_ready or local_trust_active:
+        try:
+            platform_digest = (
+                trust_runtime_digest(settings)
+                if local_trust_active
+                else runtime_identity_observation(settings).platform_runtime_digest
+            )
+            max_age = float(
+                getattr(
+                    settings.agent_v02_release,
+                    "connector_heartbeat_max_age_seconds",
+                    30.0,
+                )
+            )
+            connector = ConnectorLivenessAuthority(settings).probe(
+                workspace_id=settings.agent_v02_release.workspace_id,
+                expected_runtime_digest=platform_digest,
+                max_heartbeat_age_seconds=max_age,
+            )
+            if connector.ready is not True:
+                blockers.append(str(connector.reason))
+        except Exception:  # noqa: BLE001 - liveness uncertainty closes writes
+            blockers.append("connector_liveness_unavailable")
+
+    connector_ready = bool(connector is not None and connector.ready)
     ordered = tuple(_dedupe(blockers))
-    ready = (
-        (release_ready or candidate_ready)
-        and connector_ready
-        and not ordered
-        and not admission_split_brain
-        and not candidate_authority_unavailable
-    )
+    ready = (release_ready or local_trust_active) and connector_ready and not ordered
     return _EffectiveAdmission(
         release_ready=release_ready,
-        candidate_ready=candidate_ready,
         connector_ready=connector_ready,
         ready=ready,
         admission_mode=admission_mode,
@@ -222,24 +159,6 @@ def _observe_effective_admission(settings: Settings) -> _EffectiveAdmission:
             if release is not None and release.public_cutover_id is not None
             else None
         ),
-        candidate_admission_id=(
-            None
-            if admission_split_brain or candidate_authority_unavailable
-            else (
-                release.candidate_admission_id
-                if release_ready and release is not None
-                else (None if candidate is None else candidate.admission_id)
-            )
-        ),
-        candidate_admission_digest=(
-            None
-            if admission_split_brain or candidate_authority_unavailable
-            else (
-                release.candidate_admission_digest
-                if release_ready and release is not None
-                else (None if candidate is None else candidate.admission_digest)
-            )
-        ),
         release_event_cursor=(
             int(release.event_cursor)
             if release is not None
@@ -249,32 +168,20 @@ def _observe_effective_admission(settings: Settings) -> _EffectiveAdmission:
             else 0
         ),
         connector_reason=(
-            str(connector.reason)
-            if connector is not None
-            else (
-                "ready"
-                if candidate is not None and candidate.connector_ready
-                else "connector_liveness_unavailable"
-            )
+            str(connector.reason) if connector is not None else "connector_liveness_unavailable"
         ),
         connector_worker_id=(
             str(connector.worker_id)
             if connector is not None and connector.worker_id is not None
-            else (None if candidate is None else candidate.connector_worker_id)
+            else None
         ),
         connector_mode=(
-            str(connector.mode)
-            if connector is not None and connector.mode is not None
-            else (
-                "supervised_dispatch"
-                if candidate is not None and candidate.connector_ready
-                else None
-            )
+            str(connector.mode) if connector is not None and connector.mode is not None else None
         ),
         connector_heartbeat_age_seconds=(
             float(connector.heartbeat_age_seconds)
             if connector is not None and connector.heartbeat_age_seconds is not None
-            else (None if candidate is None else candidate.connector_heartbeat_age_seconds)
+            else None
         ),
     )
 
@@ -361,15 +268,10 @@ def _authority_readiness_projection(
         # diagnosable without opening a write path.
         "admission_workspace_id": PLATFORM_WORKSPACE_ID,
         "configured_release_workspace_id": (settings.agent_v02_release.workspace_id),
-        "candidate_admission_id": admission.candidate_admission_id,
-        "candidate_admission_digest": (admission.candidate_admission_digest),
-        "candidate_chat_write_ready": admission.candidate_ready,
         "release_event_cursor": admission.release_event_cursor,
         "mutation_enabled": mutation_on,
         "local_trust_mode": trust_mode_active(settings),
-        "local_trust_refused_blockers": list(
-            trust_mode_requested_but_refused(settings)
-        ),
+        "local_trust_refused_blockers": list(trust_mode_requested_but_refused(settings)),
         "local_chat_write_ready": admission.ready,
         "composer_write_ready": admission.ready,
         "public_write_authorized": admission.release_ready,
@@ -443,8 +345,7 @@ def composer_readiness_snapshot(
     )
     platform = _platform_blockers(admission)
     refused = [
-        f"local_trust_refused_{blocker}"
-        for blocker in trust_mode_requested_but_refused(settings)
+        f"local_trust_refused_{blocker}" for blocker in trust_mode_requested_but_refused(settings)
     ]
     if refused:
         platform = _dedupe([*platform, *refused])

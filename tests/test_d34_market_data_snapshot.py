@@ -13,10 +13,10 @@ class _Futu:
 
     def fetch_ohlcv(self, symbols, *, start, end, interval):
         assert symbols == ["SPY", "QQQ", "IWM", "DIA"]
-        assert (start, end, interval) == ("2026-01-01", "2026-01-03", "1d")
+        assert (start, end, interval) == ("2026-01-02", "2026-01-06", "1d")
         rows = []
         for offset, symbol in enumerate(symbols):
-            for day in (1, 2, 3):
+            for day in (2, 5, 6):
                 close = 100.0 + offset + day
                 rows.append(
                     {
@@ -30,7 +30,7 @@ class _Futu:
                         "provider": "futu",
                         "interval": "1d",
                         "event_ts": pd.Timestamp(f"2026-01-0{day}", tz="UTC"),
-                        "knowledge_ts": pd.Timestamp("2026-01-04", tz="UTC"),
+                        "knowledge_ts": pd.Timestamp("2026-01-07", tz="UTC"),
                         "price_adjustment": "qfq",
                     }
                 )
@@ -41,18 +41,18 @@ def test_futu_snapshot_is_canonical_digest_bound_parquet(tmp_path) -> None:
     first = create_market_data_snapshot(
         provider=_Futu(),
         symbols=("SPY", "QQQ", "IWM", "DIA"),
-        start="2026-01-01",
-        end="2026-01-03",
+        start="2026-01-02",
+        end="2026-01-06",
         output_root=tmp_path,
-        now=lambda: datetime(2026, 1, 4, tzinfo=UTC),
+        now=lambda: datetime(2026, 1, 7, tzinfo=UTC),
     )
     second = create_market_data_snapshot(
         provider=_Futu(),
         symbols=("SPY", "QQQ", "IWM", "DIA"),
-        start="2026-01-01",
-        end="2026-01-03",
+        start="2026-01-02",
+        end="2026-01-06",
         output_root=tmp_path,
-        now=lambda: datetime(2026, 1, 4, tzinfo=UTC),
+        now=lambda: datetime(2026, 1, 7, tzinfo=UTC),
     )
 
     assert second == first

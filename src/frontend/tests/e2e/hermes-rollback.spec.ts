@@ -48,16 +48,17 @@ test("@rollback desktop and mobile home entries are Dashboard; Hermes stays sepa
     await expect(
       page
         .getByTestId("desktop-sidebar")
-        .getByRole("link", { name: "Hermes 工作台", exact: true }),
+        .getByRole("link", { name: "Hermes 助手", exact: true }),
     ).toBeVisible();
 
     await page
       .getByTestId("desktop-sidebar")
-      .getByRole("link", { name: "Hermes 工作台", exact: true })
+      .getByRole("link", { name: "Hermes 助手", exact: true })
       .click();
     await expect(page).toHaveURL(/\/zh\/hermes$/);
-    await expect(page.getByRole("textbox", { name: "和 Hermes 对话" })).toBeDisabled();
-    await expect(page.getByText("Hermes 对话当前不可用")).toBeVisible();
+    await expect(page.locator("#hermes-chat-rail textarea:not([disabled])")).toHaveCount(0);
+    await expect(page.getByText("当前为只读模式", { exact: true })).toBeVisible();
+    await expect(page.getByTestId("hermes-capability-notice")).toHaveAttribute("data-read-state", "available");
 
     await page
       .getByTestId("desktop-sidebar")
@@ -71,7 +72,7 @@ test("@rollback desktop and mobile home entries are Dashboard; Hermes stays sepa
     // Back should settle once on Hermes; forward once on Dashboard.
     await page.goBack();
     await expect(page).toHaveURL(/\/zh\/hermes$/);
-    await expect(page.getByRole("textbox", { name: "和 Hermes 对话" })).toBeDisabled();
+    await expect(page.locator("#hermes-chat-rail textarea:not([disabled])")).toHaveCount(0);
 
     await page.goForward();
     await expect(page).toHaveURL(/\/zh\/?$/);
@@ -89,7 +90,7 @@ test("@rollback desktop and mobile home entries are Dashboard; Hermes stays sepa
     await expect(
       page
         .locator("#mobile-navigation")
-        .getByRole("link", { name: "Hermes 工作台", exact: true }),
+        .getByRole("link", { name: "Hermes 助手", exact: true }),
     ).toBeVisible();
   } finally {
     await context.close();

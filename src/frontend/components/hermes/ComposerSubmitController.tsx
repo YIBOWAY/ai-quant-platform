@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 import { ComposerDock } from "@/components/hermes/ComposerDock";
@@ -141,6 +141,7 @@ export function ComposerSubmitController({
   const [retryAttempt, setRetryAttempt] =
     useState<SessionBoundComposerAttempt | null>(null);
   const [newSessionAttemptActive, setNewSessionAttemptActive] = useState(false);
+  const [sessionNavigationPending, startSessionNavigation] = useTransition();
   const [acceptedDraftToken, setAcceptedDraftToken] = useState(0);
   const [sessionAssessment, setSessionAssessment] =
     useState<SessionWriteAssessment>({
@@ -153,6 +154,10 @@ export function ComposerSubmitController({
   const router = useRouter();
   const activeSession = useOptionalActiveHermesSession();
   const activeHermesSessionId = activeSession?.hermesSessionId;
+  const sessionIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    sessionIdRef.current = activeHermesSessionId?.trim() || null;
+  }, [activeHermesSessionId]);
   const bindSession = activeSession?.setActiveHermesSession;
   const setPendingUserText = activeSession?.setPendingUserText;
   const { state: followState, spine } = useWorkspaceFollow();
@@ -223,12 +228,12 @@ export function ComposerSubmitController({
       let selectedHermesSessionId: string | null = null;
       try {
         selectedHermesSessionId = resolveComposerHermesSessionId(
-          activeHermesSessionId,
+          sessionIdRef.current ?? activeHermesSessionId,
         );
         const receipt = await sendComposerTurn({
           prompt,
           clientActionId,
-          activeHermesSessionId,
+          activeHermesSessionId: sessionIdRef.current ?? activeHermesSessionId,
           signal: pollAbort.signal,
         });
         setStatusText(
@@ -437,15 +442,6 @@ export function ComposerSubmitController({
     ],
   );
 
-  const onSubmitPrompt = useCallback(
-    (prompt: string) => {
-      const attempt = createComposerAttempt(prompt);
-      setRetryAttempt(null);
-      return submitAttempt(attempt);
-    },
-    [submitAttempt],
-  );
-
   const onStartNewSession = useCallback(async () => {
     if (!networkSubmit) {
       throw new WorkspaceClientError(
@@ -469,6 +465,7 @@ export function ComposerSubmitController({
       const hermesSessionId = requireSameComposerHermesSession(
         managedSession.hermes_session_id,
       );
+      sessionIdRef.current = hermesSessionId;
       focusComposerWhenWritableRef.current = hermesSessionId;
       activateReadyManagedHermesSession({
         hermesSessionId,
@@ -476,7 +473,7 @@ export function ComposerSubmitController({
         bindHermesSession: (readySessionId) => {
           bindSession?.({ hermesSessionId: readySessionId });
         },
-        navigate: (href) => router.push(href),
+        navigate: (href) => startSessionNavigation(() => router.push(href)),
       });
       setPendingUserText?.(null);
       setRetryAttempt(null);
@@ -500,6 +497,18 @@ export function ComposerSubmitController({
     setPendingUserText,
   ]);
 
+  const onSubmitPrompt = useCallback(
+    async (prompt: string) => {
+      if (!sessionIdRef.current) {
+        await onStartNewSession();
+      }
+      const attempt = createComposerAttempt(prompt);
+      setRetryAttempt(null);
+      return submitAttempt(attempt);
+    },
+    [onStartNewSession, submitAttempt],
+  );
+
   const selectedSessionId = activeHermesSessionId?.trim() || null;
   const assessedState =
     sessionAssessment.sessionId === selectedSessionId
@@ -508,7 +517,12 @@ export function ComposerSubmitController({
   // An empty workbench must establish one explicit, durable Session first.
   // Otherwise a first-turn durable accept followed by response loss has no
   // exact Session identity on which to offer a safe same-action retry.
-  const sessionCanSubmit = assessedState === "writable";
+  const sessionCanSubmit = assessedState === "writable" && !sessionNavigationPending;
+  const canSubmitDraft = sessionCanSubmit || (assessedState === "empty" && !sessionNavigationPending);
+  const canTypeDraft =
+    assessedState === "writable" ||
+    assessedState === "empty" ||
+    assessedState === "checking";
   const baseControlsEnabled = networkSubmit && allowSubmit && !disabled;
   const retryEligible = canRetryComposerAttempt(
     retryAttempt,
@@ -534,7 +548,7 @@ export function ComposerSubmitController({
     submitAttempt,
   ]);
   const sessionStatusText =
-    assessedState === "checking"
+    assessedState === "checking" || sessionNavigationPending
       ? sessionCheckingText
       : assessedState === "empty"
         ? emptySessionText
@@ -551,16 +565,16 @@ export function ComposerSubmitController({
   return (
     <ComposerDock
       {...dockProps}
-      allowSubmit={allowSubmit}
+      allowSubmit={allowSubmit && canSubmitDraft}
       busy={busy}
-      disabled={disabled || !sessionCanSubmit}
+      disabled={disabled || !canTypeDraft}
       draftResetToken={acceptedDraftToken}
       locale={locale}
       onStartNewSession={
         baseControlsEnabled ? onStartNewSession : undefined
       }
       onSubmitPrompt={
-        baseControlsEnabled && sessionCanSubmit ? onSubmitPrompt : undefined
+        baseControlsEnabled && canSubmitDraft ? onSubmitPrompt : undefined
       }
       onRetry={
         retryEligible && baseControlsEnabled ? onRetry : undefined

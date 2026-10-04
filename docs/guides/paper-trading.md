@@ -79,6 +79,7 @@ footer，不属于 CLI/domain payload。
 - 如果账户里已经有真实 sleeve-owned lot，后端会拒绝这条旧路径并返回 `409 strategy_sleeve_positions_present`；这样它不会绕过 sleeve lot book 去卖策略袖珍仓的持仓。
 
 **Paper Strategy Sleeves 当前状态**：
+- 配置列表按条读取。代码版本已变化但历史原件仍完整的配置，会标注“历史配置，仅供查看”，不会出现在开仓选项中；原件缺失、损坏或身份不符的配置会单独列明原因，不影响其他配置显示。浏览不会改写旧版本或恢复执行资格；开仓、信号与成交仍使用严格校验。新建配置的重名检查可以读取完整历史名称，原件无法读取时明确拒绝核验，不会猜测名称是否可用。
 - 2026-06-26 已完成后端基础、API contract 与 daily signal 生成：版本化 `StrategyConfig`、`StrategySleeve`、`SleeveLot`、`StrategySignal`、本地存储、`sleeve_cash` 现金分配簿、`SleeveLotBook` lot 隔离，以及 `/api/paper/strategy-configs` / `/api/paper/strategy-sleeves` / `POST /api/paper/strategy-sleeves/{id}/signals`。
 - 2026-06-27 已完成 MVP-2 第一切片：`StrategyExecutionPlan` / `StrategyExecutionOrder` / `StrategyExecutionFill` 后端模型、`executions.jsonl` 本地持久化、`GET /api/paper/strategy-sleeves/{id}` 返回 executions，以及 `POST /api/paper/strategy-sleeves/{id}/executions` 从已生成 signal 创建 pending execution plan。
 - 2026-06-27 已完成 MVP-2 第二/第三切片：`paper_strategy_execution_service.py` 可以处理 next-open pending plan，按 sleeve cash/lot/source 隔离更新模拟账户；`POST /api/paper/strategy-sleeves/executions/process`、`quant-system paper strategies create-execution`、`quant-system paper strategies execute-pending` 已可手动触发。
@@ -97,7 +98,14 @@ footer，不属于 CLI/domain payload。
   不做恢复或 mutation，也不负责判断 missed。
 - 手动 signal CLI 已可用：`quant-system paper strategies generate-signal --sleeve <id>`。
 - `/paper-trading` 的「策略袖珍仓」工作区已可用：可以创建 strategy config，开设 `signal_only` 或 `allocated` sleeve，在页面内生成 sleeve signal，并暂停 / 恢复 / 停止 sleeve。新建 strategy config 的活跃名称必须唯一；同名历史配置会在下拉里追加短 id 区分。`allocated` 模式会从手动现金通道划拨模拟现金；`signal_only` 不移动现金。
-- 已有 Mac LaunchAgent 模板和 runbook，但尚未默认启用常驻自动成交调度。页面执行按钮和 CLI `execute-due` 都只是显式的一次性本地纸面动作：先从已生成 signal 创建 pending execution plan，再处理目标日期到期的 plan；不会复用旧全账户再平衡路径，也不会触碰真实交易接口。Mac 常驻方向会用 LaunchAgent 管本地服务/one-shot 命令，而不是新增真实交易通路。
+- 已启用模拟运行且绑定 digest 的 `automation_managed=true` 策略仓只由
+  `com.aiquant.d34-paper-cycle` 自然观察：周二至周六 06:15 生成信号，周一至周六
+  22:35 处理纸面成交（2026-09-11 修正；冬令时也是开盘后 5 分钟，夏令时从原槽后移 10 分钟）。
+  取前一真实 XNYS 交易日形成信号，执行仅限真实交易日；晚间不补造漏掉的晨间信号。
+  单个策略的源码失配或执行异常会在本次收据中报告 `partial_failed` 和对应策略/阶段，
+  不会绕过源码检查，也不阻断其他健康策略。运行日、取数失败日与实际成交日分别统计。
+  手工策略仓和页面执行按钮仍是显式 one-shot；FastAPI 不拥有 resident scheduler，
+  这条路径也不会复用旧全账户再平衡或触碰真实交易接口。
 - 设计与执行状态见 [Paper Strategy Sleeves MVP-1 设计](../design/paper_strategy_sleeves_plan.md)、[MVP-2 执行计划](../design/paper_strategy_sleeves_mvp2_plan.md)、[MVP-3 运维与自动化计划](../design/paper_strategy_sleeves_mvp3_operations_plan.md) 与 [执行说明](../execution/paper_strategy_sleeves.md)。
 
 **账户冻结开关**（`POST /api/paper/account/kill-switch`）：账户级冻结，**默认关闭**（账户可交易）。冻结后任何新单返回 409。这是一个**真正可切换**的开关，取代了旧版那个"点了只弹说明"的假按钮。
@@ -137,6 +145,14 @@ footer，不属于 CLI/domain payload。
 1. 在「策略再平衡」面板选策略、候选标的（如 `SPY,QQQ,IWM,DIA`）、`top_n`、`lookback`。
 2. 点「按策略再平衡」。若全部腿可成交则提交并提示成交数；若中止会提示原因（不动账户）。
 
+### 启用候选的模拟运行
+
+`/library` 中的“研究验证通过”不等于“可启用模拟运行”。候选还需通过 DSR、
+与现有策略的相关性和计入交易成本后的验证；未通过时页面只显示研究复核原因。
+点击“启用模拟运行”会从未被手工限价单预留的手工现金中分配 10,000 美元，
+创建独立策略仓并按每日信号运行；该动作本身不立即买入。若候选已有完整、可恢复的
+策略仓，页面显示“恢复模拟运行”，不会再分配一次资金。
+
 ### 冻结 / 解冻
 - 「账户冻结」面板一键切换。冻结时手动下单与再平衡都会被挡下。
 
@@ -153,6 +169,7 @@ footer，不属于 CLI/domain payload。
 | 总盈亏 pnl | 净值 − 初始本金（金额与百分比） |
 | 现金 cash | 账户总现金（包含待处理买入限价单已预留但尚未成交的现金） |
 | 可用现金 available_cash | 总现金扣除待处理买入限价单预留后的现金 |
+| 手工可用现金 manual_available_cash | 手工分区现金再扣除待处理手工买入限价单预留；手工下单和新策略仓分配以此为准 |
 | 持仓数 | 当前持有的不同标的数量 |
 | avg_cost 均价 | 建仓加权成本（含买入手续费），卖出时据此结算已实现盈亏 |
 | price_kind | 报价来源：`futu_snapshot`（实时）/ `last_close`（最近收盘）/ `avg_cost_fallback`（仅观察降级，不是市场价） |
@@ -168,7 +185,8 @@ footer，不属于 CLI/domain payload。
 
 - 暂不支持做空 / 杠杆（先支持多头 + 卖出已持有）；负持仓未开放。
 - 暂为单一账户（`default`）、单一币种（USD）；数据模型已为多账户预留 `account_id`。
-- 当前运行环境仍是默认 `file`；canonical 是已实现能力，不代表已经完成 live 切换。
+- 通用配置默认仍是 `file`；当前 Agent v0.2 本机栈显式使用 `canonical`。现场判断必须以
+  backend 运行环境、readiness 与 repository reconciliation 为准，不能从默认值推断。
 - 历史回放路径仍受全局 `QS_KILL_SWITCH` 约束，与账户级冻结互不相同，别混淆。
 - 期权 / 预测市场不纳入这个现货账户。
 

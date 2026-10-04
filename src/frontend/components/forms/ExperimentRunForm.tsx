@@ -3,6 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
+import { useMemo } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -13,23 +14,41 @@ import { buildExperimentRunPayload, type ExperimentProvider } from "@/lib/experi
 import { useIsHydrated } from "@/lib/hydration";
 import type { Locale } from "@/lib/locale";
 
-const experimentSchema = z.object({
-  symbols: z.string().min(1, "Enter at least two symbols"),
-  start: z.string().min(1, "Start date is required"),
-  end: z.string().min(1, "End date is required"),
-  provider: z.enum(["sample", "futu", "tiingo"]),
-  lookbacks: z.string().min(1, "Enter at least one lookback"),
-  top_ns: z.string().min(1, "Enter at least one Top N"),
-  walk_forward_enabled: z.boolean(),
-  walk_forward_train_bars: z.coerce.number().int().positive(),
-  walk_forward_validation_bars: z.coerce.number().int().positive(),
-  walk_forward_step_bars: z.coerce.number().int().positive(),
-  initial_cash: z.coerce.number().nonnegative(),
-  commission_bps: z.coerce.number().nonnegative(),
-  slippage_bps: z.coerce.number().nonnegative(),
-});
+export function buildExperimentSchema(locale: Locale) {
+  const text = copy[locale];
+  return z.object({
+    symbols: z.string().min(1, text.errorSymbolsRequired),
+    start: z.string().min(1, text.errorStartRequired),
+    end: z.string().min(1, text.errorEndRequired),
+    provider: z.enum(["sample", "futu", "tiingo"]),
+    lookbacks: z.string().min(1, text.errorLookbacksRequired),
+    top_ns: z.string().min(1, text.errorTopNsRequired),
+    walk_forward_enabled: z.boolean(),
+    walk_forward_train_bars: z.coerce
+      .number({ invalid_type_error: text.errorInvalidNumber })
+      .int(text.errorPositiveInteger)
+      .positive(text.errorPositiveInteger),
+    walk_forward_validation_bars: z.coerce
+      .number({ invalid_type_error: text.errorInvalidNumber })
+      .int(text.errorPositiveInteger)
+      .positive(text.errorPositiveInteger),
+    walk_forward_step_bars: z.coerce
+      .number({ invalid_type_error: text.errorInvalidNumber })
+      .int(text.errorPositiveInteger)
+      .positive(text.errorPositiveInteger),
+    initial_cash: z.coerce
+      .number({ invalid_type_error: text.errorInvalidNumber })
+      .nonnegative(text.errorNonNegativeNumber),
+    commission_bps: z.coerce
+      .number({ invalid_type_error: text.errorInvalidNumber })
+      .nonnegative(text.errorNonNegativeNumber),
+    slippage_bps: z.coerce
+      .number({ invalid_type_error: text.errorInvalidNumber })
+      .nonnegative(text.errorNonNegativeNumber),
+  });
+}
 
-type ExperimentFormValues = z.infer<typeof experimentSchema>;
+type ExperimentFormValues = z.infer<ReturnType<typeof buildExperimentSchema>>;
 
 const copy = {
   en: {
@@ -54,6 +73,14 @@ const copy = {
     running: "Running...",
     run: "Run Experiment",
     created: (id: string, count: number) => `Experiment created: ${id} (${count} runs)`,
+    errorSymbolsRequired: "Enter at least two symbols",
+    errorStartRequired: "Start date is required",
+    errorEndRequired: "End date is required",
+    errorLookbacksRequired: "Enter at least one lookback",
+    errorTopNsRequired: "Enter at least one Top N",
+    errorInvalidNumber: "Enter a valid number",
+    errorPositiveInteger: "Enter a positive integer",
+    errorNonNegativeNumber: "Enter a non-negative number",
   },
   zh: {
     title: "运行实验",
@@ -77,6 +104,14 @@ const copy = {
     running: "运行中...",
     run: "运行实验",
     created: (id: string, count: number) => `实验已创建：${id}（${count} 次运行）`,
+    errorSymbolsRequired: "请至少输入两个标的",
+    errorStartRequired: "请选择开始日期",
+    errorEndRequired: "请选择结束日期",
+    errorLookbacksRequired: "请至少输入一个回看窗口",
+    errorTopNsRequired: "请至少输入一个 Top N",
+    errorInvalidNumber: "请输入有效数字",
+    errorPositiveInteger: "请输入正整数",
+    errorNonNegativeNumber: "请输入不小于 0 的数字",
   },
 } as const;
 
@@ -101,7 +136,7 @@ export function ExperimentRunForm({ locale = "en" }: { locale?: Locale }) {
   const router = useRouter();
   const isHydrated = useIsHydrated();
   const form = useForm<ExperimentFormValues>({
-    resolver: zodResolver(experimentSchema),
+    resolver: useMemo(() => zodResolver(buildExperimentSchema(locale)), [locale]),
     defaultValues: DEFAULTS,
   });
   const mutation = useMutation({

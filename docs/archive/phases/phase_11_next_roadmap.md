@@ -17,10 +17,10 @@ Phase 12 已经完成了两件关键事：
 对应文档：
 
 - [phase_12_design_spec.md](phase_12_design_spec.md)
-- [architecture/phase_12_architecture.md](architecture/phase_12_architecture.md)
-- [execution/phase_12_execution.md](execution/phase_12_execution.md)
-- [learning/phase_12_learning.md](learning/phase_12_learning.md)
-- [delivery/phase_12_delivery.md](delivery/phase_12_delivery.md)
+- [architecture/phase_12_architecture.md](../../architecture/phase_12_architecture.md)
+- [execution/phase_12_execution.md](../../execution/phase_12_execution.md)
+- [learning/phase_12_learning.md](../../learning/phase_12_learning.md)
+- [delivery/phase_12_delivery.md](../../delivery/phase_12_delivery.md)
 
 ## 后续建议
 

@@ -190,9 +190,12 @@ def test_hermes_e2e_fixture_covers_all_read_only_artifact_kinds() -> None:
         ]
         assert data["proposal_only"] is True
         assert data["trading_allowed"] is False
-    assert 'page.goto("/zh/hermes")' in spec
-    for visible_text in ("周报复盘", "机会复盘", "自动化状态"):
-        assert visible_text in spec
+    assert 'page.goto("/zh/hermes",' in spec
+    assert "for (const item of seeded.items)" in spec
+    assert "expect(shown.id).toBe(item.id)" in spec
+    assert "expect(shown.kind).toBe(item.kind)" in spec
+    assert "expect(shown.data).toEqual(expectedData)" in spec
+    assert "expect(mutations).toEqual([])" in spec
     assert "toBeDisabled()" in spec
 
 

@@ -72,11 +72,6 @@ function priorFromState(state: LoadState): PriorBundle | undefined {
   return undefined;
 }
 
-function pageScrollRegion(): HTMLElement | null {
-  if (typeof document === "undefined") return null;
-  return document.querySelector<HTMLElement>("[data-page-scroll-region]");
-}
-
 /**
  * L3a + L3b: workbench-local transcript bound by active hermes_session_id.
  * Loads via same-origin messages BFF; soft-fails without breaking composer.
@@ -96,6 +91,7 @@ export function WorkbenchTranscriptPanel({
   const [state, setState] = useState<LoadState>({ kind: "idle" });
   const [phase, setPhase] = useState<AssistantPhase>("idle");
   const scrollRef = useRef<HTMLElement | null>(null);
+  const panelRef = useRef<HTMLElement | null>(null);
   const stickToBottomRef = useRef(true);
   const lastMessageKeyRef = useRef<string>("");
   const lastDirtySeqRef = useRef<number>(-1);
@@ -361,7 +357,7 @@ export function WorkbenchTranscriptPanel({
   // Scrolling belongs to the page-level region now, so stick-to-bottom binds to
   // the nearest [data-page-scroll-region] ancestor instead of an inner box.
   useEffect(() => {
-    const el = pageScrollRegion();
+    const el = panelRef.current?.closest<HTMLElement>("[data-page-scroll-region]") ?? null;
     scrollRef.current = el;
     if (!el) return;
     const onScroll = () => {
@@ -421,6 +417,7 @@ export function WorkbenchTranscriptPanel({
 
   return (
     <section
+      ref={panelRef}
       aria-label={isZh ? "对话记录" : "Conversation transcript"}
       className="space-y-2"
       data-hermes-workbench-transcript

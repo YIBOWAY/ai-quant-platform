@@ -71,9 +71,13 @@ function daysUntil(dateString: string) {
   today.setHours(0, 0, 0, 0);
   const target = new Date(`${dateString}T00:00:00`);
   if (Number.isNaN(target.getTime())) {
-    return 30;
+    throw new Error("invalid buy-side scenario input");
   }
-  return Math.max(0, Math.round((target.getTime() - today.getTime()) / 86_400_000));
+  const days = Math.round((target.getTime() - today.getTime()) / 86_400_000);
+  if (days < 0) {
+    throw new Error("invalid buy-side scenario input");
+  }
+  return days;
 }
 
 function scenarioDaysFromHorizon(dateString: string) {
@@ -83,9 +87,14 @@ function scenarioDaysFromHorizon(dateString: string) {
 }
 
 function numberList(value: string) {
-  const parsed = value
-    .split(",")
-    .map((item) => Number(item.trim()))
-    .filter((item) => Number.isFinite(item));
-  return parsed.length ? parsed : [0];
+  const tokens = value.split(",").map((item) => item.trim());
+  const parsed = tokens.map((item) => Number(item));
+  if (
+    tokens.length === 0 ||
+    tokens.some((item) => item.length === 0) ||
+    parsed.some((item) => !Number.isFinite(item))
+  ) {
+    throw new Error("invalid buy-side scenario input");
+  }
+  return parsed;
 }

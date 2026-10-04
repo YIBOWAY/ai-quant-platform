@@ -1,22 +1,25 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, BarChart3, Grid3X3, RefreshCw } from "lucide-react";
+import { AlertTriangle, BarChart3, ChevronDown, Grid3X3, RefreshCw } from "lucide-react";
+import Link from "next/link";
+import { MarketPulse, watchPeriodLabels, type WatchPeriod } from "@/components/watch/MarketPulse";
+import { watchHref } from "@/lib/watchPanes";
+import { MarketRiskPanel } from "@/components/watch/MarketRiskPanel";
+import { MarketAssessmentView } from "@/components/watch/MarketAssessmentView";
 
 import {
   getMarketCrossSectionSafe,
   type MarketCrossSectionProvenance,
   type MarketCrossSectionResponse,
-  type MarketCrossSectionRow,
 } from "@/lib/marketCrossSection";
 import type { Locale } from "@/lib/locale";
 
 const copy = {
   en: {
-    eyebrow: "MARKET CROSS-SECTION",
-    title: "Market Cross-Section",
-    subtitle:
-      "Read-only heatmap of a preset symbol universe over strict Futu 1d QFQ bars. No valuation estimates, no sample fallback.",
+    eyebrow: "RELATIVE STRENGTH",
+    title: "US Risk",
+    subtitle: "Assess valuation, macro conditions and market pressure, with clear evidence and conditional suggestions.",
     loading: "Reading cross-section from Futu OpenD…",
     unavailable: "Market cross-section is unavailable",
     unavailableHint: "No substitute curve was used. Restore Futu OpenD and retry.",
@@ -26,11 +29,11 @@ const copy = {
     live: "live Futu",
     asOf: "as of",
     timezone: "US session",
-    heatmap: "YTD heatmap",
-    heatmapHint: "Color and order are calculated from current YTD returns.",
+    heatmap: "Return heatmap",
+    heatmapHint: "Color and ranking follow the selected comparison period.",
     table: "Cross-section table",
-    tableHint: "Ranked by current YTD return.",
-    basket: "Basket",
+    tableHint: "Click a symbol to inspect its price and volume. Weekly and monthly direction reveal persistence or reversal.",
+    basket: "Compare",
     aiWatch: "AI / semis watch",
     usSectors: "US sector ETFs",
     week: "Week",
@@ -42,9 +45,9 @@ const copy = {
     readOnly: "Read-only market research. Not investment advice and no trading action is available here.",
   },
   zh: {
-    eyebrow: "市场横截面",
-    title: "市场横截面",
-    subtitle: "基于严格 Futu 日线的预设标的篮子只读热力图；不提供估值估算，失败不回退 sample。",
+    eyebrow: "近期强弱与轮动",
+    title: "美股风险",
+    subtitle: "现在贵不贵，风险在累积还是缓和？结合估值、宏观与市场压力，给出有依据的判断。",
     loading: "正在从 Futu OpenD 读取横截面…",
     unavailable: "市场横截面暂不可用",
     unavailableHint: "未使用替代曲线。请恢复 Futu OpenD 后重试。",
@@ -54,11 +57,11 @@ const copy = {
     live: "实时 Futu",
     asOf: "截至",
     timezone: "美股时段",
-    heatmap: "YTD 热力图",
-    heatmapHint: "颜色与顺序由当前 YTD 收益动态计算。",
+    heatmap: "收益热力图",
+    heatmapHint: "颜色与排名跟随上方选择的比较周期。",
     table: "横截面表",
-    tableHint: "按当前 YTD 收益排名。",
-    basket: "篮子",
+    tableHint: "点击代码查看量价；周、月同向可继续跟踪，方向相反时先核对反弹或回落。",
+    basket: "观察范围",
     aiWatch: "AI / 半导体关注",
     usSectors: "美股板块 ETF",
     week: "周",
@@ -66,9 +69,14 @@ const copy = {
     ytd: "YTD",
     volatility: "63 日波动",
     drawdown: "YTD 最大回撤",
-    methodology: "口径",
+    methodology: "计算方法",
     readOnly: "仅供只读市场研究，不构成投资建议，本页不提供任何交易操作。",
   },
+} as const;
+
+export const marketCrossSectionTitle = {
+  en: copy.en.title,
+  zh: copy.zh.title,
 } as const;
 
 export type MarketCrossSectionBasket = "ai_watch" | "us_sectors";
@@ -112,8 +120,17 @@ export function MarketCrossSectionView({
     setBasket(next);
   };
 
-  if (error) {
-    return (
+  return <div className="h-full overflow-y-auto bg-bg-base text-text-primary">
+    <header className="px-5 pb-4 pt-7 lg:px-8"><p className="text-xs tracking-wide text-[var(--color-hermes)]">{locale === "zh" ? "估值与市场风险" : "VALUATION & MARKET RISK"}</p><h1 className="mt-2 font-headline-xl">{copy[locale].title}</h1><p className="mt-3 max-w-3xl text-sm leading-6 text-text-secondary">{copy[locale].subtitle}</p></header>
+    <div className="px-5 pb-8 lg:px-8"><MarketAssessmentView scope="us" locale={locale} /></div>
+    <details className="group/market-details mx-5 pb-8 lg:mx-8">
+      <summary className="app-touch-target mb-5 flex cursor-pointer list-none items-center gap-3 rounded-lg border border-border-subtle bg-bg-surface px-4 py-4 text-sm text-text-primary transition-colors hover:border-[var(--color-hermes)] hover:bg-bg-surface-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-hermes)] [&::-webkit-details-marker]:hidden">
+        <BarChart3 size={18} className="shrink-0 text-[var(--color-hermes)]" aria-hidden="true" />
+        <span className="font-medium">{locale === "zh" ? "价格、波动与板块对照" : "Price, volatility and sector details"}</span>
+        <span className="ml-auto shrink-0 text-xs text-[var(--color-hermes)]"><span className="group-open/market-details:hidden">{locale === "zh" ? "展开" : "Expand"}</span><span className="hidden group-open/market-details:inline">{locale === "zh" ? "收起" : "Collapse"}</span></span>
+        <ChevronDown size={17} className="shrink-0 transition-transform group-open/market-details:rotate-180 motion-reduce:transition-none" aria-hidden="true" />
+      </summary>
+      {error ? (
       <MarketCrossSectionUnavailable
         locale={locale}
         message={error}
@@ -123,17 +140,15 @@ export function MarketCrossSectionView({
           setRequestId((value) => value + 1);
         }}
       />
-    );
-  }
-  if (!data) return <MarketCrossSectionLoading locale={locale} />;
-  return (
+    ) : !data ? <MarketCrossSectionLoading locale={locale} /> : (
     <MarketCrossSectionDashboard
       basket={basket}
       data={data}
       locale={locale}
       onBasketChange={handleBasketChange}
     />
-  );
+    )}</details>
+  </div>;
 }
 
 export function MarketCrossSectionDashboard({
@@ -148,9 +163,10 @@ export function MarketCrossSectionDashboard({
   onBasketChange?: (basket: MarketCrossSectionBasket) => void;
 }) {
   const text = copy[locale];
+  const [period, setPeriod] = useState<WatchPeriod>("week_pct");
   const ranked = useMemo(
-    () => [...data.rows].sort((left, right) => left.rank - right.rank),
-    [data.rows],
+    () => [...data.rows].sort((left, right) => right.returns[period] - left.returns[period]),
+    [data.rows, period],
   );
 
   return (
@@ -158,12 +174,11 @@ export function MarketCrossSectionDashboard({
       <header className="border-b border-border-subtle px-4 pb-6 pt-6 lg:px-8">
         <div className="flex flex-wrap items-end justify-between gap-5">
           <div>
-            <div className="flex items-center gap-2 font-label-caps text-accent-success">
+            <div className="flex items-center gap-2 font-label-caps text-warning">
               <Grid3X3 size={15} />
               <span>{text.eyebrow}</span>
             </div>
-            <h1 className="mt-2 font-headline-xl">{text.title}</h1>
-            <p className="mt-2 max-w-3xl font-body-sm text-text-secondary">{text.subtitle}</p>
+            <h2 className="mt-2 text-xl font-semibold">{locale === "zh" ? "价格与板块比较" : "Price and sector comparison"}</h2>
           </div>
           <ProvenanceBadges
             asOf={data.as_of}
@@ -188,9 +203,10 @@ export function MarketCrossSectionDashboard({
               basket === id && data.basket_label ? data.basket_label[locale] : fallback;
             return (
               <button
-                className={`rounded-full border px-3 py-1.5 font-semibold transition ${
+                aria-pressed={basket === id}
+                className={`rounded-md border px-3 py-2 font-semibold transition ${
                   basket === id
-                    ? "border-accent-success/60 bg-accent-success/10 text-accent-success"
+                    ? "border-warning/40 bg-warning/10 text-warning"
                     : "border-border-subtle text-text-secondary hover:border-white/25"
                 }`}
                 data-basket-pill={id}
@@ -206,7 +222,11 @@ export function MarketCrossSectionDashboard({
       </header>
 
       <div className="space-y-6 px-4 py-6 lg:px-8">
-        <section className="rounded-2xl border border-border-subtle bg-bg-surface p-4 lg:p-5">
+        <MarketRiskPanel risk={data.risk_observations} locale={locale} />
+        <MarketPulse rows={data.rows} period={period} onPeriodChange={setPeriod} locale={locale} />
+        <details className="border-b border-border-subtle pb-5">
+          <summary className="cursor-pointer text-sm text-text-secondary">{text.heatmap} · {watchPeriodLabels[locale][period]}</summary>
+          <div className="pt-4">
           <ChartHeader
             asOf={data.as_of}
             icon={<Grid3X3 size={17} />}
@@ -217,29 +237,32 @@ export function MarketCrossSectionDashboard({
             timezone={data.timezone}
           />
           <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {ranked.map((row) => (
-              <div
-                className="rounded-xl border border-white/10 p-4"
+            {ranked.map((row, index) => (
+              <Link
+                prefetch={false}
+                className="rounded-md border border-white/10 p-3 transition hover:border-warning/50"
                 data-market-card={row.symbol}
                 key={row.symbol}
-                style={{ backgroundColor: heatColor(row.returns.ytd_pct) }}
+                href={watchHref("quotes", locale, { symbol: row.symbol, provider: "futu" })}
+                style={{ backgroundColor: heatColor(row.returns[period]) }}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="font-mono text-xs text-white/65">#{row.rank}</div>
+                    <div className="font-mono text-xs text-white/65">#{index + 1}</div>
                     <div className="mt-1 text-base font-semibold text-white">{row.symbol}</div>
                   </div>
                 </div>
-                <div className="mt-6 font-data-mono text-2xl font-semibold text-white">
-                  {formatPct(row.returns.ytd_pct)}
+                <div className="mt-3 font-data-mono text-xl font-semibold text-white">
+                  {formatPct(row.returns[period])}
                 </div>
-                <div className="mt-1 text-[11px] uppercase tracking-wider text-white/60">YTD</div>
-              </div>
+                <div className="mt-1 text-[11px] text-white/60">{watchPeriodLabels[locale][period]}</div>
+              </Link>
             ))}
           </div>
-        </section>
+          </div>
+        </details>
 
-        <section className="rounded-2xl border border-border-subtle bg-bg-surface p-4 lg:p-5">
+        <section>
           <ChartHeader
             asOf={data.as_of}
             icon={<BarChart3 size={17} />}
@@ -254,7 +277,7 @@ export function MarketCrossSectionDashboard({
               <thead className="border-b border-border-subtle font-label-caps text-text-secondary">
                 <tr>
                   <th className="py-3">#</th>
-                  <th>Symbol</th>
+                  <th>{locale === "zh" ? "标的" : "Symbol"}</th>
                   <th>{text.week}</th>
                   <th>{text.month}</th>
                   <th>{text.ytd}</th>
@@ -263,10 +286,10 @@ export function MarketCrossSectionDashboard({
                 </tr>
               </thead>
               <tbody>
-                {ranked.map((row) => (
-                  <tr className="border-b border-border-subtle/60" key={row.symbol}>
-                    <td className="py-3 font-mono text-text-secondary">{row.rank}</td>
-                    <td className="font-semibold text-text-primary">{row.symbol}</td>
+                {ranked.map((row, index) => (
+                  <tr className="border-b border-border-subtle/60 hover:bg-bg-surface" key={row.symbol}>
+                    <td className="py-3 font-mono text-text-secondary">{index + 1}</td>
+                    <td className="font-semibold text-text-primary"><Link prefetch={false} className="inline-block py-2 hover:text-warning" href={watchHref("quotes", locale, { symbol: row.symbol, provider: "futu" })}>{row.symbol} ↗</Link></td>
                     <MetricCell value={row.returns.week_pct} />
                     <MetricCell value={row.returns.month_pct} />
                     <MetricCell value={row.returns.ytd_pct} />
@@ -390,7 +413,7 @@ function ProvenanceBadges({
   const text = copy[locale];
   return (
     <div className={`flex flex-wrap items-center gap-2 ${compact ? "text-[10px]" : "text-xs"}`}>
-      <span className="rounded-full border border-accent-success/40 bg-accent-success/10 px-2.5 py-1 font-semibold text-accent-success">
+      <span className="font-medium text-text-secondary">
         {text.real}
       </span>
       {provenance ? (

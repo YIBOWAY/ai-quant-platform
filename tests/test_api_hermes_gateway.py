@@ -82,6 +82,30 @@ class _NoSessionResourcesClient(_FakeHermesReadClient):
         raise AssertionError("session endpoint must not be called without capability")
 
 
+@pytest.mark.parametrize("source", ["discord", "cli"])
+def test_official_native_contract_never_advertises_exact_message_fork(source: str) -> None:
+    class ExternalClient(_FakeHermesReadClient):
+        def session_detail(self, session_id: str) -> dict:
+            return {**super().session_detail(session_id), "source": source}
+
+    settings = Settings(
+        local_mutation=LocalMutationSettings(enabled=False, composer_open=False),
+        hermes_gateway=HermesGatewaySettings(
+            enabled=True, api_key_file=None, api_contract="official-http-v1"
+        ),
+    )
+    app = create_app(settings=settings, bind_address="127.0.0.1")
+    app.dependency_overrides[get_hermes_api_read_client] = ExternalClient
+    with TestClient(app, base_url="http://127.0.0.1") as client:
+        response = client.get("/api/hermes/sessions/s-1")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["read_status"] == "available"
+    assert payload["session"]["source"] == source
+    assert payload["fork_context"]["eligible"] is False
+    assert payload["fork_context"]["reason_code"] == "native_exact_fork_unavailable"
+
+
 def test_gateway_endpoints_fail_closed_when_integration_disabled() -> None:
     settings = Settings(
         local_mutation=LocalMutationSettings(enabled=False, composer_open=False),

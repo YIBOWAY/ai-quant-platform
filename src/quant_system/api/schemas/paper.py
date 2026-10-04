@@ -159,8 +159,21 @@ class StrategyConfigMutationResponse(BaseModel):
     config: StrategyConfigResponse
 
 
+class StrategyConfigCatalogEntryResponse(StrategyConfigResponse):
+    # Source compatibility is not permission to fund or execute.
+    source_status: Literal["compatible", "historical_mismatch"]
+    source_error: str | None = None
+
+
+class StrategyConfigUnavailableResponse(BaseModel):
+    strategy_config_id: str
+    version: int | None = None
+    reason: str
+
+
 class StrategyConfigsResponse(BaseModel):
-    configs: list[StrategyConfigResponse]
+    configs: list[StrategyConfigCatalogEntryResponse]
+    unavailable_configs: list[StrategyConfigUnavailableResponse] = Field(default_factory=list)
 
 
 class StrategySleeveCreateRequest(BaseModel):
@@ -180,6 +193,7 @@ class StrategySleeveDetailResponse(BaseModel):
     lots: list[SleeveLotResponse]
     signals: list[StrategySignalResponse]
     executions: list[StrategyExecutionPlanResponse] = Field(default_factory=list)
+    runtime_status: dict[str, Any] | None = None
 
 
 class StrategySleeveStopRequest(BaseModel):
@@ -249,6 +263,72 @@ class StrategyOpsStatusResponse(BaseModel):
     status: StrategyOpsStatusPayload
 
 
+class ObservationYesterdayPayload(BaseModel):
+    date: str
+    status: str
+    label_zh: str
+    counts_as_observation_day: bool
+    is_no_signal: bool
+    reason: str | None = None
+
+
+class ObservationCalendarResponse(BaseModel):
+    yesterday: ObservationYesterdayPayload
+    expected_nights: list[str]
+    recorded_nights: list[str]
+    absent_nights: list[str]
+    pending_nights: list[str]
+    observation_day_count: int
+    calendar_run_day_count: int
+    data_unavailable_day_count: int
+    filled_day_count: int
+    filled_nights: list[str]
+
+
+class HungSleeveEffectPoint(BaseModel):
+    date: str
+    sleeve_equity: float | None = None
+    sleeve_pct: float | None = None
+    spy_close: float | None = None
+    spy_pct: float | None = None
+    allocated_cash: float | None = None
+    net_profit_usd: float | None = None
+    covered_sleeve_count: int | None = None
+    filled: bool | None = None
+
+
+class HungSleeveEffectResponse(BaseModel):
+    hung_count: int
+    observation_day_count: int
+    empty: bool
+    empty_label_zh: str | None = None
+    sleeve_return_pct: float | None = None
+    spy_return_pct: float | None = None
+    sleeve_equity: float | None = None
+    sleeve_equity_status: Literal["empty", "available", "unavailable"]
+    sleeve_equity_reason: str | None = None
+    spy_status: Literal["empty", "available", "unavailable"]
+    spy_reason: str | None = None
+    price_source: str | None = None
+    turnover: float | None = None
+    cost_drag_pct: float | None = None
+    series: list[HungSleeveEffectPoint]
+    as_of: str | None = None
+    requested_as_of: str | None = None
+    last_fill_date: str | None = None
+    valuation_day_count: int = 0
+    covered_sleeve_count: int | None = None
+    allocated_cash: float | None = None
+    current_allocated_cash: float | None = None
+    net_profit_usd: float | None = None
+    return_method: str = "unavailable"
+    return_reason: str | None = None
+    observation_return_pct: float | None = None
+    valuation_status: Literal["complete", "partial", "unavailable"] = "unavailable"
+    missing_valuation_dates: list[str] = Field(default_factory=list)
+    allocation_time_source: str | None = None
+
+
 def _validate_iso_date(value: str | None) -> str | None:
     if value is None:
         return None
@@ -296,6 +376,8 @@ class PaperRunResponse(BaseModel):
     final_equity: float
     execution_status: str
     execution_note: str | None = None
+    commission_bps: float = 1.0
+    slippage_bps: float = 5.0
     request: PaperRunRequestEchoResponse
     paths: PaperRunPathsResponse
 
@@ -364,7 +446,12 @@ class PaperAccountResponse(BaseModel):
     cash: float
     reserved_cash: float = 0.0
     available_cash: float
+    manual_available_cash: float
     equity: float
+    valuation_status: Literal["complete", "incomplete"] = "complete"
+    market_equity: float | None = None
+    cost_basis_reference_equity: float | None = None
+    unpriced_symbols: list[str] = Field(default_factory=list)
     realized_pnl: float
     unrealized_pnl: float
     pnl_abs: float

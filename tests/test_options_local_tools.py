@@ -4,6 +4,7 @@ import pytest
 
 from quant_system.options.local_research import (
     LocalWatchlistStore,
+    _normalize_iv,
     build_bull_put_spread_signal,
     build_hedge_advisor,
     compute_fear_score,
@@ -222,6 +223,96 @@ def test_build_strategy_from_template_uses_supplied_strikes() -> None:
     assert result["max_profit"] is not None
 
 
+@pytest.mark.parametrize("raw, expected", [
+    (0.0, None),
+    (0, None),
+    (-0.1, None),
+    (float("inf"), None),
+    (float("-inf"), None),
+    (float("nan"), None),
+    (None, None),
+    (0.5, 0.5),
+    (1.25, 1.25),
+])
+def test_normalize_iv_rejects_unusable_values(raw, expected) -> None:
+    assert _normalize_iv(raw) == expected
+
+
+def test_rank_option_contracts_does_not_score_zero_iv_as_cheap_premium() -> None:
+    result = rank_option_contracts(
+        contracts=[
+            {
+                "symbol": "ZERO_IV",
+                "option_type": "PUT",
+                "strike": 95,
+                "bid": 1.0,
+                "ask": 1.1,
+                "volume": 600,
+                "open_interest": 1200,
+                "implied_volatility": 0.0,
+                "delta": -0.55,
+            },
+            {
+                "symbol": "CHEAP_5",
+                "option_type": "PUT",
+                "strike": 95,
+                "bid": 1.0,
+                "ask": 1.1,
+                "volume": 600,
+                "open_interest": 1200,
+                "implied_volatility": 0.05,
+                "delta": -0.55,
+            },
+        ],
+        spot=100,
+        objective="buy_premium",
+    )
+
+    ranked = {item["symbol"]: item for item in result["ranked_contracts"]}
+    # A zero IV must not be scored as the cheapest possible premium (100).
+    assert result["ranked_contracts"][0]["symbol"] == "CHEAP_5"
+    assert ranked["ZERO_IV"]["implied_volatility"] is None
+    assert ranked["ZERO_IV"]["subscores"]["iv_value"] == pytest.approx(35.0)
+    assert ranked["CHEAP_5"]["subscores"]["iv_value"] == pytest.approx(90.0)
+    assert "invalid_iv" in ranked["ZERO_IV"]["warnings"]
+    assert "missing_iv" not in ranked["ZERO_IV"]["warnings"]
+
+
+def test_rank_option_contracts_flags_absent_iv_as_missing() -> None:
+    result = rank_option_contracts(
+        contracts=[
+            {
+                "symbol": "NO_IV",
+                "option_type": "PUT",
+                "strike": 95,
+                "bid": 1.0,
+                "ask": 1.1,
+                "volume": 600,
+                "open_interest": 1200,
+                "delta": -0.55,
+            },
+        ],
+        spot=100,
+        objective="buy_premium",
+    )
+
+    warnings = result["ranked_contracts"][0]["warnings"]
+    assert "missing_iv" in warnings
+    assert "invalid_iv" not in warnings
+
+
+def test_iv_rank_dashboard_treats_zero_current_iv_as_unavailable() -> None:
+    result = compute_iv_rank_dashboard(
+        ticker="AAPL",
+        current_iv=0.0,
+        history=[0.3, 0.4, 0.5],
+    )
+
+    assert result["current_iv"] is None
+    assert result["iv_rank"] is None
+    assert result["zone"] == "unknown"
+
+
 def test_rank_option_contracts_prefers_liquid_contract_for_sell_premium() -> None:
     result = rank_option_contracts(
         contracts=[
@@ -341,6 +432,21 @@ def test_research_dashboards_compute_fear_iv_sentiment_and_activity() -> None:
     )
     assert sentiment["regime"] in {"neutral", "risk_off"}
 
+
+def test_compute_market_sentiment_zero_inputs_is_insufficient() -> None:
+    with pytest.raises(ValueError, match="insufficient_inputs"):
+        compute_market_sentiment()
+
+
+def test_compute_market_sentiment_all_none_is_insufficient() -> None:
+    with pytest.raises(ValueError, match="insufficient_inputs"):
+        compute_market_sentiment(
+            vix=None,
+            put_call_ratio=None,
+            advance_decline_ratio=None,
+            percent_above_200dma=None,
+        )
+
     activity = detect_unusual_options_activity(
         [
             {"symbol": "QUIET", "volume": 20, "open_interest": 400, "bid": 0.4, "ask": 0.5},
@@ -367,6 +473,95 @@ def test_hedge_advisor_returns_research_only_structures() -> None:
     assert result["situation"] == "gain_protection"
     assert {item["structure"] for item in result["structures"]} == {"long_put", "collar"}
     assert all("order" not in item for item in result["structures"])
+
+
+def _hedge_contracts():
+    return [
+        {"symbol": "AAPL.P", "option_type": "PUT", "strike": 90, "bid": 1.0, "ask": 1.2},
+        {"symbol": "AAPL.C", "option_type": "CALL", "strike": 110, "bid": 0.5, "ask": 0.7},
+    ]
+
+
+@pytest.mark.parametrize("shares", [0, -1, 1.5, True])
+def test_hedge_rejects_nonpositive_or_fractional_share_counts(shares):
+    with pytest.raises(ValueError, match="positive_integer_shares_required"):
+        build_hedge_advisor(ticker="AAPL", shares=shares, cost_basis=100, spot=100,
+                           purpose="protect", contracts=_hedge_contracts())
+
+
+@pytest.mark.parametrize("shares, puts, calls", [(50, 1, 0), (100, 1, 1), (250, 3, 2), (300, 3, 3)])
+def test_hedge_leg_counts_and_costs_match_actual_whole_contract_sizes(shares, puts, calls):
+    result = build_hedge_advisor(ticker="AAPL", shares=shares, cost_basis=100, spot=100,
+                                purpose="protect", contracts=_hedge_contracts())
+    structures = {row["structure"]: row for row in result["structures"]}
+    protection = structures["long_put"]
+    assert protection["put_contracts"] == puts
+    assert protection["estimated_debit_per_contract"] == pytest.approx(110)
+    assert protection["estimated_debit"] == pytest.approx(110 * puts)
+    if calls == 0:
+        assert "collar" not in structures
+    else:
+        collar = structures["collar"]
+        assert collar["put_contracts"] == puts
+        assert collar["call_contracts"] == calls
+        assert collar["call_covered_shares"] == calls * 100 <= shares
+        assert collar["additional_put_contracts"] == puts - calls
+        assert collar["estimated_net_debit_per_pair"] == pytest.approx(50)
+        assert collar["estimated_net_debit"] == pytest.approx(110 * puts - 60 * calls)
+
+
+def test_hedge_drops_nonstandard_contract_leg_and_reports_reason():
+    contracts = _hedge_contracts()
+    contracts[0]["contract_size"] = 50
+    result = build_hedge_advisor(ticker="AAPL", shares=250, cost_basis=100, spot=100,
+                                 purpose="protect", contracts=contracts)
+    assert result["success"] is True
+    assert result["structures"] == []
+    assert [leg["role"] for leg in result["rejected_legs"]] == ["protective_put"]
+    assert result["rejected_legs"][0]["field"] == "contract_size"
+    assert result["rejected_legs"][0]["reason"] == "nonstandard_option_contract_unsupported"
+
+
+@pytest.mark.parametrize("bad_value", [float("nan"), float("inf"), 0, -5])
+def test_hedge_drops_leg_with_unusable_contract_size_instead_of_failing(bad_value):
+    contracts = [
+        {"symbol": "AAPL.P", "option_type": "PUT", "strike": 90, "bid": 1.0, "ask": 1.2,
+         "contract_size": bad_value},
+        {"symbol": "AAPL.C", "option_type": "CALL", "strike": 110, "bid": 0.5, "ask": 0.7},
+    ]
+    result = build_hedge_advisor(ticker="AAPL", shares=250, cost_basis=100, spot=100,
+                                 purpose="protect", contracts=contracts)
+    assert result["success"] is True
+    assert result["structures"] == []
+    assert result["rejected_legs"][0]["role"] == "protective_put"
+    assert result["rejected_legs"][0]["reason"] == "invalid_contract_size"
+
+
+def test_hedge_keeps_valid_leg_when_the_other_leg_is_rejected():
+    contracts = [
+        {"symbol": "AAPL.P", "option_type": "PUT", "strike": 90, "bid": 1.0, "ask": 1.2},
+        {"symbol": "AAPL.C", "option_type": "CALL", "strike": 110, "bid": 0.5, "ask": 0.7,
+         "multiplier": 50},
+    ]
+    result = build_hedge_advisor(ticker="AAPL", shares=250, cost_basis=100, spot=100,
+                                 purpose="protect", contracts=contracts)
+    assert [row["structure"] for row in result["structures"]] == ["long_put"]
+    assert result["rejected_legs"][0]["role"] == "covered_call"
+    assert result["rejected_legs"][0]["field"] == "multiplier"
+    assert result["rejected_legs"][0]["reason"] == "nonstandard_option_contract_unsupported"
+
+
+def test_hedge_treats_null_contract_size_as_standard_contract():
+    contracts = [
+        {"symbol": "AAPL.P", "option_type": "PUT", "strike": 90, "bid": 1.0, "ask": 1.2,
+         "contract_size": None},
+        {"symbol": "AAPL.C", "option_type": "CALL", "strike": 110, "bid": 0.5, "ask": 0.7,
+         "contract_size": None},
+    ]
+    result = build_hedge_advisor(ticker="AAPL", shares=250, cost_basis=100, spot=100,
+                                 purpose="protect", contracts=contracts)
+    assert {row["structure"] for row in result["structures"]} == {"long_put", "collar"}
+    assert result["rejected_legs"] == []
 
 
 def test_watchlist_alerts_and_health_check_are_file_backed(tmp_path) -> None:

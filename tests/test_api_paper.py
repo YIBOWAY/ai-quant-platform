@@ -305,3 +305,32 @@ def test_paper_run_uses_tiingo_when_requested(tmp_path, monkeypatch) -> None:
     payload = response.json()
     assert payload["source"] == "tiingo"
     assert payload["signal_count"] > 0
+
+
+def test_paper_run_receipt_uses_paper_account_fees(tmp_path) -> None:
+    from quant_system.config.settings import PaperAccountSettings
+
+    paper = PaperAccountSettings(commission_bps=2.0, slippage_bps=7.0)
+    settings = Settings(safety=SafetySettings(kill_switch=False), paper_account=paper)
+    client = TestClient(create_app(settings=settings, output_dir=tmp_path))
+
+    response = client.post(
+        "/api/paper/run",
+        json={
+            "symbols": ["SPY", "QQQ"],
+            "start": "2024-01-02",
+            "end": "2024-01-12",
+            "provider": "sample",
+            "enable_kill_switch": False,
+            "lookback": 3,
+            "top_n": 1,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["commission_bps"] == 2.0
+    assert payload["slippage_bps"] == 7.0
+    if payload["trade_count"] > 0:
+        trades = pd.read_parquet(payload["paths"]["trades"])
+        assert float(trades["commission"].sum()) > 0

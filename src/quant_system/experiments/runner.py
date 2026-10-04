@@ -97,9 +97,10 @@ def run_experiment(
     combinations = expand_parameter_grid(config.sweep)
     runs: list[ExperimentRunSummary] = []
     fold_records: list[dict[str, Any]] = []
+    trial_returns: list[tuple[ParameterCombination, list[float]]] = []
 
     for combination in combinations:
-        run, folds = _run_combination(
+        run, folds, daily_returns = _run_combination(
             config=config,
             combination=combination,
             ohlcv=ohlcv,
@@ -108,6 +109,7 @@ def run_experiment(
         )
         runs.append(run)
         fold_records.extend(folds)
+        trial_returns.append((combination, daily_returns))
 
     experiment_id, storage = _reserve_experiment_storage(
         output_dir=output_dir,
@@ -160,6 +162,12 @@ def run_experiment(
         ),
         filename="agent_summary.json",
     )
+    _persist_experiment_trials(
+        config=config,
+        experiment_id=experiment_id,
+        recorded=trial_returns,
+        data_source=data_source,
+    )
     best_run = max(runs, key=lambda run: run.sharpe, default=None)
     return ExperimentResult(
         experiment_id=experiment_id,
@@ -202,7 +210,7 @@ def _run_combination(
     ohlcv: pd.DataFrame,
     created_at: str,
     factor_registry: FactorRegistry | None = None,
-) -> tuple[ExperimentRunSummary, list[dict[str, Any]]]:
+) -> tuple[ExperimentRunSummary, list[dict[str, Any]], list[float]]:
     if config.walk_forward.enabled:
         return _run_walk_forward_combination(
             config=config,
@@ -212,7 +220,7 @@ def _run_combination(
             factor_registry=factor_registry,
         )
 
-    metrics = _run_single_backtest(
+    result = _run_single_backtest(
         config=config,
         combination=combination,
         ohlcv=ohlcv,
@@ -223,10 +231,11 @@ def _run_combination(
         _summary_from_metrics(
             combination=combination,
             created_at=created_at,
-            metrics=metrics,
+            metrics=result.metrics,
             fold_count=0,
         ),
         [],
+        _daily_returns_from_equity(result.equity_curve),
     )
 
 
@@ -237,13 +246,14 @@ def _run_walk_forward_combination(
     ohlcv: pd.DataFrame,
     created_at: str,
     factor_registry: FactorRegistry | None = None,
-) -> tuple[ExperimentRunSummary, list[dict[str, Any]]]:
+) -> tuple[ExperimentRunSummary, list[dict[str, Any]], list[float]]:
     timestamps = ohlcv["timestamp"].drop_duplicates().sort_values()
     splits = build_walk_forward_splits(timestamps, config.walk_forward)
     fold_metrics: list[PerformanceMetrics] = []
     fold_records: list[dict[str, Any]] = []
+    daily_returns: list[float] = []
     for split in splits:
-        metrics = _run_single_backtest(
+        result = _run_single_backtest(
             config=config,
             combination=combination,
             ohlcv=ohlcv[
@@ -253,9 +263,10 @@ def _run_walk_forward_combination(
             signal_filter=split,
             factor_registry=factor_registry,
         )
-        fold_metrics.append(metrics)
-        record = _fold_record(combination=combination, split=split, metrics=metrics)
+        fold_metrics.append(result.metrics)
+        record = _fold_record(combination=combination, split=split, metrics=result.metrics)
         fold_records.append(record)
+        daily_returns.extend(_daily_returns_from_equity(result.equity_curve))
 
     aggregate = _aggregate_fold_metrics(fold_metrics)
     return (
@@ -266,6 +277,7 @@ def _run_walk_forward_combination(
             fold_count=len(fold_metrics),
         ),
         fold_records,
+        daily_returns,
     )
 
 
@@ -276,7 +288,7 @@ def _run_single_backtest(
     ohlcv: pd.DataFrame,
     signal_filter: WalkForwardSplit | None,
     factor_registry: FactorRegistry | None = None,
-) -> PerformanceMetrics:
+):
     lookback = int(combination.parameters.get("lookback", 20))
     top_n = int(combination.parameters.get("top_n", 3))
     factors = _create_factors(config, lookback=lookback, registry=factor_registry)
@@ -306,7 +318,7 @@ def _run_single_backtest(
         ),
         slippage_bps=float(combination.parameters.get("slippage_bps", config.slippage_bps)),
     )
-    return BacktestEngine(backtest_config).run(backtest_ohlcv, strategy).metrics
+    return BacktestEngine(backtest_config).run(backtest_ohlcv, strategy)
 
 
 def _create_factors(
@@ -485,3 +497,55 @@ def _build_storage(
         duckdb_path=data_settings.duckdb_path,
         experiment_id=experiment_id,
     )
+
+
+def _daily_returns_from_equity(equity_curve: pd.DataFrame) -> list[float]:
+    from quant_system.research.trials import daily_returns_from_equity
+
+    if equity_curve is None or equity_curve.empty or "equity" not in equity_curve:
+        return []
+    curve = equity_curve.sort_values("timestamp") if "timestamp" in equity_curve else equity_curve
+    return daily_returns_from_equity(curve["equity"].astype(float).tolist())
+
+
+def _persist_experiment_trials(
+    *,
+    config: ExperimentConfig,
+    experiment_id: str,
+    recorded: list[tuple[ParameterCombination, list[float]]],
+    data_source: str,
+) -> None:
+    from quant_system.research.trials import ResearchTrial, TrialsLedger
+
+    ledger = TrialsLedger(Path(load_settings().data.data_dir) / "trials")
+    for combination, daily_returns in recorded:
+        run_id = f"{experiment_id}/{combination.run_id}"
+        metadata = {
+            "run_id": run_id,
+            "combination_id": combination.run_id,
+            "experiment_id": experiment_id,
+            "parameters": combination.parameters,
+        }
+        if daily_returns:
+            trial = ResearchTrial.record(
+                kind="experiment",
+                subject=config.experiment_name,
+                universe=config.symbols,
+                daily_returns=daily_returns,
+                window_start=config.start,
+                window_end=config.end,
+                source=data_source,
+                metadata=metadata,
+            )
+        else:
+            trial = ResearchTrial.skipped(
+                kind="experiment",
+                subject=config.experiment_name,
+                universe=config.symbols,
+                reason="experiment_no_daily_returns",
+                window_start=config.start,
+                window_end=config.end,
+                source=data_source,
+                metadata=metadata,
+            )
+        ledger.append(trial)

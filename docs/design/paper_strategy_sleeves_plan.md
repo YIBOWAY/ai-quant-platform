@@ -1,5 +1,9 @@
 # Paper Strategy Sleeves MVP-1 设计文档
 
+> **历史冻结（2026-08-26）：**这是 MVP-1 的设计与落地过程，不是当前 sleeve
+> 运行合同或 NEXT。正文中的“自动执行仍待后续切片”属于当时快照；当前边界见
+> [`../execution/paper_strategy_sleeves.md`](../execution/paper_strategy_sleeves.md)。
+
 > 状态：MVP-1 第一切片后端基础已实现（2026-06-26）：领域模型 / API schema /
 > 本地文件存储 / cash 与 lot 分账基础已经落地；第二切片 API contract 已实现；
 > 第三切片 daily signal 生成 / 手动 CLI / opt-in 真实 Futu 测试已实现；

@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 import quant_system.api.routes.prediction_market as prediction_market_routes
 from quant_system.api.server import create_app
+from quant_system.config.settings import DataSettings, PredictionMarketSettings, Settings
 from quant_system.prediction_market.data.polymarket_readonly import PolymarketProviderError
 
 
@@ -118,7 +119,15 @@ def test_prediction_market_rejects_generic_credential_request(tmp_path) -> None:
 
 
 def test_prediction_market_backtest_writes_report_and_charts(tmp_path) -> None:
-    client = TestClient(create_app(output_dir=tmp_path))
+    settings = Settings(
+        data=DataSettings(
+            data_dir=tmp_path / "data",
+            parquet_dir=tmp_path / "parquet",
+            duckdb_path=tmp_path / "quant_system.duckdb",
+            reports_dir=tmp_path / "reports",
+        )
+    )
+    client = TestClient(create_app(settings=settings, output_dir=tmp_path))
 
     response = client.post(
         "/api/prediction-market/backtest",
@@ -135,6 +144,11 @@ def test_prediction_market_backtest_writes_report_and_charts(tmp_path) -> None:
     detail = client.get(f"/api/prediction-market/results/{payload['run_id']}")
     assert detail.status_code == 200
     assert detail.json()["result"]["metrics"]["opportunity_count"] >= 1
+    from quant_system.research.trials import TrialsLedger
+
+    trials = TrialsLedger(tmp_path / "data" / "trials").list()
+    assert len(trials) == 1
+    assert trials[0].metadata["run_id"] == payload["run_id"]
 
 
 def test_prediction_market_provider_error_maps_to_frontend_readable_response(
@@ -207,7 +221,18 @@ def test_prediction_market_timeseries_backtest_returns_charts_and_result(
     monkeypatch,
 ) -> None:
     monkeypatch.setenv("QS_PREDICTION_MARKET_HISTORY_DIR", str(tmp_path / "pm_history"))
-    client = TestClient(create_app(output_dir=tmp_path))
+    settings = Settings(
+        data=DataSettings(
+            data_dir=tmp_path / "data",
+            parquet_dir=tmp_path / "parquet",
+            duckdb_path=tmp_path / "quant_system.duckdb",
+            reports_dir=tmp_path / "reports",
+        ),
+        prediction_market=PredictionMarketSettings(
+            history_dir=tmp_path / "pm_history"
+        ),
+    )
+    client = TestClient(create_app(settings=settings, output_dir=tmp_path))
 
     response = client.post(
         "/api/prediction-market/timeseries-backtest",
@@ -229,6 +254,11 @@ def test_prediction_market_timeseries_backtest_returns_charts_and_result(
     chart_response = client.get(chart_path)
     assert chart_response.status_code == 200
     assert chart_response.headers["content-type"] == "image/png"
+    from quant_system.research.trials import TrialsLedger
+
+    trials = TrialsLedger(tmp_path / "data" / "trials").list()
+    assert len(trials) == 1
+    assert trials[0].metadata["run_id"] == payload["run_id"]
 
 
 def test_prediction_market_timeseries_backtest_no_history_404_uses_standard_detail(

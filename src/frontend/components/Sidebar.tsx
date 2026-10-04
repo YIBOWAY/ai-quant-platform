@@ -2,22 +2,21 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { FileText } from "lucide-react";
 import { useLocale } from "@/components/LocaleProvider";
 import { localizePath, splitLocalePath } from "@/lib/locale";
 import {
   buildNavSections,
-  isVisibleOnSurface,
+  sectionsForSurface,
   type NavItemId,
 } from "@/lib/navConfig";
 
 const copy = {
   en: {
-    tagline: "Local research workspace",
+    tagline: "Personal quant workspace",
     docs: "Docs",
     support: "Help",
     groups: {
-      research: "Research Pipeline",
+      research: "Workspace",
       paper: "Paper Trading",
       options: "Options Research",
       markets: "Markets & AI",
@@ -26,19 +25,23 @@ const copy = {
     nav: {
       dashboard: "Dashboard",
       hermes: "Hermes",
-      brief: "Morning Brief",
-      dataExplorer: "Data Explorer",
+      brief: "Daily Brief",
+      collection: "Strategies & Factors",
+      library: "Candidate Library",
+      watch: "Market Outlook",
+      companyResearch: "Company Research",
+      dataExplorer: "Symbol Charts",
       optionsScreener: "Options Screener",
-      optionsRadar: "Options Radar",
+      optionsRadar: "Options Recommendations",
       optionsTools: "Options Tools",
       buySide: "Buy-side Options",
-      asiaRadar: "Asia Radar",
-      marketCrossSection: "Cross-Section",
+      asiaRadar: "Asia Valuation",
+      marketCrossSection: "US Risk",
       factorLab: "Factor Lab",
       backtester: "Backtester",
       replications: "Strategy Catalog",
       experiments: "Experiments",
-      paperTrading: "Paper Trading",
+      paperTrading: "Paper Account",
       agentStudio: "Agent Studio",
       aiNews: "AI News",
       orderBook: "Polymarket Markets",
@@ -49,11 +52,11 @@ const copy = {
     },
   },
   zh: {
-    tagline: "本地研究环境",
+    tagline: "个人量化助手",
     docs: "文档",
     support: "帮助",
     groups: {
-      research: "研究流水线",
+      research: "工作台",
       paper: "模拟交易",
       options: "期权研究",
       markets: "市场与 AI",
@@ -61,20 +64,24 @@ const copy = {
     },
     nav: {
       dashboard: "仪表盘",
-      hermes: "Hermes 工作台",
-      brief: "每日晨报",
-      dataExplorer: "行情浏览",
-      optionsScreener: "期权筛选器",
-      optionsRadar: "期权雷达",
+      hermes: "Hermes 助手",
+      brief: "日报",
+      collection: "策略与因子",
+      library: "候选库",
+      watch: "市场研判",
+      companyResearch: "公司研究",
+      dataExplorer: "个股行情",
+      optionsScreener: "期权筛选",
+      optionsRadar: "期权推荐",
       optionsTools: "期权工具",
       buySide: "买方期权",
-      asiaRadar: "亚洲雷达",
-      marketCrossSection: "市场横截面",
+      asiaRadar: "亚洲泡沫",
+      marketCrossSection: "美股风险",
       factorLab: "因子实验室",
       backtester: "回测器",
       replications: "策略目录",
       experiments: "实验管理",
-      paperTrading: "模拟交易",
+      paperTrading: "模拟账户",
       agentStudio: "智能体工作室",
       aiNews: "AI 新闻",
       orderBook: "Polymarket 市场",
@@ -108,15 +115,17 @@ export function Sidebar({
   const disableNavigationPrefetch =
     activePath === "/hermes" || activePath.startsWith("/hermes/");
 
-  const navSections = buildNavSections({ shellEnabled, agentStudioRedirect }).map((section) => ({
+  const navSections = sectionsForSurface(
+    buildNavSections({ shellEnabled, agentStudioRedirect }),
+    "sidebar",
+  ).map((section) => ({
     name: text.groups[section.id],
-    items: section.items
-      .filter((item) => isVisibleOnSurface(item, "sidebar"))
-      .map((item) => ({
-        name: labelFor(text.nav, item.id),
-        href: item.href,
-        icon: item.icon,
-      })),
+    items: section.items.map((item) => ({
+      name: labelFor(text.nav, item.id),
+      href: item.href,
+      icon: item.icon,
+      aliases: item.aliases ?? [],
+    })),
   }));
 
   return (
@@ -124,11 +133,12 @@ export function Sidebar({
       className="fixed left-0 top-0 z-50 hidden h-full w-[220px] flex-col border-r border-border-subtle bg-bg-sidebar lg:flex"
       data-testid="desktop-sidebar"
     >
-      <div className="border-b border-border-subtle p-6">
-        <div className="mb-0.5 font-sans text-lg font-semibold tracking-tight text-text-primary">
+      <div className="px-6 pb-7 pt-8">
+        <div className="mb-2 flex items-center gap-3 font-sans text-xl font-semibold tracking-tight text-text-primary">
+          <span aria-hidden="true" className="grid size-8 place-items-center rounded-md border border-[var(--color-hermes)]/40 font-editorial-serif text-xl text-[var(--color-hermes)]">H</span>
           Hermes
         </div>
-        <div className="font-sans text-xs tracking-tight text-text-secondary">
+        <div className="font-sans text-[11px] tracking-wide text-text-secondary">
           {text.tagline}
         </div>
       </div>
@@ -137,27 +147,32 @@ export function Sidebar({
         <div className="space-y-5">
           {navSections.map((section) => (
             <section key={section.name}>
-              <h2 className="px-3 pb-2 font-label-caps text-[10px] text-text-secondary opacity-60">
+              {section.items.length === 0 ? null : (
+              <h2 className="px-3 pb-2 font-label-caps text-[10px] text-text-secondary">
                 {section.name}
               </h2>
+              )}
               <ul className="space-y-1">
                 {section.items.map((item) => {
-                  const isActive =
-                    activePath === item.href ||
-                    (item.href !== "/" && activePath.startsWith(`${item.href}/`));
+                  const targets = [item.href, ...item.aliases];
+                  const isActive = targets.some(
+                    (target) =>
+                      activePath === target ||
+                      (target !== "/" && activePath.startsWith(`${target}/`)),
+                  );
                   return (
                     <li key={item.href}>
                       <Link
                         aria-current={isActive ? "page" : undefined}
                         href={localizePath(item.href, locale)}
                         prefetch={disableNavigationPrefetch ? false : undefined}
-                        className={`app-touch-target flex items-center gap-3 rounded-lg px-3 font-sans text-xs tracking-tight transition-colors ${
+                        className={`app-touch-target flex items-center gap-3 rounded-md px-3 font-sans text-[13px] tracking-tight transition-colors ${
                           isActive
-                            ? "border-l-2 border-[var(--color-hermes)] bg-transparent font-semibold text-text-primary"
+                            ? "border-l-2 border-[var(--color-hermes)] bg-bg-sidebar-muted font-medium text-text-primary"
                             : "border-l-2 border-transparent text-text-secondary hover:bg-bg-sidebar-muted hover:text-text-primary"
                         }`}
                       >
-                        <item.icon size={18} />
+                        <item.icon size={17} strokeWidth={1.5} />
                         <span>{item.name}</span>
                       </Link>
                     </li>
@@ -169,20 +184,6 @@ export function Sidebar({
         </div>
       </div>
 
-      <div className="border-t border-border-subtle px-3 py-4">
-        <ul className="space-y-1">
-          <li>
-            <Link
-              href={localizePath("/docs/reversal-momentum", locale)}
-              prefetch={disableNavigationPrefetch ? false : undefined}
-              className="app-touch-target flex items-center gap-3 rounded-lg px-3 font-sans text-xs tracking-tight text-text-secondary transition-colors hover:bg-bg-sidebar-muted hover:text-text-primary"
-            >
-              <FileText size={16} />
-              <span>{text.docs}</span>
-            </Link>
-          </li>
-        </ul>
-      </div>
     </nav>
   );
 }

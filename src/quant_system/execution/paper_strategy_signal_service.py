@@ -10,6 +10,7 @@ from quant_system.backtest.strategy import MeanReversionTopN, ScoreSignalStrateg
 from quant_system.config.settings import Settings
 from quant_system.d34.artifact_factor import load_d34_paper_factor_registry
 from quant_system.data.provider_factory import build_ohlcv_provider
+from quant_system.data.providers.futu import FutuProviderError
 from quant_system.execution.account import PaperAccount
 from quant_system.execution.paper_strategy_sleeves import (
     SignalStatus,
@@ -51,6 +52,7 @@ class PaperStrategySignalService:
         signal_date: str | date | None = None,
         history_days: int = 180,
         allow_frozen_account: bool = False,
+        persist: bool = True,
     ) -> StrategySignal:
         if sleeve.status == StrategySleeveStatus.STOPPED:
             raise StrategySignalGenerationError("stopped sleeves cannot generate signals")
@@ -71,7 +73,8 @@ class PaperStrategySignalService:
             execution_blocked_reason=blocked_reason,
             base_warnings=warnings,
         )
-        self.storage.append_signal(signal)
+        if persist:
+            self.storage.append_signal(signal)
         return signal
 
     def _build_signal(
@@ -85,6 +88,12 @@ class PaperStrategySignalService:
         execution_blocked_reason: str | None,
         base_warnings: list[str],
     ) -> StrategySignal:
+        if config.strategy_definition is not None:
+            return self._build_definition_signal(
+                sleeve=sleeve, config=config, account=account, signal_date=signal_date,
+                history_days=history_days, execution_blocked_reason=execution_blocked_reason,
+                base_warnings=base_warnings,
+            )
         try:
             provider, source = build_ohlcv_provider(
                 self.settings,
@@ -101,6 +110,7 @@ class PaperStrategySignalService:
                     f"strategy history provider is unavailable: {exc}",
                 ],
                 execution_blocked_reason=execution_blocked_reason,
+                provider_error=self._provider_error_payload(exc),
             )
 
         if source.lower().startswith("sample"):
@@ -131,6 +141,7 @@ class PaperStrategySignalService:
                 data_provider=source,
                 warnings=[*base_warnings, f"strategy history is unavailable: {exc}"],
                 execution_blocked_reason=execution_blocked_reason,
+                provider_error=self._provider_error_payload(exc),
             )
         if ohlcv is None or ohlcv.empty:
             return self._data_unavailable_signal(
@@ -181,6 +192,119 @@ class PaperStrategySignalService:
                 "execution_timing": config.execution_timing,
             },
         )
+
+    def _build_definition_signal(
+        self, *, sleeve: StrategySleeve, config: StrategyConfig, account: PaperAccount,
+        signal_date: date, history_days: int, execution_blocked_reason: str | None,
+        base_warnings: list[str],
+    ) -> StrategySignal:
+        from quant_system.research.definition_paper import (
+            definition_orders,
+            paper_definition,
+            require_paper_costs,
+        )
+        from quant_system.research.strategy_runtime import decision_for_session, latest_session
+
+        source = config.data_provider
+        metadata: dict[str, Any] = {"strategy_id": config.strategy_id}
+        try:
+            # Revalidate nested JSON even if the caller mutated a model in memory.
+            config = StrategyConfig.model_validate(config.model_dump(mode="json"))
+            definition = paper_definition(config.strategy_definition)
+            require_paper_costs(definition, self.settings)
+            decision_session = latest_session(signal_date - timedelta(days=1)).date()
+            history_start = date.fromisoformat(definition.history_start)
+            history_days = (decision_session - history_start).days
+            if history_days < 0:
+                raise ValueError("strategy_history_start_after_cutoff")
+            metadata.update({
+                "definition_digest": definition.content_digest,
+                "decision_session": decision_session.isoformat(),
+                "history_days": history_days,
+                "history_start": definition.history_start,
+                "execution_timing": definition.execution_price,
+                "reference_initial_cash": definition.initial_cash,
+                "simulation_allocation_usd": sleeve.initial_allocated_cash,
+            })
+        except (ValueError, TypeError) as exc:
+            return StrategySignal.create(
+                sleeve=sleeve, signal_date=signal_date.isoformat(), data_provider=source,
+                warnings=[*base_warnings, f"strategy definition is invalid: {exc}"],
+                status=SignalStatus.INVALID, execution_blocked_reason=execution_blocked_reason,
+                metadata=metadata,
+            )
+
+        try:
+            provider, source = build_ohlcv_provider(self.settings, requested=definition.provider)
+            if source != "futu":
+                raise ValueError("strategy_definition_real_provider_required")
+            lots = self.storage.load_sleeve_lots(sleeve.sleeve_id)
+            if any(lot.symbol.upper() not in definition.symbols for lot in lots):
+                raise ValueError("strategy_definition_position_outside_universe")
+            ohlcv = provider.fetch_ohlcv(
+                list(dict.fromkeys([*definition.symbols, definition.benchmark_symbol])),
+                start=definition.history_start,
+                end=decision_session.isoformat(),
+            )
+            if ohlcv is None or ohlcv.empty:
+                raise ValueError("strategy history is empty")
+            ohlcv = ohlcv.copy()
+            timestamps = pd.to_datetime(ohlcv["timestamp"], utc=True)
+            # A provider that returns extra rows must never expose future bars.
+            ohlcv = ohlcv.loc[timestamps.dt.date <= decision_session].copy()
+            latest = ohlcv.loc[
+                pd.to_datetime(ohlcv["timestamp"], utc=True).dt.date == decision_session
+            ]
+            prices = self._latest_prices(latest)
+            holdings: dict[str, float] = {}
+            for lot in lots:
+                symbol = lot.symbol.upper()
+                holdings[symbol] = holdings.get(symbol, 0.0) + lot.quantity
+            # The shared kernel owns pool eligibility. Only prices required to
+            # value this sleeve and align its benchmark are mandatory up front.
+            required_prices = set(holdings) | {definition.benchmark_symbol}
+            if required_prices - set(prices):
+                raise ValueError("strategy_definition_decision_prices_missing")
+            equity = sleeve.cash + sum(holdings[symbol] * prices[symbol] for symbol in holdings)
+            if not isfinite(equity) or equity <= 0:
+                raise ValueError("strategy_definition_equity_unavailable")
+            current_weights = {symbol: quantity * prices[symbol] / equity
+                               for symbol, quantity in holdings.items()}
+            decision = decision_for_session(
+                ohlcv, definition, decision_session=decision_session.isoformat(),
+                current_weights=current_weights,
+            )
+            metadata.update(decision)
+            if not decision["ready"]:
+                raise ValueError(str(
+                    decision.get("reason") or "strategy_definition_data_unavailable"
+                ))
+            targets = decision["targets"]
+            if set(targets or {}) - set(prices):
+                raise ValueError("strategy_definition_selected_prices_missing")
+            metadata["rebalance_required"] = decision["rebalance_due"] and targets is not None
+            orders = []
+            if execution_blocked_reason is None and sleeve.mode == StrategySleeveMode.ALLOCATED:
+                orders = definition_orders(
+                    definition=definition, holdings=holdings, cash=sleeve.cash, targets=targets,
+                    prices=prices, account_id=account.account_id,
+                )
+            return StrategySignal.create(
+                sleeve=sleeve, signal_date=signal_date.isoformat(), data_provider=source,
+                data_as_of=decision_session.isoformat(), target_weights=targets or {},
+                proposed_orders=orders, warnings=base_warnings, status=SignalStatus.GENERATED,
+                execution_blocked_reason=execution_blocked_reason, metadata=metadata,
+            )
+        except Exception as exc:  # noqa: BLE001 - data/provider boundary fails closed
+            provider_error = self._provider_error_payload(exc)
+            if provider_error is not None:
+                metadata = {**metadata, "provider_error": provider_error}
+            return StrategySignal.create(
+                sleeve=sleeve, signal_date=signal_date.isoformat(), data_provider=source,
+                warnings=[*base_warnings, f"strategy definition data is unavailable: {exc}"],
+                status=SignalStatus.DATA_UNAVAILABLE,
+                execution_blocked_reason=execution_blocked_reason, metadata=metadata,
+            )
 
     def _compute_target_weights(
         self,
@@ -279,6 +403,23 @@ class PaperStrategySignalService:
         return proposed_orders
 
     @staticmethod
+    def _provider_error_payload(exc: Exception) -> dict[str, Any] | None:
+        """Structured provider failure detail for signal records, or None.
+
+        Only FutuProviderError carries a classified code; other exceptions
+        remain warning strings so unrelated validation failures are not
+        mislabeled as provider outages.
+        """
+        if not isinstance(exc, FutuProviderError):
+            return None
+        payload: dict[str, Any] = {"code": exc.code, "message": exc.message}
+        if exc.ret_code is not None:
+            payload["ret_code"] = exc.ret_code
+        if exc.ret_msg is not None:
+            payload["ret_msg"] = str(exc.ret_msg)[:500]
+        return payload
+
+    @staticmethod
     def _data_unavailable_signal(
         *,
         sleeve: StrategySleeve,
@@ -287,7 +428,11 @@ class PaperStrategySignalService:
         data_provider: str,
         warnings: list[str],
         execution_blocked_reason: str | None,
+        provider_error: dict[str, Any] | None = None,
     ) -> StrategySignal:
+        metadata: dict[str, Any] = {"strategy_id": config.strategy_id}
+        if provider_error is not None:
+            metadata["provider_error"] = provider_error
         return StrategySignal.create(
             sleeve=sleeve,
             signal_date=signal_date.isoformat(),
@@ -295,7 +440,7 @@ class PaperStrategySignalService:
             warnings=warnings,
             status=SignalStatus.DATA_UNAVAILABLE,
             execution_blocked_reason=execution_blocked_reason,
-            metadata={"strategy_id": config.strategy_id},
+            metadata=metadata,
         )
 
     @staticmethod

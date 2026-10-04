@@ -149,11 +149,7 @@ def signing_lock_path(output_dir: Path) -> Path:
 
 
 def _validate_owner_file_info(info: os.stat_result) -> None:
-    if (
-        not stat.S_ISREG(info.st_mode)
-        or info.st_uid != os.getuid()
-        or info.st_nlink != 1
-    ):
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1:
         raise LocalSessionForbidden("security material is not an owner regular file")
     mode = stat.S_IMODE(info.st_mode)
     if mode & (stat.S_IRWXG | stat.S_IRWXO):
@@ -388,11 +384,15 @@ def _consume_bootstrap_token(output_dir: Path, presented: str) -> None:
     try:
         fcntl.flock(lock_fd, fcntl.LOCK_EX)
         try:
-            expected = _read_secret_at(
-                directory_fd,
-                path.name,
-                max_bytes=512,
-            ).decode("ascii").strip()
+            expected = (
+                _read_secret_at(
+                    directory_fd,
+                    path.name,
+                    max_bytes=512,
+                )
+                .decode("ascii")
+                .strip()
+            )
         except (FileNotFoundError, OSError, UnicodeDecodeError, LocalSessionForbidden) as exc:
             raise LocalSessionAuthError() from exc
         if not expected or not hmac.compare_digest(expected, presented):
@@ -448,9 +448,7 @@ def mint_owner_session(
     # v2|owner|session_id|exp|csrf|kind — csrf and issuance mode are bound into
     # signed material. Ambiguous pre-v2 cookies intentionally fail closed so a
     # long-lived trust cookie cannot survive after trust mode is disabled.
-    body = (
-        f"v2|{ROOT_USER_ID}|{session_id}|{exp_unix}|{csrf_token}|{session_kind}"
-    )
+    body = f"v2|{ROOT_USER_ID}|{session_id}|{exp_unix}|{csrf_token}|{session_kind}"
     cookie_value = f"{_b64url(body.encode('ascii'))}.{_sign(key, body)}"
     session = OwnerSession(
         owner_user_id=ROOT_USER_ID,
@@ -590,6 +588,28 @@ def _request_host(headers_host: str | None) -> str | None:
     return host
 
 
+def _is_loopback_host_header(host: str | None) -> bool:
+    if host is None:
+        return False
+    try:
+        parsed = urlparse(f"//{host}")
+        if parsed.username is not None or parsed.password is not None:
+            return False
+        hostname = parsed.hostname
+        _ = parsed.port
+    except ValueError:
+        return False
+    if hostname == "localhost":
+        return True
+    try:
+        address = ipaddress.ip_address(hostname or "")
+    except ValueError:
+        return False
+    return address.is_loopback or bool(
+        getattr(address, "ipv4_mapped", None) and address.ipv4_mapped.is_loopback
+    )
+
+
 def enforce_browser_request_gates(
     *,
     policy: LocalSessionPolicy,
@@ -608,14 +628,14 @@ def enforce_browser_request_gates(
     if (
         (host is None or host != policy.accepted_host)
         and host not in _api_loopback_hosts(policy)
+        and not _is_loopback_host_header(host)
     ):
-        raise LocalSessionForbidden()
+        raise LocalSessionForbidden("workspace host mismatch")
 
     if origin_header is not None and (
-        type(origin_header) is not str
-        or origin_header != policy.accepted_origin
+        type(origin_header) is not str or origin_header != policy.accepted_origin
     ):
-        raise LocalSessionForbidden()
+        raise LocalSessionForbidden("workspace origin mismatch")
 
     site = (sec_fetch_site or "").lower() if sec_fetch_site is not None else ""
     if request_kind == "top_level_document":
@@ -627,7 +647,7 @@ def enforce_browser_request_gates(
     # Missing header is allowed for non-browser clients on loopback only when
     # Origin is absent or exact — still reject explicit cross-site.
     if site in {"cross-site", "same-site", "none"}:
-        raise LocalSessionForbidden()
+        raise LocalSessionForbidden("workspace fetch-site mismatch")
     if site and site != "same-origin":
         raise LocalSessionForbidden()
     if request_kind == "mutation" and (

@@ -1,5 +1,9 @@
 # Paper Strategy Sleeves MVP-2 Implementation Plan
 
+> **历史冻结（2026-08-26）：**这是 MVP-2 的实施计划快照，不是当前执行清单。
+> 不要从复选框或旧调度假设推断 NEXT；当前能力与正式 D34 observation 边界见
+> [`../execution/paper_strategy_sleeves.md`](../execution/paper_strategy_sleeves.md)。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development
 > (recommended) or superpowers:executing-plans to implement this plan task-by-task.
 > Steps use checkbox (`- [ ]`) syntax for tracking.

@@ -1,145 +1,61 @@
 from __future__ import annotations
 
-from datetime import date
-from decimal import Decimal
-from types import SimpleNamespace
+import inspect
 
 from quant_system.d34.research_request import (
+    LOCAL_RESEARCH_RESOURCE_ENVELOPE,
+    LOCAL_RESEARCH_RESOURCE_ENVELOPE_ID,
+    LOCAL_RESEARCH_RESOURCE_POLICY_DIGEST,
     OWNER_REQUEST_TRIGGER,
-    enqueue_owner_research_request,
-    owner_request_job_key,
+    build_owner_request_input,
 )
+from quant_system.hermes.d34_job_authority import EnqueueJobCommand
 
 
-def test_owner_request_is_idempotent_for_the_same_objective() -> None:
-    mandate = SimpleNamespace(
-        mandate_id="mandate-test-1",
-        policy_digest="a" * 64,
-        universe=("SPY", "QQQ"),
-        max_iterations=3,
-        max_experiments_per_iteration=2,
-        paper_execution_allowed=True,
-        llm_budget_usd=Decimal("100"),
-    )
-    queued: list[object] = []
-
-    class Jobs:
-        def list(self, *, workspace_id, limit, state):
-            _ = workspace_id, limit, state
-            return queued
-
-        def enqueue(self, command):
-            queued.append(
-                SimpleNamespace(
-                    job_key=command.job_key,
-                    mandate_id=command.mandate_id,
-                    state="queued",
-                )
-            )
-            return command
-
-    jobs = Jobs()
-    first = enqueue_owner_research_request(
-        jobs=jobs,
-        mandate=mandate,
-        workspace_id="default",
-        objective="Find a twenty-day reversal",
-        cycle_date=date(2026, 8, 13),
-    )
-    second = enqueue_owner_research_request(
-        jobs=jobs,
-        mandate=mandate,
-        workspace_id="default",
-        objective="Find a twenty-day reversal",
-        cycle_date=date(2026, 8, 13),
+def test_fixed_resource_envelope_is_versioned_and_paper_only() -> None:
+    assert LOCAL_RESEARCH_RESOURCE_ENVELOPE == {
+        "contract": "hqa.local_research_resource_envelope/v1",
+        "experiments_per_iteration": 3,
+        "llm_budget_usd": "10.000000",
+        "max_concurrent_jobs": 1,
+        "max_iterations": 3,
+        "max_universe_size": 64,
+        "paper_only": True,
+        "research_only": True,
+        "timeout_seconds": 7200,
+    }
+    assert LOCAL_RESEARCH_RESOURCE_ENVELOPE_ID == "local-paper-research-v1"
+    assert LOCAL_RESEARCH_RESOURCE_POLICY_DIGEST == (
+        "f539564775cd6f0c51fbd8478697265c1f4df86987513dad5e7a842b92191270"
     )
 
-    assert first == second
-    assert first == owner_request_job_key(
-        cycle_date=date(2026, 8, 13),
-        objective="Find a twenty-day reversal",
-    )
-    assert first.startswith("request:2026-08-13:")
-    assert len(queued) == 1
 
-
-def test_owner_request_retries_after_a_terminal_job() -> None:
-    mandate = SimpleNamespace(
-        mandate_id="mandate-test-1",
-        policy_digest="a" * 64,
-        universe=("SPY", "QQQ"),
-        max_iterations=3,
-        max_experiments_per_iteration=2,
-        paper_execution_allowed=True,
-        llm_budget_usd=Decimal("100"),
-    )
-    queued: list[object] = []
-
-    class Jobs:
-        def list(self, *, workspace_id, limit, state):
-            return queued
-
-        def enqueue(self, command):
-            queued.append(
-                SimpleNamespace(
-                    job_key=command.job_key,
-                    mandate_id=command.mandate_id,
-                    state="queued",
-                )
-            )
-            return command
-
-    jobs = Jobs()
-    first = enqueue_owner_research_request(
-        jobs=jobs,
-        mandate=mandate,
-        workspace_id="default",
-        objective="Find a twenty-day reversal",
-        cycle_date=date(2026, 8, 13),
-    )
-    queued[0].state = "rejected"
-    second = enqueue_owner_research_request(
-        jobs=jobs,
-        mandate=mandate,
-        workspace_id="default",
-        objective="Find a twenty-day reversal",
-        cycle_date=date(2026, 8, 13),
-    )
-
-    assert first != second
-    assert second == f"{first}:2"
-    assert len(queued) == 2
-
-
-def test_owner_request_input_has_no_snapshot() -> None:
-    captured: list[object] = []
-
-    class Jobs:
-        def list(self, *, workspace_id, limit, state):
-            return []
-
-        def enqueue(self, command):
-            captured.append(command)
-            return command
-
-    enqueue_owner_research_request(
-        jobs=Jobs(),
-        mandate={
-            "mandate_id": "mandate-test-1",
-            "policy_digest": "b" * 64,
-            "universe": ["SPY"],
-            "max_iterations": 1,
-            "max_experiments_per_iteration": 1,
-            "paper_execution_allowed": True,
-            "llm_budget_usd": "25.00",
-        },
-        workspace_id="default",
+def test_owner_request_input_uses_fixed_resource_and_has_no_snapshot_or_mandate() -> None:
+    document = build_owner_request_input(
         objective="Compose a volume surprise expression",
-        cycle_date=date(2026, 8, 13),
+        universe=["SPY", "QQQ"],
     )
 
-    document = captured[0].input_document
     assert document["trigger"] == OWNER_REQUEST_TRIGGER
-    assert document["objective"] == "Compose a volume surprise expression"
-    assert "snapshot_id" not in document
-    assert "snapshot_parquet" not in document
+    assert document["resource_envelope_id"] == LOCAL_RESEARCH_RESOURCE_ENVELOPE_ID
+    assert document["resource_policy_digest"] == LOCAL_RESEARCH_RESOURCE_POLICY_DIGEST
+    assert document["max_iterations"] == 3
+    assert document["experiments_per_iteration"] == 3
+    assert document["research_only"] is True
+    assert document["paper_execution_allowed"] is False
+    for forbidden in (
+        "mandate_id",
+        "mandate_policy_digest",
+        "hang_if_pass",
+        "snapshot_id",
+        "snapshot_parquet",
+        "cycle_date",
+    ):
+        assert forbidden not in document
+
+
+def test_enqueue_command_has_resource_envelope_not_mandate() -> None:
+    parameters = inspect.signature(EnqueueJobCommand).parameters
+
+    assert "resource_envelope_id" in parameters
+    assert "mandate_id" not in parameters

@@ -65,6 +65,19 @@ bootout_if_loaded() {
   return "$status"
 }
 
+wait_until_unloaded() {
+  local service="$1"
+  local attempt
+  for attempt in {1..20}; do
+    if ! "$LAUNCHCTL" print "$service" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 0.1
+  done
+  echo "connector_install_error=launchctl_bootout_incomplete label=$LABEL" >&2
+  return 78
+}
+
 bootstrap_launchagent() {
   local attempt=1
   local output
@@ -78,19 +91,19 @@ bootstrap_launchagent() {
       status=$?
     fi
 
-    # launchctl may return EIO after it has already registered this exact job.
-    # A second bootstrap then conflicts with the loaded generation and can make
-    # the enclosing stack startup stop before later scheduled jobs are installed.
-    if "$LAUNCHCTL" print "$DOMAIN/$LABEL" >/dev/null 2>&1; then
-      return 0
-    fi
-
     if [[ "$output" != *"Input/output error"* \
       && "$output" != *"input/output error"* \
       && "$output" != *"EIO"* \
-      && "$output" != *": 5:"* ]]; then
+      && "$output" != *": 5:"* \
+      && "$output" != *"Operation already in progress"* \
+      && "$output" != *": 37:"* ]]; then
       [[ -z "$output" ]] || printf '%s\n' "$output" >&2
       return "$status"
+    fi
+
+    # launchctl may return an ambiguous error after registering this job.
+    if "$LAUNCHCTL" print "$DOMAIN/$LABEL" >/dev/null 2>&1; then
+      return 0
     fi
 
     if (( attempt == LAUNCHCTL_BOOTSTRAP_MAX_ATTEMPTS )); then
@@ -141,6 +154,7 @@ trap - EXIT
 
 # Replay-safe replacement: an absent old service is an expected first install.
 bootout_if_loaded "$DOMAIN/$LABEL"
+wait_until_unloaded "$DOMAIN/$LABEL"
 bootstrap_launchagent
 
 echo "installed=$TARGET"

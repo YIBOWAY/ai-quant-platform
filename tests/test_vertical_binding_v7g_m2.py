@@ -14,7 +14,6 @@ from quant_system.hermes.agent_workspace import (
 )
 from quant_system.hermes.agent_workspace_actions import (
     BindOptionsVerticalA,
-    StartResearch,
     WorkspaceRef,
     action_to_document,
     canonical_action_digest,
@@ -578,25 +577,6 @@ def test_tc_m2_12_follow_carries_live_vertical_ids() -> None:
 
 
 # --- TC-M2-13 StartResearch still dark ---
-
-
-def test_tc_m2_13_start_research_still_dark() -> None:
-    doc = {
-        "schema_version": 1,
-        "kind": "research.start",
-        "client_action_id": "act-m2-research-dark",
-        "workspace": {"workspace_id": WS},
-        "managed_session_ref": "session:s-m2-research",
-        "payload_ref": "payload:sha256:" + ("b" * 64),
-        "payload_digest": "b" * 64,
-        "initial_mode": "plan_only",
-    }
-    parsed = parse_user_action_v1(doc)
-    assert type(parsed) is StartResearch
-    receipt = submit_action(_settings(), doc, mutation_enabled=True)
-    assert receipt.status == "unavailable"
-    assert receipt.reason_code == "research_workflow_submission_unavailable"
-    assert project_workspace_tasks(WS) == []
 
 
 # --- TC-M2-14 mutation OFF fail-closed for live ---

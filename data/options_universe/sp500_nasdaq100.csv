@@ -61,7 +61,7 @@ NFLX,Netflix,Communication Services,US,both
 NVDA,Nvidia,Information Technology,US,both
 NXPI,NXP Semiconductors,Information Technology,US,both
 ODFL,Old Dominion,Industrials,US,both
-ORLY,O’Reilly Automotive,Consumer Discretionary,US,both
+ORLY,O'Reilly Automotive,Consumer Discretionary,US,both
 PANW,Palo Alto Networks,Information Technology,US,both
 PAYX,Paychex,Industrials,US,both
 PCAR,Paccar,Industrials,US,both
@@ -364,7 +364,7 @@ MRK,Merck & Co.,Health Care,US,sp500
 MRNA,Moderna,Health Care,US,sp500
 MRSH,Marsh McLennan,Financials,US,sp500
 MS,Morgan Stanley,Financials,US,sp500
-MSCI,MSCI Inc.,Financials,US,sp500
+MSCI,MSCI,Financials,US,sp500
 MSI,Motorola Solutions,Information Technology,US,sp500
 MTB,M&T Bank,Financials,US,sp500
 MTD,Mettler Toledo,Health Care,US,sp500
@@ -421,7 +421,7 @@ REG,Regency Centers,Real Estate,US,sp500
 RF,Regions Financial Corporation,Financials,US,sp500
 RJF,Raymond James Financial,Financials,US,sp500
 RL,Ralph Lauren Corporation,Consumer Discretionary,US,sp500
-RMD,ResMed,Health Care,US,sp500
+RMD,ResMed|,Health Care,US,sp500
 ROK,Rockwell Automation,Industrials,US,sp500
 ROL,"Rollins, Inc.",Industrials,US,sp500
 RSG,Republic Services,Industrials,US,sp500

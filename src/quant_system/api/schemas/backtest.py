@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -150,6 +151,23 @@ class BacktestRunRequest(BaseModel):
     max_weight_per_symbol: float | None = Field(default=None, gt=0, le=1)
     sector_cap: float | None = Field(default=None, gt=0, le=1)
     sector_map: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("start", "end")
+    @classmethod
+    def validate_date(cls, value: str) -> str:
+        try:
+            parsed = date.fromisoformat(value)
+        except ValueError as exc:
+            raise ValueError("date must be YYYY-MM-DD") from exc
+        if parsed.isoformat() != value:
+            raise ValueError("date must be YYYY-MM-DD")
+        return value
+
+    @model_validator(mode="after")
+    def validate_date_order(self) -> BacktestRunRequest:
+        if self.start > self.end:
+            raise ValueError("start must be on or before end")
+        return self
 
     @field_validator("symbols", "factor_ids", mode="before")
     @classmethod

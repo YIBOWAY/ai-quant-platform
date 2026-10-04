@@ -24,6 +24,7 @@ def _expected_fail_closed(blocker: str) -> dict[str, object]:
             "dry_run": True,
             "kill_switch": True,
             "live_trading_enabled": False,
+            "paper_observation_enabled": True,
             "paper_trading": True,
         },
     }

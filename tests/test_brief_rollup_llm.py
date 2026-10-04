@@ -10,6 +10,7 @@ import pytest
 from quant_system.brief.rollup_llm import (
     DEFAULT_BASE_URL,
     DEFAULT_MODEL,
+    DEFAULT_REASONING_EFFORT,
     DEFAULT_TIMEOUT_SECONDS,
     DEFAULT_TOKEN,
     RollupLlmClient,
@@ -29,9 +30,19 @@ def _facts(locale: str = "zh") -> dict[str, Any]:
 
 
 def _chat_response(payload: Any, status: int = 200) -> httpx.Response:
+    return _sse_response(
+        {"choices": [{"index": 0, "delta": {"content": json.dumps(payload, ensure_ascii=False)}}]},
+        {"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]},
+        status=status,
+    )
+
+
+def _sse_response(*events: Any, done: bool = True, status: int = 200) -> httpx.Response:
     return httpx.Response(
         status,
-        json={"choices": [{"message": {"content": json.dumps(payload, ensure_ascii=False)}}]},
+        headers={"content-type": "text/event-stream"},
+        content="".join(f"data: {json.dumps(event, ensure_ascii=False)}\n\n" for event in events)
+        + ("data: [DONE]\n\n" if done else ""),
     )
 
 
@@ -66,10 +77,29 @@ def test_draft_posts_openai_compatible_json_object_request() -> None:
     assert request.headers["Authorization"] == "Bearer tok-123"
     body = json.loads(request.content)
     assert body["model"] == "grok-test"
+    assert body["reasoning_effort"] == "xhigh"
+    assert body["stream"] is True
     assert body["response_format"] == {"type": "json_object"}
     assert body["messages"][0]["role"] == "system"
     assert "周报" in body["messages"][0]["content"]
+    assert "普通中文" in body["messages"][0]["content"]
+    assert "不把推测或关注建议写成事实" in body["messages"][0]["content"]
+    assert "保留必要的金融术语和原始引用" in body["messages"][0]["content"]
+    assert "归档日报期数" in body["messages"][0]["content"]
     assert "n1" in body["messages"][1]["content"]
+
+
+def test_editorial_prompts_define_financial_units_and_rounded_display_without_model_call():
+    from quant_system.brief.rollup_llm import _critique_messages, _draft_messages
+
+    for messages in (_draft_messages(_facts()), _critique_messages(_facts(), {"title": "draft"})):
+        prompt = messages[0]["content"]
+        assert "两位小数" in prompt
+        assert "pnl_pct" in prompt and "invested_pct" in prompt
+        assert "0.0325" in prompt and "3.25%" in prompt
+        assert "period_change_pct" in prompt and "已经是百分数" in prompt
+        assert "字段名" in prompt
+        assert "缺少市场报价" in prompt
 
 
 def test_draft_uses_english_prompts_for_en_locale() -> None:
@@ -138,7 +168,9 @@ def test_network_error_raises_unavailable() -> None:
 
 def test_invalid_envelope_json_raises_unavailable() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, content=b"not json")
+        return httpx.Response(
+            200, headers={"content-type": "text/event-stream"}, content=b"data: not json\n\n"
+        )
 
     client = _client_with_capture(handler)
     with pytest.raises(RollupLlmUnavailable, match="invalid JSON"):
@@ -147,7 +179,7 @@ def test_invalid_envelope_json_raises_unavailable() -> None:
 
 def test_missing_choices_raises_unavailable() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"unexpected": True})
+        return _sse_response({"unexpected": True})
 
     client = _client_with_capture(handler)
     with pytest.raises(RollupLlmUnavailable, match="choices"):
@@ -156,9 +188,12 @@ def test_missing_choices_raises_unavailable() -> None:
 
 def test_non_json_message_content_raises_unavailable() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
-            200,
-            json={"choices": [{"message": {"content": "prose, not json"}}]},
+        return _sse_response(
+            {
+                "choices": [
+                    {"index": 0, "delta": {"content": "prose, not json"}, "finish_reason": "stop"}
+                ]
+            }
         )
 
     client = _client_with_capture(handler)
@@ -173,6 +208,67 @@ def test_non_object_message_content_raises_unavailable() -> None:
     client = _client_with_capture(handler)
     with pytest.raises(RollupLlmUnavailable, match="not a JSON object"):
         client.draft(_facts())
+
+
+def test_stream_collects_only_content_across_transport_chunks() -> None:
+    class Chunks(httpx.SyncByteStream):
+        def __iter__(self):
+            data = _sse_response(
+                {"choices": [{"index": 0, "delta": {"reasoning_content": "private reasoning"}}]},
+                {"choices": [{"index": 0, "delta": {"content": '{"title":"中'}}]},
+                {"choices": [{"index": 0, "delta": {"content": '文"}'}}]},
+                {"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]},
+                {"choices": [], "usage": {"completion_tokens": 5}},
+            ).content
+            for index in range(0, len(data), 7):
+                yield data[index : index + 7]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert json.loads(request.content)["stream"] is True
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, stream=Chunks())
+
+    assert _client_with_capture(handler).draft(_facts()) == {"title": "中文"}
+
+
+@pytest.mark.parametrize(
+    "finish_reason,done",
+    [("stop", False), (None, True), ("length", True), ("content_filter", True)],
+)
+def test_stream_rejects_incomplete_generation_even_with_valid_json(finish_reason, done) -> None:
+    response = _sse_response(
+        {
+            "choices": [
+                {"index": 0, "delta": {"content": '{"ok":true}'}, "finish_reason": finish_reason}
+            ]
+        },
+        done=done,
+    )
+    with pytest.raises(RollupLlmUnavailable, match="incomplete"):
+        _client_with_capture(lambda _: response).draft(_facts())
+
+
+def test_stream_error_event_cannot_return_preceding_valid_json() -> None:
+    response = _sse_response(
+        {"choices": [{"index": 0, "delta": {"content": '{"ok":true}'}, "finish_reason": "stop"}]},
+        {"error": {"message": "private request text tok-123", "code": "internal_error"}},
+    )
+    with pytest.raises(RollupLlmUnavailable, match="error event") as excinfo:
+        _client_with_capture(lambda _: response).draft(_facts())
+    assert "private" not in str(excinfo.value)
+    assert "tok-123" not in str(excinfo.value)
+
+
+def test_stream_disconnect_raises_unavailable() -> None:
+    class BrokenStream(httpx.SyncByteStream):
+        def __iter__(self):
+            yield b'data: {"choices":[{"index":0,"delta":{"content":"{\\"ok\\":true}"}}]}\n\n'
+            raise httpx.ReadError("stream disconnected")
+
+    response = httpx.Response(
+        200, headers={"content-type": "text/event-stream"}, stream=BrokenStream()
+    )
+    with pytest.raises(RollupLlmUnavailable, match="ReadError"):
+        _client_with_capture(lambda _: response).draft(_facts())
 
 
 def test_environment_defaults_match_local_hermes_xai_proxy(
@@ -190,9 +286,10 @@ def test_environment_defaults_match_local_hermes_xai_proxy(
 
     assert client._base_url == DEFAULT_BASE_URL == "http://127.0.0.1:8645"
     assert client._token == DEFAULT_TOKEN == "local-d34-proxy"
-    assert client.model == DEFAULT_MODEL == "grok-4.5"
+    assert client.model == DEFAULT_MODEL == "grok-4.6"
+    assert client.reasoning_effort == DEFAULT_REASONING_EFFORT == "xhigh"
     assert client.critic_model == DEFAULT_MODEL
-    assert client._timeout_seconds == DEFAULT_TIMEOUT_SECONDS == 120.0
+    assert client._timeout_seconds == DEFAULT_TIMEOUT_SECONDS == 300.0
 
 
 def test_environment_overrides_configuration(monkeypatch: pytest.MonkeyPatch) -> None:

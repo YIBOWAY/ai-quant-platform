@@ -69,7 +69,8 @@ export default async function PolymarketPage({ searchParams }: PolymarketPagePro
   const text = copy[locale];
   const provider = single(params.provider, "polymarket");
   const cacheMode = single(params.cache_mode, "prefer_cache");
-  const limit = Number.parseInt(single(params.limit, "6"), 10);
+  const parsedLimit = Number.parseInt(single(params.limit, "6"), 10);
+  const limit = Number.isFinite(parsedLimit) ? parsedLimit : 6;
   const predictionMarkets = await getPredictionMarkets(provider, cacheMode, limit);
   const isSample = predictionMarkets.provider === "sample";
 
@@ -126,7 +127,7 @@ export default async function PolymarketPage({ searchParams }: PolymarketPagePro
               cacheMode === "refresh" || cacheMode === "network_only"
                 ? cacheMode
                 : "prefer_cache",
-            limit: String(Number.isFinite(limit) ? limit : 6),
+            limit: String(limit),
           }}
         />
         <div className="mt-3 flex flex-wrap gap-2 border-t border-border-subtle pt-3">

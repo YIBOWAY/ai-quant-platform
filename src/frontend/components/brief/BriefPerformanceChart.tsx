@@ -31,6 +31,11 @@ const chartStyles: Record<
   },
 };
 
+const statusLabels: Record<"en" | "zh", Record<string, string>> = {
+  en: { available: "available", partial: "partial", unavailable: "unavailable" },
+  zh: { available: "可用", partial: "部分", unavailable: "不可用" },
+};
+
 function normalizeSeries(series: PaperAccountPerformanceSeriesResponse) {
   return series.points
     .map((point) => ({
@@ -70,10 +75,12 @@ function tickDates(dates: string[]) {
 export function BriefPerformanceChart({
   ariaLabel,
   emptyLabel,
+  locale = "en",
   series,
 }: {
   ariaLabel: string;
   emptyLabel: string;
+  locale?: "en" | "zh";
   series: PaperAccountPerformanceSeriesResponse[];
 }) {
   const normalized = series.map((item) => ({
@@ -139,7 +146,7 @@ export function BriefPerformanceChart({
                 aria-hidden="true"
                 className={`mr-1 inline-block h-0.5 w-5 align-middle ${style.swatch}`}
               />
-              {style.label} · {item.status}
+              {style.label} · {statusLabels[locale][item.status] ?? item.status}
             </span>
           );
         })}

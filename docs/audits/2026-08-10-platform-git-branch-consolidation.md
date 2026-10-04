@@ -16,7 +16,7 @@ Status: **COMPLETE** for D-33 Slice 1. This record is about repository topology 
 | Platform runtime checkout | `codex/agent-v0-2-release@f3b346babddd0956f3c4a8dbdb6b2a56b26791d0` plus a 52-entry dirty tree |
 | GitHub `main` | `197bc173a93bca1b922e05d4549cba64e1d2c27d` |
 
-Recovery material is owner-only at `/Users/sunyibo/programs/.git-backups/ai-quant-platform-pre-consolidation-20260810`. It contains two all-ref bundles, two dirty tracked bundles, binary patches, untracked archives, an exact 52-entry porcelain manifest, and `SHA256SUMS`. The final dirty state was reconstructed independently from bundle + patch + archive; its manifest SHA-256 is `b54298fcc2ce566eb13ca31ad4af86dd436eba15b0d15cde5513ce71cf5dbd2b`.
+Recovery material is owner-only at `$HOME/programs/.git-backups/ai-quant-platform-pre-consolidation-20260810`. It contains two all-ref bundles, two dirty tracked bundles, binary patches, untracked archives, an exact 52-entry porcelain manifest, and `SHA256SUMS`. The final dirty state was reconstructed independently from bundle + patch + archive; its manifest SHA-256 is `b54298fcc2ce566eb13ca31ad4af86dd436eba15b0d15cde5513ce71cf5dbd2b`.
 
 Twenty-one annotated `archive/pre-consolidation-20260810/*` tags were pushed before any branch deletion. Annotated tags produce 42 `ls-remote` rows because both tag objects and peeled commits are advertised.
 
@@ -49,7 +49,7 @@ The frozen live worktree was preserved in `44f2065`; a concurrent Asia Radar hea
 - GitHub branch protection matches HQA: required linear history; force-push disabled; branch deletion disabled.
 - All thirteen non-main remote branches were deleted only after their exact tips matched archive tags.
 - Both local Platform checkouts now contain only `main` and point to `9ddefa6`.
-- HQA installed wrappers/skill and Platform backend/frontend/connector LaunchAgents all bind `/Users/sunyibo/programs/Hermes-quant-agent/data/_runtime/agent-v02-work/ai-quant-platform`.
+- HQA installed wrappers/skill and Platform backend/frontend/connector LaunchAgents all bind `$HOME/programs/Hermes-quant-agent/data/_runtime/agent-v02-work/ai-quant-platform`.
 - Persistent stack startup completed through `scripts/local_mac_stack.sh start`; Docker/PostgreSQL and all four LaunchAgents were running afterward.
 - Runtime safety remained `dry_run=true`, `paper_trading=true`, `live_trading_enabled=false`, `kill_switch=true`; `release_authorized=false`.
 - Post-restart `/zh/brief` warm verification returned six consecutive HTTP 200 responses in 0.049–0.143 seconds. One immediate 5-second probe during startup timed out before the successful warm series; no corresponding frontend 500 or `ECONNRESET` was logged.

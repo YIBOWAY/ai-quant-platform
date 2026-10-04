@@ -120,16 +120,41 @@ function render(props: Partial<Parameters<typeof BriefRollupDocument>[0]>) {
 }
 
 describe("BriefRollupDocument", () => {
+  it("uses legible archive numbers and keeps the untouched original in a disclosure", () => {
+    const title = "账户期间变动3.703168%";
+    const main = "期末现金705527.280612604美元（pnl_pct 0.07074363684763108）。";
+    const record: BriefRollupView = { ...rollup, title, payload: { ...payload, title, main_storyline: main,
+      stats: { ...payload.stats, period_change_pct: 3.703168 },
+      account_summary: { end: { cash: 705527.280612604, pnl_pct: 0.07074363684763108 } },
+    } };
+    const before = JSON.stringify(record);
+    const html = render({ rollup: record });
+    expect(html).toMatch(/<h1[^>]*>账户期间变动3.70%<\/h1>/);
+    expect(html).toContain("705,527.28美元（账户盈亏比例 7.07%）");
+    expect(html).toContain("查看原始生成文字");
+    expect(html).toContain(main);
+    expect(JSON.stringify(record)).toBe(before);
+  });
+  it("never displays a cost-based endpoint as a valid period gain", () => {
+    const record: BriefRollupView = { ...rollup, payload: { ...payload,
+      account_summary: { start: { valuation_status: "incomplete", cost_reference_equity: 100000, unpriced_symbols: ["MU"] } },
+    } };
+    const html = render({ rollup: record });
+    expect(html).toContain("期初（MU）缺少市场报价，市值与盈亏未知");
+    expect(html).toContain("含成本价的参考总额为 $100,000.00");
+    expect(html).not.toContain("▲ +1.23%");
+    expect(record.payload?.stats.period_change_pct).toBe(1.23);
+  });
   it("renders the masthead with period range, title, and fact line", () => {
     const html = render({});
-    expect(html).toContain("VOL.2026-W33 · 2026-08-10 ~ 2026-08-16 · AI 综合");
+    expect(html).toContain("VOL.2026-W33 · 2026-08-10 ~ 2026-08-16 · AI 摘要");
     expect(html).toContain("第 33 周 AI 周报");
     expect(html).toContain("基于 5 期日报快照 · 模型 xai/grok-4 · 模拟盘 · 非投资建议");
   });
 
   it("renders the main storyline as the centered lede", () => {
     const html = render({});
-    expect(html).toContain("本期主线");
+    expect(html).toContain("本期概况");
     expect(html).toContain("本周模拟盘围绕半导体与防御板块再平衡，波动放大。");
   });
 

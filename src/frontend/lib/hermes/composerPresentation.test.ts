@@ -36,10 +36,10 @@ describe("composerPresentation", () => {
     );
   });
 
-  it("localizes receipt and lifecycle states while retaining exact ids", () => {
+  it("localizes receipt and lifecycle states without exposing command or run ids", () => {
     expect(
-      formatComposerReceiptStatus("accepted", "123456789abcdef", undefined, "zh"),
-    ).toBe("已接受 · 命令 12345678…");
+      formatComposerReceiptStatus("accepted", "123456789abcdef", "internal reason", "zh"),
+    ).toBe("已接受");
     expect(
       formatComposerLifecycleStatus(
         "succeeded",
@@ -47,10 +47,10 @@ describe("composerPresentation", () => {
         "run_123456789012345",
         "zh",
       ),
-    ).toBe("已成功 · 12345678… · 运行 run_12345678…");
+    ).toBe("已成功");
     expect(
       formatComposerLifecycleStatus("queued", "123456789abcdef", null, "en"),
-    ).toBe("Queued · 12345678…");
+    ).toBe("Queued");
   });
 
   it("maps prompt and Keychain failures to actionable locale copy", () => {
@@ -76,5 +76,40 @@ describe("composerPresentation", () => {
         "en",
       ),
     ).toContain("macOS Keychain");
+  });
+
+  it("maps a corrupt stored intent to a safe next action", () => {
+    const message = composerErrorMessage(
+      new WorkspaceClientError(
+        "stored payload intent kind is invalid",
+        409,
+        "intent_payload_corrupt",
+      ),
+      "zh",
+    );
+    expect(message).toBe(
+      "本地消息存储读取失败，这条消息尚未发送。请先重启本地服务；如果仍失败，请检查 HQA 日志。不要重试同一次发送。",
+    );
+    expect(message).not.toContain("intent_payload_corrupt");
+    expect(message).not.toContain("stored payload");
+  });
+
+  it("distinguishes a safe GET retry from an unknown POST outcome", () => {
+    expect(
+      composerErrorMessage(
+        new WorkspaceClientError(
+          "raw GET timeout",
+          504,
+          "workspace_request_timeout",
+        ),
+        "zh",
+      ),
+    ).toContain("检查服务状态后重试");
+    const post = composerErrorMessage(
+      new WorkspaceClientError("raw POST timeout", 504, "outcome_unknown"),
+      "zh",
+    );
+    expect(post).toContain("重试同一次发送");
+    expect(post).not.toContain("raw POST timeout");
   });
 });

@@ -20,6 +20,7 @@ class OptionsChainResponse(BaseModel):
     source: str
     expiration: str
     option_type: str
+    implied_volatility_unit: str = "percent"
     contracts: list[OptionRecord]
 
 
@@ -29,6 +30,7 @@ class OptionsSnapshotResponse(BaseModel):
     source: str
     price: float
     nearest_expiry: str
+    iv_expiry: str
     atm_iv: float | None = None
     hv_30d: float | None = None
     iv_rank: float | None = None
@@ -148,7 +150,12 @@ class OptionsBullPutSignalResponse(BaseModel):
 
 class OptionsFearScoreResponse(BaseModel):
     success: bool
-    fear_score: float
+    fear_score: float | None
+    partial_score: float | None
+    status: str
+    available_inputs: int
+    total_inputs: int
+    missing_inputs: list[str]
     tier: str
     components: dict[str, Any]
     bull_put_spread_signal: bool
@@ -168,7 +175,12 @@ class OptionsIvRankResponse(BaseModel):
 
 class OptionsMarketSentimentResponse(BaseModel):
     success: bool
-    sentiment_score: float
+    sentiment_score: float | None
+    partial_score: float | None
+    status: str
+    available_inputs: int
+    total_inputs: int
+    missing_inputs: list[str]
     regime: str
     components: dict[str, Any]
     assumptions: list[str]
@@ -178,6 +190,8 @@ class OptionsEarningsCrushResponse(BaseModel):
     success: bool
     ticker: str
     sample_count: int
+    status: str
+    reason: str | None
     average_crush_pct: float | None = None
     expected_post_event_iv: float | None = None
     implied_move_pct: float | None = None
@@ -188,8 +202,9 @@ class OptionsEarningsCrushResponse(BaseModel):
 class OptionsHedgeAdvisorResponse(BaseModel):
     success: bool
     ticker: str
-    situation: dict[str, Any]
+    situation: str
     structures: list[OptionRecord]
+    rejected_legs: list[OptionRecord] = []
     assumptions: list[str]
 
 
@@ -208,9 +223,12 @@ class OptionsAlertsEvaluationResponse(BaseModel):
 
 class OptionsResearchHealthCheckResponse(BaseModel):
     success: bool
-    health_score: float
+    health_score: float | None
+    status: str
+    profile_count: int
     stale_profiles: list[str]
     missing_thesis: list[str]
+    missing_updated_at: list[str]
     assumptions: list[str]
 
 

@@ -2,11 +2,18 @@ import { Database, ExternalLink, Link2, RotateCcw, Search } from "lucide-react";
 import Link from "next/link";
 
 import { Card, StatusPill } from "@/components/ui/primitives";
+import { formatDateTime } from "@/components/hermes/artifacts/formatters";
 import {
   resultAuthorityLabel,
+  resultDisplayTitle,
+  resultFreshnessLabel,
+  resultFreshnessTone,
   resultKindLabel,
+  resultReadStatusLabel,
   resultReadStatusTone,
   resultSourceLabel,
+  resultStatusLabel,
+  resultSummaryText,
   resultWarningText,
 } from "@/lib/hermes/resultsPresentation";
 import {
@@ -69,22 +76,22 @@ const copy = {
   zh: {
     title: "统一结果",
     subtitle:
-      "只读汇总平台与 HQA 权威结果存储。这里不会把 Hermes 独立运行伪造成结果，只展示绑定到具体结果的精确关联。",
+      "查看已保存的研究、回测和运行记录。每条结果保留原始来源，以及实际记录的 Hermes 会话关联。",
     sourceStatus: "来源状态",
     filterAria: "结果筛选",
     activeFilters: "当前筛选",
     clear: "清除筛选",
     searchLabel: "搜索统一结果",
-    searchPlaceholder: "搜索标题、摘要或资源 ID",
+    searchPlaceholder: "搜索标题或摘要",
     searchSubmit: "搜索结果",
     resultList: "统一结果记录",
     status: "状态",
     read: "读取",
     source: "来源",
-    authority: "权威来源",
+    authority: "原始记录来源",
     exactLinks: "条精确运行关联",
     exactLinksEmpty: "0 条精确运行关联",
-    exactLinksUnavailable: "精确关联权威不可用",
+    exactLinksUnavailable: "会话关联暂时无法读取",
     degradedTitle: "部分结果来源已降级",
     degradedBody: "可用记录仍可读取；缺失或损坏记录会保留显示，绝不会伪装成成功结果。",
     emptyTitle: "暂无统一结果",
@@ -124,23 +131,30 @@ function ResultRow({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-label-caps text-info">{resultKindLabel(item.kind, locale)}</span>
-            <span className="break-all font-data-mono text-xs text-text-secondary">
-              {item.resource_id}
-            </span>
           </div>
           <h3 className="mt-1 font-body-sm font-semibold text-text-primary">
-            {item.display_title}
+            {resultDisplayTitle(item, locale)}
           </h3>
-          {item.summary ? (
-            <p className="mt-1 font-body-sm text-text-secondary">{item.summary}</p>
+          {resultSummaryText(item, locale) ? (
+            <p className="mt-1 font-body-sm text-text-secondary">
+              {resultSummaryText(item, locale)}
+            </p>
           ) : null}
           <div className="mt-2 flex flex-wrap gap-1.5">
-            <StatusPill label={text.status} value={item.status} />
+            {item.data_mode === "sample" && <StatusPill label="" value={locale === "zh" ? "样例数据 · 非真实表现" : "SAMPLE · NOT REAL PERFORMANCE"} tone="warning" />}
+            <StatusPill label={text.status} value={resultStatusLabel(item.status, locale)} />
             <StatusPill
               label={text.read}
-              value={item.read_status}
+              value={resultReadStatusLabel(item.read_status, locale)}
               tone={resultReadStatusTone(item.read_status)}
             />
+            {item.freshness === "stale" ? (
+              <StatusPill
+                label=""
+                value={resultFreshnessLabel(item.freshness, locale)}
+                tone={resultFreshnessTone(item.freshness)}
+              />
+            ) : null}
             <StatusPill label={text.source} value={resultSourceLabel(item.source, locale)} />
           </div>
           <p className="mt-2 font-body-sm text-text-secondary">
@@ -148,7 +162,7 @@ function ResultRow({
             {resultAuthorityLabel(item.authority, locale)}
           </p>
           <p className="mt-1 font-data-mono text-xs text-text-secondary">
-            <time dateTime={item.occurred_at}>{item.occurred_at}</time>
+            <time dateTime={item.occurred_at}>{formatDateTime(item.occurred_at, locale)}</time>
             <span
               className={`ml-3 inline-flex items-center gap-1 ${
                 runLinks === null ? "text-warning" : ""
@@ -241,7 +255,7 @@ export function UnifiedResultsIndex({
               <li key={source.source}>
                 <StatusPill
                   label={resultSourceLabel(source.source, locale)}
-                  value={`${source.read_status} · ${source.item_count}`}
+                  value={`${resultReadStatusLabel(source.read_status, locale)} · ${source.item_count}`}
                   tone={resultReadStatusTone(source.read_status)}
                 />
               </li>
@@ -259,7 +273,7 @@ export function UnifiedResultsIndex({
               <ul className="mt-2 space-y-1 font-data-mono text-xs text-text-secondary">
                 {envelope.warnings.map((warning, index) => (
                   <li key={`${warning.source}:${warning.code}:${warning.resource_id ?? index}`}>
-                    {resultWarningText(warning)}
+                    {resultWarningText(warning, locale)}
                   </li>
                 ))}
               </ul>
@@ -282,7 +296,7 @@ export function UnifiedResultsIndex({
               <ul className="mt-2 space-y-1 font-data-mono text-xs text-text-secondary">
                 {envelope.warnings.map((warning, index) => (
                   <li key={`${warning.source}:${warning.code}:${warning.resource_id ?? index}`}>
-                    {resultWarningText(warning)}
+                    {resultWarningText(warning, locale)}
                   </li>
                 ))}
               </ul>

@@ -10,6 +10,7 @@ replay.
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import math
 import re
@@ -24,10 +25,12 @@ import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from quant_system.d34.qlib_expr import QlibExprError, compile_qlib_expr
+from quant_system.options.seller_score import is_us_market_session
 
-RESEARCH_REQUEST_CONTRACT = "hqa.d34_research_request/v1"
-RESEARCH_RESULT_CONTRACT = "hqa.d34_research_result/v1"
+RESEARCH_REQUEST_CONTRACT = "hqa.d34_research_request/v2"
+RESEARCH_RESULT_CONTRACT = "hqa.d34_research_result/v2"
 ENGINE_RECEIPT_CONTRACT = "hqa.d34_engine_receipt/v1"
+EXPERIMENT_TRIAL_BATCH_CONTRACT = "hqa.d34_experiment_trial_batch/v1"
 D34_TARGET_GROSS_EXPOSURE = 0.99
 
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -40,6 +43,28 @@ class D34ResearchError(RuntimeError):
         self.code = code
         self.message = message
         super().__init__(message)
+
+
+def validate_xnys_calendar(values: tuple[str, ...] | list[str]) -> tuple[str, ...]:
+    """Return one strict, unique, increasing XNYS session sequence."""
+
+    raw_values = tuple(values)
+    try:
+        calendar = pd.to_datetime(list(raw_values), utc=True)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("d34_research_calendar_invalid") from exc
+    if (
+        len(calendar) < 3
+        or calendar.has_duplicates
+        or not calendar.is_monotonic_increasing
+        or any(
+            pd.Timestamp(value).isoformat() != raw
+            or not is_us_market_session(pd.Timestamp(value).date())
+            for value, raw in zip(calendar, raw_values, strict=True)
+        )
+    ):
+        raise ValueError("d34_research_calendar_invalid")
+    return raw_values
 
 
 def _canonical_json(value: object) -> bytes:
@@ -64,61 +89,164 @@ def _file_digest(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _write_once_atomic(path: Path, payload: bytes) -> None:
+    if path.is_file():
+        if path.read_bytes() == payload:
+            return
+        raise D34ResearchError(
+            "d34_research_collision",
+            "existing experiment trial batch differs from this replay",
+        )
+    temporary = path.with_name(f".{path.name}.tmp")
+    temporary.write_bytes(payload)
+    if path.is_file():
+        temporary.unlink(missing_ok=True)
+        if path.read_bytes() == payload:
+            return
+        raise D34ResearchError(
+            "d34_research_collision",
+            "existing experiment trial batch differs from this replay",
+        )
+    temporary.replace(path)
+
+
+def _write_experiment_trial_attempt(
+    *,
+    root: Path,
+    request: D34ResearchRequest,
+    experiment_id: str,
+    status: str,
+    subject: str | None = None,
+    proposal_digest: str | None = None,
+    experiment_receipt_digest: str | None = None,
+    daily_returns: tuple[float, ...] | None = None,
+    evaluation_contract: Mapping[str, object] | None = None,
+    failure_type: str | None = None,
+    failure_reason: str | None = None,
+) -> Path:
+    body: dict[str, object] = {
+        "contract": "hqa.d34_experiment_trial_attempt/v1",
+        "job_id": request.job_id,
+        "request_digest": request.request_digest,
+        "universe": list(request.universe),
+        "universe_digest": _digest(list(request.universe)),
+        "calendar_digest": _digest(list(request.calendar)),
+        "return_dates": list(request.calendar),
+        "experiment_id": experiment_id,
+        "status": status,
+    }
+    if status == "succeeded":
+        body.update(
+            {
+                "subject": str(subject or ""),
+                "proposal_digest": str(proposal_digest or ""),
+                "experiment_receipt_digest": str(
+                    experiment_receipt_digest or ""
+                ),
+                "daily_returns": [float(value) for value in daily_returns or ()],
+            }
+        )
+        if evaluation_contract is not None:
+            body["evaluation_contract"] = dict(evaluation_contract)
+    else:
+        body["failure_type"] = failure_type
+        body["failure_reason"] = failure_reason
+    receipt_digest = _digest(body)
+    path = root / f"{experiment_id}.json"
+    root.mkdir(parents=True, exist_ok=True)
+    _write_once_atomic(
+        path,
+        _canonical_json({**body, "receipt_digest": receipt_digest}) + b"\n",
+    )
+    return path
+
+
+def _experiment_evaluation_contract(request, outcome, experiment_runner):
+    """Persist this experiment's own economics, never the selected sibling's.
+
+    The runner's original combined open/close cost is retained verbatim; this
+    recorder does not invent a commission/slippage decomposition.
+    """
+    config = json.loads(json.dumps(dict(outcome.qlib_config), allow_nan=False))
+    try:
+        source_path = inspect.getsourcefile(experiment_runner)
+    except TypeError:
+        source_path = None
+    if source_path is None and callable(experiment_runner):
+        try:
+            source_path = inspect.getsourcefile(experiment_runner.__call__)
+        except TypeError:
+            source_path = None
+    return {
+        "schema": "hqa.d34_experiment_evaluation/v1",
+        "return_definition": "net_total_return",
+        "frequency": "daily",
+        "initial_cash": request.initial_cash,
+        "request_digest": request.request_digest,
+        "snapshot_id": request.snapshot_id,
+        "snapshot_digest": request.snapshot_digest,
+        "snapshot_source": request.snapshot_source,
+        "universe_digest": _digest(list(request.universe)),
+        "calendar_digest": _digest(list(request.calendar)),
+        "qlib_config": config,
+        "qlib_config_digest": _digest(config),
+        "implementation": {
+            "producer_sha256": _file_digest(Path(__file__)),
+            "runner_source_sha256": _file_digest(Path(source_path)) if source_path else None,
+        },
+    }
+
+
 class D34ResearchRequest(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     contract: Literal[RESEARCH_REQUEST_CONTRACT]
     job_id: str = Field(pattern=r"^job-[A-Za-z0-9._:-]{8,200}$")
-    mandate_id: str = Field(pattern=r"^mandate-[A-Za-z0-9._:-]{8,200}$")
+    run_id: str = Field(pattern=r"^attempt-[A-Za-z0-9._:-]{8,200}$")
+    resource_envelope_id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+    resource_policy_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     snapshot_id: str = Field(pattern=r"^snapshot-[A-Za-z0-9._:-]{8,200}$")
     snapshot_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     snapshot_source: Literal["futu"]
     provider_uri: Path
     universe: tuple[str, ...]
     calendar: tuple[str, ...]
-    max_iterations: int = Field(default=3, ge=1, le=20)
-    experiments_per_iteration: int = Field(default=3, ge=1, le=20)
+    max_iterations: int = Field(default=3, ge=3, le=3)
+    experiments_per_iteration: int = Field(default=3, ge=3, le=3)
     top_k: int = Field(default=1, ge=1, le=100)
     initial_cash: float = Field(default=100_000, gt=0, le=1_000_000_000)
     budget_reservation_usd: float = Field(default=10, ge=0, le=100_000)
     objective: str = Field(min_length=1, max_length=10_000)
+    formula: str | None = Field(default=None, min_length=1, max_length=400)
 
     @model_validator(mode="after")
     def validate_contract_inputs(self) -> D34ResearchRequest:
         symbols = tuple(value.strip().upper() for value in self.universe)
         if (
             symbols != self.universe
-            or not 1 <= len(symbols) <= 100
+            or not 1 <= len(symbols) <= 64
             or len(set(symbols)) != len(symbols)
             or any(_SYMBOL_RE.fullmatch(value) is None for value in symbols)
             or self.top_k > len(symbols)
             or not self.provider_uri.is_absolute()
             or not self.provider_uri.is_dir()
+            or self.budget_reservation_usd != 10
         ):
             raise ValueError("d34_research_request_invalid")
-        try:
-            calendar = pd.to_datetime(list(self.calendar), utc=True)
-        except (TypeError, ValueError) as exc:
-            raise ValueError("d34_research_calendar_invalid") from exc
-        if (
-            len(calendar) < 3
-            or calendar.has_duplicates
-            or not calendar.is_monotonic_increasing
-            or any(
-                pd.Timestamp(value).isoformat() != raw
-                for value, raw in zip(calendar, self.calendar, strict=True)
-            )
-        ):
-            raise ValueError("d34_research_calendar_invalid")
+        validate_xnys_calendar(self.calendar)
+        if self.formula is not None:
+            compile_qlib_expr(self.formula)
         return self
 
     @property
     def experiment_count(self) -> int:
+        if self.formula is not None:
+            return 1
         return self.max_iterations * self.experiments_per_iteration
 
     @property
     def request_digest(self) -> str:
-        return _digest(self.model_dump(mode="json"))
+        return _digest(self.model_dump(mode="json", exclude_none=True))
 
 
 class ResearchProposal(BaseModel):
@@ -134,7 +262,15 @@ class ResearchProposal(BaseModel):
         "moving_average_spread",
         "composed",
     ]
-    short_window: int = Field(default=1, ge=1, le=252)
+    short_window: int = Field(
+        default=0,
+        ge=0,
+        le=252,
+        description=(
+            "Momentum skip-N; 0 means no skip. "
+            "moving_average_spread requires a short mean of at least 1."
+        ),
+    )
     long_window: int = Field(ge=2, le=252)
     rationale: str = Field(min_length=1, max_length=2_000)
     qlib_expr: str | None = Field(default=None, max_length=400)
@@ -149,7 +285,9 @@ class ResearchProposal(BaseModel):
             except QlibExprError as exc:
                 raise ValueError(exc.code) from exc
             return self
-        if self.operator == "moving_average_spread" and self.short_window >= self.long_window:
+        if self.operator == "moving_average_spread" and (
+            self.short_window < 1 or self.short_window >= self.long_window
+        ):
             raise ValueError("d34_factor_window_invalid")
         return self
 
@@ -182,6 +320,57 @@ class D34ResearchResult:
     factor_path: Path
     target_weights_path: Path
     qlib_receipt_path: Path
+    experiment_trials_path: Path
+    experiment_trials_digest: str
+    experiment_trials_file_digest: str
+    successful_experiment_count: int
+
+
+HUNG_MOMENTUM_CANDIDATE_ID = "artifact-d489583fb04bdc04"
+READ_ONLY_DSR_CANDIDATE_ID = "artifact-a604ad9ad2792c32"
+HUNG_MOMENTUM_CORRECTION_NOTE = (
+    "更正注记：主人已知情。本候选实际运行为普通 21 日动量"
+    "（$close/Ref($close,21)-1）；论题里的 short_window/skip-N 当时未被渲染器 honor。"
+)
+HISTORICAL_DSR_REVIEW_NOTES = {
+    HUNG_MOMENTUM_CANDIDATE_ID: (
+        "历史复核注记（2026-08-20）：原作业 4/4 个成功 experiment 的证据清单 "
+        "SHA-256=951d538efa546fb9e54c0f953cc314ca506d4911afd14b7c3c3b42810444092f；"
+        "以绑定的 Platform replay 750 日收益、n_trials=4 和修正后的 plain kurtosis "
+        "重算 DSR=0.840302 < 0.95。此结论只纠正历史准入口径；按主人授权保留已挂状态"
+        "与既有纸面成交，不自动解挂。"
+    ),
+    READ_ONLY_DSR_CANDIDATE_ID: (
+        "历史复核注记（2026-08-20）：原作业 7/9 个成功 experiment 的证据清单 "
+        "SHA-256=2fbe5eb539785bf2dcf7f02281baa963a20771365991f91160c1d3b052d6f123；"
+        "以绑定的 Platform replay 752 日收益、n_trials=7 和修正后的 plain kurtosis "
+        "重算 DSR=0.852474 < 0.95。继续保留为只读 verified candidate，不挂。"
+    ),
+}
+
+
+def annotate_hung_momentum_candidates(
+    candidates: list[dict[str, object]] | tuple[dict[str, object], ...],
+) -> list[dict[str, object]]:
+    annotated: list[dict[str, object]] = []
+    for item in candidates:
+        if not isinstance(item, dict):
+            annotated.append(item)
+            continue
+        candidate_id = str(item.get("candidate_id") or "")
+        if candidate_id not in HISTORICAL_DSR_REVIEW_NOTES:
+            annotated.append(item)
+            continue
+        row = dict(item)
+        notes = [str(row.get("description_note") or "").strip()]
+        if candidate_id == HUNG_MOMENTUM_CANDIDATE_ID:
+            notes.append(HUNG_MOMENTUM_CORRECTION_NOTE)
+        notes.append(HISTORICAL_DSR_REVIEW_NOTES[candidate_id])
+        row["description_note"] = " ".join(
+            dict.fromkeys(note for note in notes if note)
+        )
+        annotated.append(row)
+    return annotated
 
 
 ProposalProvider = Callable[
@@ -198,6 +387,9 @@ def qlib_expression(proposal: ResearchProposal) -> str:
         assert proposal.qlib_expr is not None
         return compile_qlib_expr(proposal.qlib_expr).qlib
     window = proposal.long_window
+    skip = proposal.short_window
+    if proposal.operator == "momentum" and skip >= 1:
+        return f"Ref($close,{skip})/Ref($close,{skip + window})-1"
     expressions = {
         "momentum": f"$close/Ref($close,{window})-1",
         "mean_reversion": f"1-$close/Ref($close,{window})",
@@ -208,6 +400,25 @@ def qlib_expression(proposal: ResearchProposal) -> str:
         ),
     }
     return expressions[proposal.operator]
+
+
+def factor_display_name_zh(proposal: ResearchProposal) -> str:
+    """Return a deterministic Chinese name from the closed proposal schema."""
+
+    window = proposal.long_window
+    if proposal.operator == "momentum":
+        if proposal.short_window >= 1:
+            return f"跳过最近 {proposal.short_window} 日的 {window} 日横截面动量"
+        return f"{window} 日横截面动量"
+    if proposal.operator == "mean_reversion":
+        return f"{window} 日均值回归"
+    if proposal.operator == "low_volatility":
+        return f"{window} 日低波动"
+    if proposal.operator == "volume_surprise":
+        return f"{window} 日成交量异动"
+    if proposal.operator == "moving_average_spread":
+        return f"{proposal.short_window} 日 / {window} 日均线差"
+    return f"{window} 日复合选股因子"
 
 
 def render_factor_source(*, proposal: ResearchProposal, factor_id: str) -> tuple[str, str]:
@@ -226,8 +437,9 @@ def render_factor_source(*, proposal: ResearchProposal, factor_id: str) -> tuple
             "class D34GeneratedFactor(BaseFactor):\n"
             f"    factor_id = {factor_id!r}\n"
             f"    factor_name = {proposal.title!r}\n"
+            f"    display_name_zh = {factor_display_name_zh(proposal)!r}\n"
             "    factor_version = \"1.0.0\"\n"
-            f"    default_lookback = {window}\n"
+            f"    default_lookback = {compiled.lookback}\n"
             "    direction = \"higher_is_better\"\n"
             f"    description = {proposal.thesis!r}\n\n"
             "    def _compute_values(self, frame: pd.DataFrame) -> pd.Series:\n"
@@ -237,9 +449,18 @@ def render_factor_source(*, proposal: ResearchProposal, factor_id: str) -> tuple
         return source, hashlib.sha256(source.encode("utf-8")).hexdigest()
     compute = {
         "momentum": (
-            "        return group[\"close\"].transform(\n"
-            "            lambda values: values.pct_change(self.lookback)\n"
-            "        )"
+            (
+                "        return group[\"close\"].transform(\n"
+                f"            lambda values: values.shift({proposal.short_window}) "
+                f"/ values.shift({proposal.short_window + window}) - 1\n"
+                "        )"
+            )
+            if proposal.short_window >= 1
+            else (
+                "        return group[\"close\"].transform(\n"
+                "            lambda values: values.pct_change(self.lookback)\n"
+                "        )"
+            )
         ),
         "mean_reversion": (
             "        return -group[\"close\"].transform(\n"
@@ -283,6 +504,7 @@ def render_factor_source(*, proposal: ResearchProposal, factor_id: str) -> tuple
         "class D34GeneratedFactor(BaseFactor):\n"
         f"    factor_id = {factor_id!r}\n"
         f"    factor_name = {proposal.title!r}\n"
+        f"    display_name_zh = {factor_display_name_zh(proposal)!r}\n"
         "    factor_version = \"1.0.0\"\n"
         f"    default_lookback = {window}\n"
         "    direction = \"higher_is_better\"\n"
@@ -324,10 +546,14 @@ def _result_from_manifest(output_dir: Path, document: dict[str, object]) -> D34R
     factor_path = output_dir / str(document["factor_file"])
     target_path = output_dir / str(document["target_weights_file"])
     qlib_path = output_dir / str(document["qlib_receipt_file"])
+    experiment_trials_path = Path(str(document["experiment_trials_path"]))
+    if not experiment_trials_path.is_absolute():
+        experiment_trials_path = output_dir / experiment_trials_path
     expected = {
         factor_path: str(document["candidate_code_digest"]),
         target_path: str(document["target_weights_digest"]),
         qlib_path: str(document["qlib_receipt_file_digest"]),
+        experiment_trials_path: str(document["experiment_trials_file_digest"]),
     }
     if any(not path.is_file() or _file_digest(path) != digest for path, digest in expected.items()):
         raise D34ResearchError(
@@ -348,6 +574,10 @@ def _result_from_manifest(output_dir: Path, document: dict[str, object]) -> D34R
         factor_path=factor_path,
         target_weights_path=target_path,
         qlib_receipt_path=qlib_path,
+        experiment_trials_path=experiment_trials_path,
+        experiment_trials_digest=str(document["experiment_trials_digest"]),
+        experiment_trials_file_digest=str(document["experiment_trials_file_digest"]),
+        successful_experiment_count=int(document["successful_experiment_count"]),
     )
 
 
@@ -377,6 +607,7 @@ def execute_research_request(
     proposal_provider: ProposalProvider,
     experiment_runner: ExperimentRunner,
     cost_provider: CostProvider,
+    trials_root: str | Path | None = None,
 ) -> D34ResearchResult:
     root = Path(output_root)
     root.mkdir(parents=True, exist_ok=True)
@@ -385,17 +616,34 @@ def execute_research_request(
         return _load_existing(output_dir, request)
 
     temp = Path(tempfile.mkdtemp(prefix=".research-", dir=root))
+    attempt_root = (
+        root / f"experiment-trial-attempts-{request.request_digest[:32]}"
+    )
     history: list[dict[str, object]] = []
     successes: list[tuple[str, ResearchProposal, QlibExperimentResult]] = []
+    experiment_trials: list[dict[str, object]] = []
+    fixed_proposal = None
+    if request.formula is not None:
+        compiled = compile_qlib_expr(request.formula)
+        fixed_proposal = ResearchProposal(
+            title="给定公式复现",
+            thesis=request.objective[:2_000],
+            operator="composed",
+            long_window=min(252, max(2, compiled.lookback)),
+            qlib_expr=request.formula,
+            rationale="Reproduce the supplied expression without hypothesis search.",
+        )
+    iterations = 1 if fixed_proposal else request.max_iterations
+    experiments = 1 if fixed_proposal else request.experiments_per_iteration
     try:
-        for iteration in range(1, request.max_iterations + 1):
-            for experiment in range(1, request.experiments_per_iteration + 1):
+        for iteration in range(1, iterations + 1):
+            for experiment in range(1, experiments + 1):
                 experiment_id = f"iteration-{iteration:02d}-experiment-{experiment:02d}"
                 experiment_dir = temp / "experiments" / experiment_id
                 experiment_dir.mkdir(parents=True)
                 proposal: ResearchProposal | None = None
                 try:
-                    proposal = proposal_provider(
+                    proposal = fixed_proposal or proposal_provider(
                         request, iteration, experiment, tuple(history)
                     )
                     expression = qlib_expression(proposal)
@@ -415,6 +663,14 @@ def execute_research_request(
                     (experiment_dir / "failure.json").write_bytes(
                         _canonical_json(failure) + b"\n"
                     )
+                    _write_experiment_trial_attempt(
+                        root=attempt_root,
+                        request=request,
+                        experiment_id=experiment_id,
+                        status="failed",
+                        failure_type=type(exc).__name__,
+                        failure_reason=str(exc)[:2_000],
+                    )
                     history.append(failure)
                     continue
                 observation = {
@@ -424,9 +680,75 @@ def execute_research_request(
                     "metrics": dict(outcome.metrics),
                     "proposal": proposal.model_dump(mode="json"),
                     "qlib_expression": expression,
+                    "returns_digest": _digest({
+                        "values": [float(value) for value in outcome.daily_returns],
+                        "dates": list(outcome.return_dates),
+                    }),
+                    "return_dates_digest": _digest(list(outcome.return_dates)),
+                    "evaluation_contract": _experiment_evaluation_contract(
+                        request, outcome, experiment_runner
+                    ),
                 }
-                (experiment_dir / "receipt.json").write_bytes(
+                experiment_receipt_path = experiment_dir / "receipt.json"
+                experiment_receipt_path.write_bytes(
                     _canonical_json(observation) + b"\n"
+                )
+                proposal_digest = _digest(proposal.model_dump(mode="json"))
+                experiment_receipt_digest = _file_digest(experiment_receipt_path)
+                _write_experiment_trial_attempt(
+                    root=attempt_root,
+                    request=request,
+                    experiment_id=experiment_id,
+                    status="succeeded",
+                    subject=f"{proposal.operator}:{experiment_id}",
+                    proposal_digest=proposal_digest,
+                    experiment_receipt_digest=experiment_receipt_digest,
+                    daily_returns=outcome.daily_returns,
+                    evaluation_contract=observation["evaluation_contract"],
+                )
+                # R1: each Qlib experiment is one trial for DSR admission.
+                from quant_system.config.settings import load_settings
+                from quant_system.research.trials import (
+                    ResearchTrial,
+                    TrialsLedger,
+                )
+
+                ledger_root = (
+                    Path(trials_root)
+                    if trials_root is not None
+                    else Path(load_settings().data.data_dir) / "trials"
+                )
+                run_id = f"{request.job_id}:{experiment_id}"
+                trial = ResearchTrial.record(
+                    kind="d34_experiment",
+                    subject=f"{proposal.operator}:{experiment_id}",
+                    universe=request.universe,
+                    daily_returns=outcome.daily_returns,
+                    window_start=outcome.return_dates[0][:10],
+                    window_end=outcome.return_dates[-1][:10],
+                    source=run_id,
+                    metadata={
+                        "run_id": run_id,
+                        "job_id": request.job_id,
+                        "request_digest": request.request_digest,
+                        "experiment_id": experiment_id,
+                        "attempt_status": "succeeded",
+                        "proposal_digest": proposal_digest,
+                        "experiment_receipt_digest": experiment_receipt_digest,
+                    },
+                )
+                TrialsLedger(ledger_root).append(trial)
+                experiment_trials.append(
+                    {
+                        "experiment_id": experiment_id,
+                        "subject": trial.subject,
+                        "proposal_digest": proposal_digest,
+                        "experiment_receipt_digest": experiment_receipt_digest,
+                        "daily_returns": [
+                            float(value) for value in outcome.daily_returns
+                        ],
+                        "evaluation_contract": observation["evaluation_contract"],
+                    }
                 )
                 history.append(observation)
                 successes.append((experiment_id, proposal, outcome))
@@ -436,6 +758,45 @@ def execute_research_request(
             )
         selected_id, selected_proposal, selected = max(
             successes, key=lambda value: (value[2].score, value[0])
+        )
+        universe_digest = _digest(list(request.universe))
+        calendar_digest = _digest(list(request.calendar))
+        experiment_trials_body = {
+            "contract": EXPERIMENT_TRIAL_BATCH_CONTRACT,
+            "job_id": request.job_id,
+            "request_digest": request.request_digest,
+            "universe": list(request.universe),
+            "universe_digest": universe_digest,
+            "calendar_digest": calendar_digest,
+            "return_dates": list(request.calendar),
+            "experiment_count": len(history),
+            "successful_experiment_count": len(experiment_trials),
+            "attempts": [
+                {
+                    "experiment_id": str(item["experiment_id"]),
+                    "status": str(item["status"]),
+                    "attempt_receipt_digest": _file_digest(
+                        attempt_root / f"{item['experiment_id']}.json"
+                    ),
+                }
+                for item in history
+            ],
+            "selected_experiment": selected_id,
+            "experiments": experiment_trials,
+        }
+        experiment_trials_digest = _digest(experiment_trials_body)
+        experiment_trials_path = (
+            root / f"experiment-trials-{request.request_digest[:32]}.json"
+        )
+        _write_once_atomic(
+            experiment_trials_path,
+            _canonical_json(
+                {
+                    **experiment_trials_body,
+                    "receipt_digest": experiment_trials_digest,
+                }
+            )
+            + b"\n",
         )
         factor_id = "d34_" + hashlib.sha256(
             f"{request.job_id}:{selected_id}".encode()
@@ -462,12 +823,13 @@ def execute_research_request(
             raise D34ResearchError(
                 "d34_research_budget_invalid", "RD-Agent cost exceeded its job reservation"
             )
-        universe_digest = _digest(list(request.universe))
-        calendar_digest = _digest(list(request.calendar))
         receipt_body = {
             "contract": ENGINE_RECEIPT_CONTRACT,
             "engine": "qlib",
             "job_id": request.job_id,
+            "run_id": request.run_id,
+            "factor_id": factor_id,
+            "candidate_code_digest": factor_digest,
             "snapshot_id": request.snapshot_id,
             "snapshot_digest": request.snapshot_digest,
             "universe_digest": universe_digest,
@@ -493,7 +855,9 @@ def execute_research_request(
         manifest = {
             "contract": RESEARCH_RESULT_CONTRACT,
             "job_id": request.job_id,
-            "mandate_id": request.mandate_id,
+            "run_id": request.run_id,
+            "resource_envelope_id": request.resource_envelope_id,
+            "resource_policy_digest": request.resource_policy_digest,
             "request_digest": request.request_digest,
             "selected_experiment": selected_id,
             "factor_id": factor_id,
@@ -506,6 +870,11 @@ def execute_research_request(
             "factor_file": factor_path.name,
             "target_weights_file": target_path.name,
             "qlib_receipt_file": qlib_path.name,
+            "experiment_trials_path": str(experiment_trials_path),
+            "experiment_trials_digest": experiment_trials_digest,
+            "experiment_trials_file_digest": _file_digest(
+                experiment_trials_path
+            ),
             "experiment_count": len(history),
             "successful_experiment_count": len(successes),
         }
@@ -524,9 +893,17 @@ __all__ = [
     "D34ResearchError",
     "D34ResearchRequest",
     "D34ResearchResult",
+    "EXPERIMENT_TRIAL_BATCH_CONTRACT",
+    "HISTORICAL_DSR_REVIEW_NOTES",
+    "HUNG_MOMENTUM_CANDIDATE_ID",
+    "HUNG_MOMENTUM_CORRECTION_NOTE",
     "QlibExperimentResult",
+    "READ_ONLY_DSR_CANDIDATE_ID",
     "ResearchProposal",
+    "validate_xnys_calendar",
+    "annotate_hung_momentum_candidates",
     "execute_research_request",
+    "factor_display_name_zh",
     "qlib_expression",
     "render_factor_source",
 ]

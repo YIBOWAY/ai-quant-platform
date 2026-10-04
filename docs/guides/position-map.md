@@ -1,4 +1,6 @@
-# 持仓地图 Position Map（界面路由：`/position-map`）
+# 持仓地图 Position Map（现役路由：`/paper-trading?view=map`）
+
+旧 `/position-map`（含 `/en`、`/zh` 前缀）是到现役路由的 301 兼容别名。
 
 > 适用读者：第一次打开这个界面、却"看不懂它到底在干什么"的使用者。
 > 安全红线：纯本地、仅模拟、只读行情，绝不接触真实下单 / 钱包 / 签名 / 券商。
@@ -7,7 +9,7 @@
 
 ## 一句话定位
 
-`/position-map` 现在是**模拟账户的实时持仓看板**：展示账户净值（对比初始 100 万本金）、可用现金、已投资比例、各标的暴露（按「策略 / 手动」来源着色），以及每个持仓的均价、现价、未实现盈亏。无论你是在[模拟交易](paper-trading.md)里**手动下单**还是**一键策略再平衡**，都会即时反映到这里。
+`/paper-trading?view=map` 是**模拟账户的实时持仓看板**：展示账户净值（对比初始 100 万本金）、可用现金、已投资比例、各标的暴露（按「策略 / 手动」来源着色），以及每个持仓的均价、现价、未实现盈亏。无论你是在[模拟交易](paper-trading.md)里**手动下单**还是**一键策略再平衡**，都会即时反映到这里。
 
 页面底部另有一块**「最近一次回测暴露（仅供对比）」**——那是研究产物，不是你的账户，明确分开放置以免混淆。
 
@@ -23,7 +25,8 @@
 
 ## 它实际能做什么（基于真实代码）
 
-页面是 Next.js 服务端组件（`src/frontend/app/position-map/page.tsx`），渲染时调用：
+页面由 `src/frontend/app/paper-trading/page.tsx` 的 `view=map` 分支装配
+`PositionMapPageContent`，渲染时调用：
 
 - `getPaperAccount()` → `GET /api/paper/account`：账户净值、总现金、可用现金、预留现金、盈亏、已投资%、冻结状态、报价来源，以及逐持仓（数量 / 均价 / 现价 / 市值 / 权重 / 未实现盈亏 / 来源占比）。**这是页面主体数据来源。**
 - `getPaperAccountLedger(12)` → 最近 12 条账本流水（驱动「账户流水」卡）。
@@ -49,7 +52,7 @@
 ## 操作步骤
 
 1. 先到[模拟交易](paper-trading.md)手动买入或做一次策略再平衡。
-2. 打开 `/position-map`，即可看到账户净值、暴露条与持仓表随账户变化。
+2. 打开 `/paper-trading?view=map`，即可看到账户净值、暴露条与持仓表随账户变化。
 3. 需要看最新盈亏时，点「刷新」或打开「自动：每 30 秒」（会按当前报价重算）。
 
 ---
@@ -88,7 +91,9 @@
 
 ## 相关代码入口
 
-- 前端页面：`src/frontend/app/position-map/page.tsx`
+- 前端路由：`src/frontend/app/paper-trading/page.tsx`
+- 持仓工作区：`src/frontend/components/position-map/PositionMapPageContent.tsx`、
+  `PositionMapWorkspace.tsx`
 - 刷新控件：`src/frontend/components/AccountRefreshControl.tsx`
 - 账户视图 API：`src/quant_system/api/routes/paper.py`（`GET /api/paper/account`）
 - 账户模型 / 持仓快照：`src/quant_system/execution/account.py`、`account_storage.py`

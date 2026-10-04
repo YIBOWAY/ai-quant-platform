@@ -1,5 +1,9 @@
 # AI News × Horizon Bridge Phase A Implementation Plan
 
+> **历史冻结（2026-08-26）：**Phase A 已作为历史实施批次保留；本文不是当前
+> 计划，未勾项也不是 NEXT。现行使用方式应从当前 AI News 指南和统一边界
+> [`../README.md`](../README.md) 进入。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Give `/ai-news` and Brief an automatic AI HOT → Horizon Postgres failover so the research feed survives AI HOT permanent downtime, without embedding Horizon or running its pipeline on the request path.

@@ -327,11 +327,19 @@ class PaperAccountService:
         prices = {sym: q.price for sym, q in quotes.items()}
         equity = account.equity(prices)
 
+        paper_costs = self.settings.paper_account
+        # Reserve costs plus a 1bp rounding buffer so the plan-then-commit
+        # trial always fully fills instead of aborting on a razor edge.
+        buy_cost_factor = 1.0 / (
+            1.0
+            + (paper_costs.commission_bps + paper_costs.slippage_bps + 1.0) / 10_000
+        )
         requests = self._rebalance_requests(
             account=account,
             target_weights=target_weights,
             prices=prices,
             equity=equity,
+            buy_cost_factor=buy_cost_factor,
         )
         if not requests:
             return RebalanceOutcome(
@@ -480,9 +488,14 @@ class PaperAccountService:
 
         portfolio = self._portfolio_view(
             account,
+            source=source,
             exclude_pending_order_id=exclude_pending_order_id,
         )
-        broker = PaperBroker(portfolio=portfolio)
+        broker = PaperBroker(
+            portfolio=portfolio,
+            commission_bps=self.settings.paper_account.commission_bps,
+            slippage_bps=self.settings.paper_account.slippage_bps,
+        )
         order = ManagedOrder(
             order_id=order_id or f"paper-order-{uuid.uuid4().hex[:12]}",
             created_at=timestamp,
@@ -516,7 +529,7 @@ class PaperAccountService:
                     side=side,
                     quantity=quantity,
                 )
-                if reserved_cash > account.available_cash() + 1e-9:
+                if reserved_cash > self._available_cash(account, source=source) + 1e-9:
                     outcome_status = "unfilled"
                     outcome_reason = "insufficient cash"
                     account.record_event(
@@ -529,7 +542,10 @@ class PaperAccountService:
                         price_kind=price_kind,
                         note=outcome_reason,
                     )
-                elif reserved_quantity > account.available_quantity(symbol) + 1e-9:
+                elif (
+                    reserved_quantity
+                    > self._available_quantity(account, symbol=symbol, source=source) + 1e-9
+                ):
                     outcome_status = "unfilled"
                     outcome_reason = "no position available to sell"
                     account.record_event(
@@ -645,16 +661,21 @@ class PaperAccountService:
         self,
         account: PaperAccount,
         *,
+        source: str,
         exclude_pending_order_id: str | None = None,
     ) -> PaperPortfolio:
         portfolio = PaperPortfolio(
-            initial_cash=account.available_cash(
+            initial_cash=self._available_cash(
+                account,
+                source=source,
                 exclude_order_id=exclude_pending_order_id,
             )
         )
         portfolio.positions = {
-            symbol: account.available_quantity(
-                symbol,
+            symbol: self._available_quantity(
+                account,
+                symbol=symbol,
+                source=source,
                 exclude_order_id=exclude_pending_order_id,
             )
             for symbol, position in account.positions.items()
@@ -663,13 +684,42 @@ class PaperAccountService:
         return portfolio
 
     @staticmethod
+    def _available_cash(
+        account: PaperAccount,
+        *,
+        source: str,
+        exclude_order_id: str | None = None,
+    ) -> float:
+        if source != "manual":
+            return account.available_cash(exclude_order_id=exclude_order_id)
+        return account.manual_available_cash(exclude_order_id=exclude_order_id)
+
+    @staticmethod
+    def _available_quantity(
+        account: PaperAccount,
+        *,
+        symbol: str,
+        source: str,
+        exclude_order_id: str | None = None,
+    ) -> float:
+        if source != "manual":
+            return account.available_quantity(
+                symbol,
+                exclude_order_id=exclude_order_id,
+            )
+        return account.manual_available_quantity(
+            symbol,
+            exclude_order_id=exclude_order_id,
+        )
+
+    @staticmethod
     def _limit_blocks_fill(side: OrderSide, price: float, limit_price: float) -> bool:
         if side == OrderSide.BUY:
             return price > limit_price
         return price < limit_price
 
-    @staticmethod
     def _reserved_cash(
+        self,
         *,
         side: OrderSide,
         quantity: float,
@@ -677,7 +727,10 @@ class PaperAccountService:
     ) -> float:
         if side != OrderSide.BUY or limit_price is None:
             return 0.0
-        return quantity * limit_price
+        paper_costs = self.settings.paper_account
+        return quantity * limit_price * (
+            1.0 + (paper_costs.commission_bps + paper_costs.slippage_bps) / 10_000
+        )
 
     @staticmethod
     def _reserved_quantity(*, side: OrderSide, quantity: float) -> float:
@@ -690,6 +743,7 @@ class PaperAccountService:
         target_weights: dict[str, float],
         prices: dict[str, float],
         equity: float,
+        buy_cost_factor: float = 1.0,
     ) -> list[tuple[str, OrderSide, float]]:
         # Thin adapter over the shared pure kernel. min_order_value=0.0 plus
         # min_quantity=1e-9 reproduces the account's prior dust floor, with
@@ -718,7 +772,13 @@ class PaperAccountService:
             min_quantity=1e-9,
         )
         return [
-            (intent.symbol, OrderSide(intent.side.value), intent.quantity)
+            (
+                intent.symbol,
+                OrderSide(intent.side.value),
+                intent.quantity
+                if intent.side.value == "sell"
+                else intent.quantity * buy_cost_factor,
+            )
             for intent in intents
         ]
 

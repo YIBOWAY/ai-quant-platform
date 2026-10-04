@@ -1,99 +1,62 @@
-# 阶段 13 Windows 调度器配置
+# 阶段 13 调度配置
 
-使用 Windows 任务计划程序 (Windows Task Scheduler)。不要写入注册表项或开机自启动条目。
+## macOS / Hermes 现役合同
 
-## 触发器
+本机正式推荐供血由 HQA 拥有，不由 Platform FastAPI 或本页的 Windows 脚本拥有：
 
-- 频率：每个工作日
-- 时间：北京时间 (BJT) 06:30
-- 理由：在美股收盘之后
+- 现役 owner：Hermes cron job `hqa-options-collect`；
+- schedule：`0 22 * * 1-6`，即北京时间周一至周六 22:00；
+- wrapper：`~/.hermes/scripts/hqa-options-collect.sh`；
+- 周一至周五：真实 Futu + tracked exact 34 策展标的；
+- 周六：先跑同一正式 34 标的，再顺序运行独立 top-100 宽池；
+- 宽池写 `data/options_scans/wide`，不进入正式推荐页；
+- 财报、除息事件和 VIX 在扫描前刷新；正式策展名单只加载，不由页面或任务联网替换；
+- sample 输入、输出和 IV history 不得进入正式目录；
+- API startup catch-up 已退役，机器错过 22:00 时如实保留缺席。
 
-## 注册任务
+仓库还保留 dormant `com.aiquant.options-collect` LaunchAgent 资产，作为替代调度机制，
+**不得与现役 Hermes cron 同时加载**。完整安装、检查、日志与 owner 操作只看
+[HQA 期权推荐运维 runbook](https://github.com/YIBOWAY/Hermes-quant-agent/blob/main/docs/runbooks/options-recommendations.md)。
 
-推荐使用仓库脚本注册 Windows 计划任务：
+截至 2026-08-26，22:00 新 schedule 的首次自然触发尚未发生；配置和下一次运行时间
+不能代替自然触发证据。
 
-```powershell
-.\scripts\register_options_radar_task.ps1
+## Platform 任务入口
+
+正式 wrapper 调用的 Platform 合同等价于：
+
+```bash
+./ai-quant/bin/quant-system options daily-task \
+  --provider futu \
+  --top 34 \
+  --universe-source existing \
+  --universe-path data/options_universe/curated_wheel.csv \
+  --output-dir data/options_scans
 ```
 
-默认任务名为 `AIQuant Options Radar Daily Task`，触发时间为北京时间 06:30，
-每周一到周五运行一次。可按需覆盖：
+未显式传入的财报、除息和 VIX source 使用当前公开默认值。任务、页面手动更新和其他
+CLI 写入共用 `options_radar_scan.lock`。遇锁时不会启动第二份扫描。
 
-```powershell
-.\scripts\register_options_radar_task.ps1 -TaskName "AIQuant Options Radar Daily Task" -StartTime "06:30"
-```
-
-该注册脚本只调用 `schtasks.exe /Create`，不会立即启动扫描；扫描仍由
-`scripts/run_options_radar.ps1` 在计划任务触发时执行。
-
-## 手工配置等价操作
-
-程序：
-
-```text
-powershell.exe
-```
-
-参数：
-
-```text
--ExecutionPolicy Bypass -File E:\programs\AI-assisted_quant_research_and_paper-trading_platform\scripts\run_options_radar.ps1
-```
-
-## 条件
-
-- 仅在网络可用时运行。
-- 在任务触发前，保持 OpenD 处于运行并已登录状态。
-
-## 脚本
-
-```powershell
-scripts/run_options_radar.ps1
-```
-
-该脚本会按顺序寻找可用解释器：
-
-- `conda info --base` 下的 `envs\ai-quant\python.exe`
-- 当前 `CONDA_PREFIX` 下的 `python.exe`
-- `PATH` 中的 `python`
-
-然后调用：
-
-```text
-python -m quant_system.cli options daily-task --top 100 --universe-source public --earnings-source public --vix-source public
-```
-
-该命令会先刷新本地标的池、财报日历和 VIX/VIX3M 历史，再运行只读
-期权雷达扫描。`daily-scan` 仍可用于人工调试或只扫描已有输入缓存。
-调度任务、CLI 手动扫描、API 手动扫描和 API 启动补跑会共享雷达输出目录下的
-`options_radar_scan.lock`，避免多个进程同时写每日快照、IV history 或任务状态。
-
-调度输出会追加到：
-
-```text
-data/_runtime/logs/options-radar.log
-```
-
-最近一次任务状态会写入雷达输出目录：
+状态写入：
 
 ```text
 data/options_scans/daily_task_status.json
 ```
 
-本地 API 会通过 `GET /api/options/daily-scan/status` 只读暴露同一文件；
-`/options-radar` 页面顶部的「定时任务」状态块会显示最近一次完成/失败状态、
-扫描日期、候选数、失败步骤和完成时间。
+API 与页面只读同一状态：
 
-可选启动补跑：
-
-```powershell
-$env:QS_OPTIONS_RADAR_STARTUP_CATCHUP_ENABLED='true'
+```text
+GET /api/options/daily-scan/status
 ```
 
-该开关默认关闭。开启后，API 启动时如果最近一个常规美股交易日雷达快照缺失，会先刷新
-本地标的池、财报日历和 VIX/VIX3M 历史，再在后台运行一次只读 `daily-scan` 等价扫描；
-周末和常规美股整天休市日会回退到上一个交易日，并把 `source=startup_catchup` 的状态写入
-同一个 `daily_task_status.json`。正式日终刷新仍应使用 Windows 任务计划程序调用
-`daily-task`；临时闭市和半日交易仍由调度/人工流程处理。
-如果扫描锁已被调度任务或手动扫描持有，启动补跑会跳过且不覆盖已有
-`daily_task_status.json`；CLI/API 手动扫描遇锁会快速失败，稍后重试即可。
+## Windows Task Scheduler 边界
+
+`scripts/register_options_radar_task.ps1` 和 `scripts/run_options_radar.ps1` 是旧的 Windows
+等价入口，不是本机现役调度。注册脚本仍按北京时间 06:30、周一至周五创建任务，且
+runner 仍调用历史的 `--top 100 --universe-source public` 组合；当前正式输出合同会拒绝
+这组参数。因此，**在脚本更新并验证前不要注册或宣称 Windows 自动任务可用**。
+
+若需要在 Windows 前台人工运行当前正式合同，使用上一节的 exact-34 `daily-task`
+命令，并确保 OpenD 已启动登录。不要用 Windows runner 的旧 top-100 命令写正式目录。
+
+这个 Windows 脚本差异是尚未处理的跨平台边界；本次文档同步没有修改脚本代码。

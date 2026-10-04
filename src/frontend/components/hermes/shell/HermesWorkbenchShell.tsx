@@ -1,16 +1,13 @@
-import { ComposerDock } from "@/components/hermes/ComposerDock";
-import { HermesCapabilityNotice } from "@/components/hermes/shell/HermesCapabilityNotice";
 import { HermesDeskFrame } from "@/components/hermes/desk/HermesDeskFrame";
 import { HermesDeskProvider } from "@/components/hermes/desk/HermesDeskContext";
-import { hermesWorkbenchCopy } from "@/lib/hermes/copy";
+import { HermesWorkbenchDock } from "@/components/hermes/shell/HermesWorkbenchDock";
+import { ActiveHermesSessionProvider } from "@/lib/hermes/activeSession";
 import {
   hermesChatAdmission,
   hermesFeatureFlags,
 } from "@/lib/hermes/featureFlags";
-import {
-  WORKBENCH_A11Y_MARKER,
-  workbenchContentPadClass,
-} from "@/lib/hermes/workbenchA11y";
+import { WORKBENCH_A11Y_MARKER } from "@/lib/hermes/workbenchA11y";
+import { WorkspaceFollowProvider } from "@/lib/hermes/workspaceFollowContext";
 import type { HermesDeliveryState } from "@/lib/hermes/types";
 import type { Locale } from "@/lib/locale";
 
@@ -18,60 +15,66 @@ export type HermesWorkbenchShellProps = {
   locale: Locale;
   deliveryState?: HermesDeliveryState;
   chatWriteReady?: boolean;
+  sessionReadReady?: boolean;
   children: React.ReactNode;
 };
 
 /**
- * Official Hermes desk. The blotter + remote rail are the workbench.
- * Do not wrap today in LocalChatBoundary: that extra box breaks the desk grid.
+ * Official Hermes desk. Today hosts the only composer in the right rail.
+ * Other Hermes routes keep the page-bottom dock. Do not wrap today in
+ * LocalChatBoundary: that extra box breaks the desk grid.
  */
 export function HermesWorkbenchShell({
   locale,
   deliveryState,
   chatWriteReady = false,
+  sessionReadReady = false,
   children,
 }: HermesWorkbenchShellProps) {
-  const copy = hermesWorkbenchCopy(locale);
   const flags = hermesFeatureFlags();
   const admission = hermesChatAdmission(flags, chatWriteReady);
-  const resolvedDelivery =
-    deliveryState ?? admission.deliveryState ?? "blocked_in_this_slice";
+  const chatOpen = admission.chatOpen;
+  // Capability copy follows admission, not a stale parent deliveryState, so
+  // “对话已就绪” cannot appear next to a disabled send control.
+  const resolvedDelivery = chatOpen
+    ? (deliveryState ?? admission.deliveryState)
+    : "blocked_in_this_slice";
 
   return (
-    <HermesDeskProvider>
-      <div
-        className="h-full min-h-0 w-full overflow-hidden bg-[var(--color-hermes-canvas)]"
-        data-hermes-workbench-a11y={WORKBENCH_A11Y_MARKER}
-      >
-        <HermesDeskFrame>
+    <ActiveHermesSessionProvider>
+      <WorkspaceFollowProvider enabled={chatOpen}>
+        <HermesDeskProvider
+          chatOpen={chatOpen}
+          deliveryState={resolvedDelivery}
+          locale={locale}
+        >
           <div
-            aria-label={
-              locale === "zh" ? "Hermes 工作台主区" : "Hermes workbench main"
-            }
-            className="contents"
-            data-hermes-workbench-main
-            role="region"
+            className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-[var(--color-hermes-canvas)]"
+            data-hermes-workbench-a11y={WORKBENCH_A11Y_MARKER}
           >
-            {children}
-          </div>
-        </HermesDeskFrame>
-        <div className="sr-only">
-          <div className={workbenchContentPadClass(false)}>
-            <HermesCapabilityNotice
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <HermesDeskFrame>
+                <div
+                  aria-label={
+                    locale === "zh" ? "Hermes 助手主区" : "Hermes Assistant main"
+                  }
+                  className="contents"
+                  data-hermes-workbench-main
+                  role="region"
+                >
+                  {children}
+                </div>
+              </HermesDeskFrame>
+            </div>
+            <HermesWorkbenchDock
+              chatOpen={chatOpen}
+              sessionReadReady={sessionReadReady}
               deliveryState={resolvedDelivery}
               locale={locale}
             />
           </div>
-          <ComposerDock
-            allowSubmit={false}
-            disabled
-            label={copy.composer.label}
-            placeholder={copy.composer.placeholder}
-            sendLabel={copy.composer.sendDisabled}
-            unavailableHint={copy.composer.unavailable}
-          />
-        </div>
-      </div>
-    </HermesDeskProvider>
+        </HermesDeskProvider>
+      </WorkspaceFollowProvider>
+    </ActiveHermesSessionProvider>
   );
 }

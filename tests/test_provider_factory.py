@@ -9,6 +9,7 @@ from quant_system.data.provider_factory import (
     build_ohlcv_provider,
 )
 from quant_system.data.providers.futu import FutuMarketDataProvider
+from quant_system.data.providers.longbridge import LongbridgeMarketDataProvider
 from quant_system.data.providers.sample import SampleOHLCVProvider
 from quant_system.data.providers.tiingo import TiingoEODProvider
 from quant_system.data.storage import LocalDataStorage
@@ -27,9 +28,7 @@ def _settings(
             data_dir=data_dir or DataSettings().data_dir,
             parquet_dir=(data_dir / "parquet") if data_dir else DataSettings().parquet_dir,
             duckdb_path=(
-                data_dir / "quant_system.duckdb"
-                if data_dir
-                else DataSettings().duckdb_path
+                data_dir / "quant_system.duckdb" if data_dir else DataSettings().duckdb_path
             ),
             reports_dir=(data_dir / "reports") if data_dir else DataSettings().reports_dir,
         ),
@@ -45,13 +44,19 @@ def test_build_provider_uses_futu_when_requested() -> None:
     assert source == "futu"
 
 
-def test_build_provider_falls_back_when_futu_disabled() -> None:
-    provider, source = build_ohlcv_provider(
-        _settings(default_provider="futu", futu_enabled=False)
-    )
+def test_build_provider_supports_explicit_longbridge_without_changing_default() -> None:
+    settings = _settings(default_provider="futu")
+    provider, source = build_ohlcv_provider(settings, requested="longbridge")
+    assert isinstance(provider, LongbridgeMarketDataProvider)
+    assert source == "longbridge"
+    primary, source = build_ohlcv_provider(settings)
+    assert isinstance(primary, FutuMarketDataProvider)
+    assert source == "futu"
 
-    assert isinstance(provider, SampleOHLCVProvider)
-    assert source == "sample (futu: disabled)"
+
+def test_build_provider_rejects_default_futu_when_disabled() -> None:
+    with pytest.raises(DataProviderUnavailableError, match="futu provider unavailable: disabled"):
+        build_ohlcv_provider(_settings(default_provider="futu", futu_enabled=False))
 
 
 def test_build_provider_uses_tiingo_when_token_is_present() -> None:
@@ -134,9 +139,7 @@ def test_cached_provider_refetches_legacy_tiingo_cache_without_valid_adjustment_
             return frame
 
     storage = LocalDataStorage(base_dir=tmp_path)
-    legacy_cached = SampleOHLCVProvider().fetch_ohlcv(
-        ["SPY"], start="2024-01-02", end="2024-01-05"
-    )
+    legacy_cached = SampleOHLCVProvider().fetch_ohlcv(["SPY"], start="2024-01-02", end="2024-01-05")
     legacy_cached["provider"] = "tiingo"
     if legacy_adjustment is not None:
         legacy_cached["price_adjustment"] = legacy_adjustment
@@ -171,12 +174,8 @@ def test_cached_provider_fetches_when_any_symbol_window_is_incomplete(tmp_path) 
             return frame
 
     storage = LocalDataStorage(base_dir=tmp_path)
-    cached_spy = SampleOHLCVProvider().fetch_ohlcv(
-        ["SPY"], start="2024-01-02", end="2024-01-05"
-    )
-    cached_qqq = SampleOHLCVProvider().fetch_ohlcv(
-        ["QQQ"], start="2024-01-03", end="2024-01-04"
-    )
+    cached_spy = SampleOHLCVProvider().fetch_ohlcv(["SPY"], start="2024-01-02", end="2024-01-05")
+    cached_qqq = SampleOHLCVProvider().fetch_ohlcv(["QQQ"], start="2024-01-03", end="2024-01-04")
     cached = pd.concat([cached_spy, cached_qqq], ignore_index=True)
     cached["provider"] = "tiingo"
     storage.save_ohlcv(cached)
@@ -195,11 +194,39 @@ def test_cached_provider_fetches_when_any_symbol_window_is_incomplete(tmp_path) 
     )
 
 
-def test_build_provider_falls_back_when_tiingo_token_missing() -> None:
-    provider, source = build_ohlcv_provider(_settings(default_provider="tiingo"))
+def test_build_provider_rejects_default_tiingo_when_token_missing() -> None:
+    with pytest.raises(
+        DataProviderUnavailableError, match="tiingo provider unavailable: missing token"
+    ):
+        build_ohlcv_provider(_settings(default_provider="tiingo"))
 
-    assert isinstance(provider, SampleOHLCVProvider)
-    assert source == "sample (tiingo: missing token)"
+
+@pytest.mark.parametrize("missing_field", ["provider", "interval"])
+def test_cached_provider_does_not_use_unattributed_cache_when_real_source_fails(
+    tmp_path,
+    missing_field,
+) -> None:
+    cached = SampleOHLCVProvider().fetch_ohlcv(
+        ["SPY"],
+        start="2024-01-02",
+        end="2024-01-05",
+    )
+    cached["provider"] = "tiingo"
+    cached["price_adjustment"] = "adjusted"
+    cached = cached.drop(columns=[missing_field])
+    storage = LocalDataStorage(base_dir=tmp_path)
+    storage.parquet_path.parent.mkdir(parents=True)
+    cached.to_parquet(storage.parquet_path, index=False)
+
+    class UnavailableProvider:
+        provider_name = "tiingo"
+
+        def fetch_ohlcv(self, *_args, **_kwargs):
+            raise RuntimeError("real data unavailable")
+
+    provider = CachedOHLCVProvider(upstream=UnavailableProvider(), storage=storage)
+    with pytest.raises(RuntimeError, match="real data unavailable"):
+        provider.fetch_ohlcv(["SPY"], start="2024-01-02", end="2024-01-05")
 
 
 def test_build_provider_rejects_explicit_tiingo_when_token_missing() -> None:

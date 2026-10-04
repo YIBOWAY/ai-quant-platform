@@ -11,6 +11,7 @@ export type ArtifactLocaleCopy = {
   marketForesight: string;
   weeklyReview: string;
   opportunityReview: string;
+  opportunityNoise: (total: number) => string;
   automationStatus: string;
   grossExposure: string;
   topHolding: string;
@@ -103,6 +104,8 @@ const en: ArtifactLocaleCopy = {
   marketForesight: "Market foresight",
   weeklyReview: "Weekly review",
   opportunityReview: "Opportunity review",
+  opportunityNoise: (total: number) =>
+    `Opportunity review: no actionable signal this window (${total} not actionable) — collapsed.`,
   automationStatus: "Automation status",
   grossExposure: "Gross exposure",
   topHolding: "Largest holding",
@@ -196,6 +199,8 @@ const zh: ArtifactLocaleCopy = {
   marketForesight: "市场推演",
   weeklyReview: "周报复盘",
   opportunityReview: "机会复盘",
+  opportunityNoise: (total: number) =>
+    `机会复盘：本窗口无可行动信号（${total} 条全部不可行动），已折叠。`,
   automationStatus: "自动化状态",
   grossExposure: "总敞口",
   topHolding: "最大持仓",

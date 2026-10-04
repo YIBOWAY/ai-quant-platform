@@ -1,5 +1,7 @@
 # Phase 9 API Architecture
 
+> 本地路径说明（公开版）：文中未随本版提供的 `artifacts/`、`evidence/` 和运行目录是本地证据坐标或路径示例，原件未公开；不能把路径存在当作公开证据。详见[公开范围说明](../publication-20261004.md)。
+
 ## 目标
 
 Phase 9 增加一个本地优先、读多写少的 HTTP API，供后续 Web 前端读取已有研究、回测、paper trading、AI Agent 和 prediction market dry-run 结果。

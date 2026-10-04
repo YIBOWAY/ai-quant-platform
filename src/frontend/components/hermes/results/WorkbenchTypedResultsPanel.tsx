@@ -105,13 +105,13 @@ export function WorkbenchTypedResultsPanel({
         </span>
       }
       isEmpty={showEmpty}
-      title={isZh ? "类型化结果" : "Typed results"}
+      title={isZh ? "研究结果" : "Research results"}
     >
       <div data-hermes-typed-results-body id="hermes-typed-results-body">
         <p className="font-body-sm text-text-secondary break-words">
           {isZh
-            ? "V7f 类型化结果：与 Gate / command-approval 分离。sample/real 醒目标记；仅展示已知 exact Task/Attempt/Run/artifact 链接；空列表诚实。hermetic ≠ 实盘行情。"
-            : "V7f typed results: separate from Gate / command-approval. sample/real is always marked; exact Task/Attempt/Run/artifact links only when known; empty is honest. Hermetic ≠ live quotes."}
+            ? "查看已经保存的研究结果及对应执行记录。样例结果单独标记；工具执行获准，不代表研究通过验证。"
+            : "Saved research results and their exact execution records. Samples are marked separately; tool permission is not research validation."}
         </p>
 
         <ul

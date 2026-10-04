@@ -241,6 +241,8 @@ def prediction_market_backtest(
     try:
         result = run_prediction_market_quasi_backtest(
             provider=provider,
+            run_id=run_id,
+            trials_root=settings.data.data_dir / "trials",
             config=PredictionMarketBacktestConfig(
                 min_edge_bps=request.min_edge_bps,
                 capital_limit=request.capital_limit or request.max_capital_per_leg,
@@ -306,6 +308,8 @@ def prediction_market_timeseries_backtest(
     try:
         result = run_prediction_market_timeseries_backtest(
             store=store,
+            run_id=run_id,
+            trials_root=settings.data.data_dir / "trials",
             config=PredictionMarketTimeseriesBacktestConfig(
                 provider=request.provider,
                 start_time=request.start_time,

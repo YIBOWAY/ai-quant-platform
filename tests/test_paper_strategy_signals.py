@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 
 from quant_system.config.settings import load_settings
+from quant_system.data.providers.futu import FutuProviderError
 from quant_system.execution.account import PaperAccount
 from quant_system.execution.paper_strategy_signal_service import (
     PaperStrategySignalService,
@@ -142,6 +143,32 @@ def test_signal_service_generates_and_persists_daily_signal(tmp_path, monkeypatc
     assert provider.calls[0]["symbols"] == ["AAPL", "MSFT"]
 
 
+def test_signal_service_preview_does_not_persist(tmp_path, monkeypatch) -> None:
+    provider = FakeOHLCVProvider(make_ohlcv_frame())
+    patch_provider(monkeypatch, provider)
+    storage = PaperStrategySleeveStorage(tmp_path)
+    config = make_config()
+    sleeve = make_sleeve(config)
+    account = PaperAccount.open_new()
+    storage.save_strategy_config(config)
+    storage.save_sleeve(sleeve)
+
+    signal = PaperStrategySignalService(
+        storage=storage,
+        settings=load_settings(),
+    ).generate_daily_signal(
+        sleeve=sleeve,
+        config=config,
+        account=account,
+        signal_date="2024-03-20",
+        history_days=90,
+        persist=False,
+    )
+
+    assert signal.status == SignalStatus.GENERATED
+    assert storage.load_signals(sleeve.sleeve_id) == []
+
+
 def test_signal_service_marks_paused_sleeve_blocked_without_plan(
     tmp_path, monkeypatch
 ) -> None:
@@ -276,3 +303,63 @@ def test_signal_service_persists_data_unavailable_when_fetch_fails(
     assert signal.status == SignalStatus.DATA_UNAVAILABLE
     assert signal.data_provider == "futu"
     assert "strategy history is unavailable" in signal.warnings[0]
+
+
+def test_signal_service_records_structured_provider_error_on_futu_failure(
+    tmp_path, monkeypatch
+) -> None:
+    provider = FakeOHLCVProvider(
+        exc=FutuProviderError(
+            "provider_unavailable",
+            "Futu connection unavailable for AAPL: 网络中断",
+            ret_code=1001,
+            ret_msg="网络中断",
+        )
+    )
+    patch_provider(monkeypatch, provider)
+    storage = PaperStrategySleeveStorage(tmp_path)
+    config = make_config()
+    sleeve = make_sleeve(config, mode=StrategySleeveMode.SIGNAL_ONLY)
+
+    signal = PaperStrategySignalService(
+        storage=storage,
+        settings=load_settings(),
+    ).generate_daily_signal(
+        sleeve=sleeve,
+        config=config,
+        account=PaperAccount.open_new(),
+        signal_date="2024-03-20",
+    )
+
+    assert signal.status == SignalStatus.DATA_UNAVAILABLE
+    assert signal.metadata["provider_error"] == {
+        "code": "provider_unavailable",
+        "message": "Futu connection unavailable for AAPL: 网络中断",
+        "ret_code": 1001,
+        "ret_msg": "网络中断",
+    }
+    persisted = storage.load_signals(sleeve.sleeve_id)[0]
+    assert persisted.metadata["provider_error"]["code"] == "provider_unavailable"
+
+
+def test_signal_service_leaves_generic_failures_without_provider_error(
+    tmp_path, monkeypatch
+) -> None:
+    provider = FakeOHLCVProvider(exc=RuntimeError("OpenD unavailable"))
+    patch_provider(monkeypatch, provider)
+    storage = PaperStrategySleeveStorage(tmp_path)
+    config = make_config()
+    sleeve = make_sleeve(config, mode=StrategySleeveMode.SIGNAL_ONLY)
+
+    signal = PaperStrategySignalService(
+        storage=storage,
+        settings=load_settings(),
+    ).generate_daily_signal(
+        sleeve=sleeve,
+        config=config,
+        account=PaperAccount.open_new(),
+        signal_date="2024-03-20",
+    )
+
+    assert signal.status == SignalStatus.DATA_UNAVAILABLE
+    assert "provider_error" not in signal.metadata

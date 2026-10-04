@@ -8,14 +8,14 @@ test.beforeEach(() => {
 
 const routes = [
   "/",
-  "/data-explorer",
   "/factor-lab",
   "/backtest",
   "/experiments",
   "/paper-trading",
   "/agent-studio",
   "/polymarket",
-  "/position-map",
+  "/watch?pane=quotes",
+  "/paper-trading?view=map",
   "/settings",
   "/options-screener?lang=zh",
 ];
@@ -89,9 +89,9 @@ async function openTab(page: Page, name: string | RegExp) {
 
 test("data explorer and backtest workflow buttons submit", async ({ page }) => {
   test.setTimeout(90_000);
-  await page.goto("/data-explorer");
+  await page.goto("/watch?pane=quotes");
   await page.getByRole("button", { name: "Load" }).click();
-  await expect(page).toHaveURL(/data-explorer/);
+  await expect(page).toHaveURL(/watch\?pane=quotes/);
 
   await page.goto("/backtest?provider=sample&include_sample=1");
   const backtestResponse = await clickAndWaitForPost(page, "Run Backtest", "/api/backtests/run");
@@ -124,14 +124,15 @@ test("paper replay safety lock disables submit and shows safety copy", async ({ 
 test("legacy agent studio is read-only and points to Hermes", async ({ page }) => {
   await page.goto("/agent-studio");
   await expect(page.getByRole("heading", { name: "Agent Studio · Read-only" })).toBeVisible();
-  await expect(page.getByText(/Task submission and approve\/reject controls are intentionally unavailable/i)).toBeVisible();
+  await expect(page.getByText(/Task submission and approve\/reject controls are unavailable/i)).toBeVisible();
   await expect(page.getByRole("button", { name: "Run task" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Approve" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Reject" })).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "Open Hermes workbench" })).toHaveAttribute(
-    "href",
-    "/en/hermes",
-  );
+  const hermesLinks = page.getByRole("link", { name: "Open Hermes Assistant" });
+  await expect(hermesLinks).not.toHaveCount(0);
+  for (let index = 0; index < await hermesLinks.count(); index += 1) {
+    await expect(hermesLinks.nth(index)).toHaveAttribute("href", "/en/hermes");
+  }
 });
 
 test("prediction market workflow buttons submit", async ({ page }) => {
@@ -204,8 +205,10 @@ test("options screener scans the DTE window without manual expiration selection"
   const response = await responsePromise;
   if (!(await isFutuOpenDReachable(request))) {
     expect(response.status()).toBe(503);
-    await expect(page.getByText(/\[opend_unavailable\]/)).toBeVisible();
-    await expect(page.getByText(/unable to connect to OpenD/)).toBeVisible();
+    const unavailable = await response.json();
+    expect(JSON.stringify(unavailable)).toContain("opend_unavailable");
+    await expect(page.getByText("期权数据暂不可用，请稍后重试。")).toBeVisible();
+    await expect(page.getByText("候选合约", { exact: true })).toHaveCount(0);
     return;
   }
   expect(response.status()).toBe(200);

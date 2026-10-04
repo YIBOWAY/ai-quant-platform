@@ -116,6 +116,9 @@ class PaperAccountSettings(BaseSettings):
 
     auto_process_pending_orders_enabled: bool = True
     auto_process_interval_seconds: float = Field(default=30.0, gt=0)
+    # R3: paper fills charge the same costs as the backtest engine defaults.
+    commission_bps: float = Field(default=1.0, ge=0, le=10_000)
+    slippage_bps: float = Field(default=5.0, ge=0, le=10_000)
     db_mode: Literal["file", "mirror", "canonical"] = "file"
 
 
@@ -236,6 +239,10 @@ class OptionsRadarSettings(BaseSettings):
         default=Path("data/options_universe/sp500_nasdaq100.csv"),
         validation_alias=AliasChoices("QS_OPTIONS_RADAR_UNIVERSE_PATH"),
     )
+    curated_universe_path: Path = Field(
+        default=Path("data/options_universe/curated_wheel.csv"),
+        validation_alias=AliasChoices("QS_OPTIONS_RADAR_CURATED_UNIVERSE_PATH"),
+    )
     universe_top_n: int = Field(
         default=100,
         validation_alias=AliasChoices("QS_OPTIONS_RADAR_UNIVERSE_TOP_N"),
@@ -267,15 +274,37 @@ class OptionsRadarSettings(BaseSettings):
         ge=0,
     )
     min_dte_for_radar: int = Field(
-        default=7,
+        default=5,
         validation_alias=AliasChoices("QS_OPTIONS_RADAR_MIN_DTE_FOR_RADAR"),
         ge=0,
     )
     max_delta_for_radar: float = Field(
-        default=0.8,
+        default=0.35,
         validation_alias=AliasChoices("QS_OPTIONS_RADAR_MAX_DELTA_FOR_RADAR"),
         ge=0,
         le=1,
+    )
+    risk_free_rate: float | None = Field(
+        # U.S. Treasury 3-month CMT, 2026-08-20 (3.87%). The value is an
+        # explicit model input and remains overrideable through the env alias.
+        default=0.0387,
+        validation_alias=AliasChoices("QS_OPTIONS_RADAR_RISK_FREE_RATE"),
+        ge=0,
+        le=1,
+        description=(
+            "Annual risk-free rate as a decimal; unset makes EV recommendations unavailable."
+        ),
+    )
+    equity_risk_premium: float = Field(
+        # Model input to the seller EV physical drift:
+        # mu = risk_free_rate + equity_risk_premium.
+        default=0.04,
+        validation_alias=AliasChoices("QS_OPTIONS_RADAR_EQUITY_RISK_PREMIUM"),
+        ge=0,
+        le=1,
+        description=(
+            "Equity risk premium as a decimal; model input to the seller EV drift."
+        ),
     )
     iv_history_lookback_days: int = Field(
         default=252,
@@ -286,13 +315,13 @@ class OptionsRadarSettings(BaseSettings):
         default=Path("data/options_universe/earnings_calendar.csv"),
         validation_alias=AliasChoices("QS_OPTIONS_RADAR_EARNINGS_CALENDAR_PATH"),
     )
+    dividend_events_path: Path = Field(
+        default=Path("data/options_universe/dividend_events.csv"),
+        validation_alias=AliasChoices("QS_OPTIONS_RADAR_DIVIDEND_EVENTS_PATH"),
+    )
     vix_history_path: Path = Field(
         default=Path("data/options_universe/vix_history.csv"),
         validation_alias=AliasChoices("QS_OPTIONS_RADAR_VIX_HISTORY_PATH"),
-    )
-    startup_catchup_enabled: bool = Field(
-        default=False,
-        validation_alias=AliasChoices("QS_OPTIONS_RADAR_STARTUP_CATCHUP_ENABLED"),
     )
 
     @model_validator(mode="after")
@@ -561,9 +590,7 @@ class PredictionMarketSettings(BaseSettings):
     )
     collector_default_interval_seconds: float = Field(
         default=30.0,
-        validation_alias=AliasChoices(
-            "QS_PREDICTION_MARKET_COLLECTOR_DEFAULT_INTERVAL_SECONDS"
-        ),
+        validation_alias=AliasChoices("QS_PREDICTION_MARKET_COLLECTOR_DEFAULT_INTERVAL_SECONDS"),
         gt=0,
     )
     backtest_default_fee_bps: float = Field(
@@ -628,16 +655,13 @@ class HermesGatewaySettings(BaseSettings):
 
     enabled: bool = False
     base_url: str = "http://127.0.0.1:8642"
+    api_contract: Literal["carried-v1", "official-http-v1"] = "carried-v1"
+    native_state_path: Path = Path.home() / ".hermes-quant-native" / "project-requests.sqlite3"
     api_key_file: Path | None = None
     # Git checkout that owns the running Hermes API Server. Release admission
     # hashes its clean commit identity and must match the operator stamp.
     runtime_root: Path = (
-        Path.home()
-        / ".hermes"
-        / "hermes-agent"
-        / ".claude"
-        / "worktrees"
-        / "v2-integration"
+        Path.home() / ".hermes" / "hermes-agent" / ".claude" / "worktrees" / "v2-integration"
     )
     timeout_seconds: float = Field(default=2.0, gt=0, le=30, allow_inf_nan=False)
     # Real /v1/runs can take tens of seconds; keep read timeout short separately.
@@ -687,25 +711,6 @@ class LocalTrustSettings(BaseSettings):
     mode: bool = False
 
 
-class FactorAutomationSettings(BaseSettings):
-    """Deny-only switches for the local paper factor automation path.
-
-    ``mode`` may authorize machine review for paper-only candidates.  The
-    independent ``auto_land`` switch is additionally required before any
-    prepared promotion may be committed or landed.  Neither setting grants a
-    live-trading capability.
-    """
-
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_prefix="QS_FACTOR_AUTOMATION_",
-        extra="ignore",
-    )
-
-    mode: bool = False
-    auto_land: bool = False
-
-
 class AgentV02ReleaseSettings(BaseSettings):
     """Local operator inputs for the durable Agent v0.2 release gate."""
 
@@ -721,9 +726,7 @@ class AgentV02ReleaseSettings(BaseSettings):
         max_length=200,
         pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$",
     )
-    platform_runtime_root: Path = unconfigured_runtime_path(
-        "platform-runtime-root"
-    )
+    platform_runtime_root: Path = unconfigured_runtime_path("platform-runtime-root")
     evidence_file: Path = unconfigured_runtime_path("release-evidence-file")
     capability_max_age_seconds: float = Field(
         default=30.0,
@@ -760,12 +763,8 @@ class CandidateAdmissionSettings(BaseSettings):
     # deliberately short-lived admission, but avoids turning that honest flow
     # into a 30-minute race.
     ttl_seconds: int = Field(default=900, ge=1, le=7200)
-    preflight_evidence_file: Path = unconfigured_runtime_path(
-        "candidate-preflight-evidence-file"
-    )
-    final_evidence_file: Path = unconfigured_runtime_path(
-        "candidate-final-evidence-file"
-    )
+    preflight_evidence_file: Path = unconfigured_runtime_path("candidate-preflight-evidence-file")
+    final_evidence_file: Path = unconfigured_runtime_path("candidate-final-evidence-file")
 
 
 class IntentPayloadSettings(BaseSettings):
@@ -824,20 +823,13 @@ class Settings(BaseSettings):
     news: NewsSettings = Field(default_factory=NewsSettings)
     market_news: MarketNewsSettings = Field(default_factory=MarketNewsSettings)
     horizon: HorizonSettings = Field(default_factory=HorizonSettings)
-    prediction_market: PredictionMarketSettings = Field(
-        default_factory=PredictionMarketSettings
-    )
+    prediction_market: PredictionMarketSettings = Field(default_factory=PredictionMarketSettings)
     backtest_jobs: BacktestJobSettings = Field(default_factory=BacktestJobSettings)
     hermes_artifacts: HermesArtifactSettings = Field(default_factory=HermesArtifactSettings)
     hermes_gateway: HermesGatewaySettings = Field(default_factory=HermesGatewaySettings)
     local_mutation: LocalMutationSettings = Field(default_factory=LocalMutationSettings)
     local_trust: LocalTrustSettings = Field(default_factory=LocalTrustSettings)
-    factor_automation: FactorAutomationSettings = Field(
-        default_factory=FactorAutomationSettings
-    )
-    agent_v02_release: AgentV02ReleaseSettings = Field(
-        default_factory=AgentV02ReleaseSettings
-    )
+    agent_v02_release: AgentV02ReleaseSettings = Field(default_factory=AgentV02ReleaseSettings)
     candidate_admission: CandidateAdmissionSettings = Field(
         default_factory=CandidateAdmissionSettings
     )

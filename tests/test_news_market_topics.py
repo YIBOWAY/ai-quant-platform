@@ -602,7 +602,11 @@ def test_route_market_topics_unavailable_maps_503(tmp_path, monkeypatch) -> None
 def test_route_status_reports_market_news_without_keys(tmp_path, monkeypatch) -> None:
     settings = _settings()
     settings = settings.model_copy(
-        update={"api_keys": ApiKeySettings()}
+        update={
+            "api_keys": ApiKeySettings(
+                polygon_api_key=None, finnhub_api_key=None, newsapi_key=None
+            )
+        }
     )
     monkeypatch.setattr(
         news_routes, "_market_clients_for_settings", lambda _s: {}

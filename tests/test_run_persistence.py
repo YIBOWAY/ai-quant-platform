@@ -20,6 +20,17 @@ def _disabled_db_settings() -> Settings:
 # --- write_json_atomic ------------------------------------------------------
 
 
+from quant_system.config.settings import DataSettings, Settings
+
+
+def _isolated_data_settings(tmp_path) -> DataSettings:
+    return DataSettings(
+        data_dir=tmp_path / "data",
+        parquet_dir=tmp_path / "parquet",
+        duckdb_path=tmp_path / "quant_system.duckdb",
+        reports_dir=tmp_path / "reports",
+    )
+
 def test_write_json_atomic_creates_parents_and_writes_payload(tmp_path: Path) -> None:
     target = tmp_path / "nested" / "dir" / "metadata.json"
 
@@ -173,7 +184,7 @@ def test_recent_runs_includes_replication_runs(tmp_path: Path) -> None:
         json.dumps({"run_id": replication_run_id}),
         encoding="utf-8",
     )
-    client = TestClient(create_app(output_dir=tmp_path))
+    client = TestClient(create_app(settings=Settings(data=_isolated_data_settings(tmp_path)), output_dir=tmp_path))
 
     response = client.get("/api/runs/recent?limit=10")
 
@@ -188,7 +199,7 @@ def test_recent_runs_includes_replication_runs(tmp_path: Path) -> None:
 
 
 def test_replication_run_persists_unified_kind_and_appears_in_recent(tmp_path: Path) -> None:
-    client = TestClient(create_app(output_dir=tmp_path))
+    client = TestClient(create_app(settings=Settings(data=_isolated_data_settings(tmp_path)), output_dir=tmp_path))
 
     run_response = client.post(
         "/api/replications/reversal-momentum/run",

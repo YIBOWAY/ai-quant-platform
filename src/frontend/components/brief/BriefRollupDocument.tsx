@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { formatArchivedRollupText } from "@/lib/briefRollup";
 
 import type {
   BriefRollupListItem,
@@ -38,11 +39,11 @@ const copy = {
     footer: "READ-ONLY HISTORICAL SNAPSHOT · PAPER ONLY · NOT INVESTMENT ADVICE",
   },
   zh: {
-    aiSynthesis: "AI 综合",
+    aiSynthesis: "AI 摘要",
     readOnlyNote: "本页只读取数据库中的已保存快照，不使用当前行情覆盖历史。",
     basedOn: (dailyCount: number, model: string) =>
       `基于 ${dailyCount} 期日报快照 · 模型 ${model} · 模拟盘 · 非投资建议`,
-    storyline: "本期主线",
+    storyline: "本期概况",
     statsDaily: "日报期数",
     statsEvents: "独立事件数",
     statsEquity: "账户期间权益变化",
@@ -54,7 +55,7 @@ const copy = {
     model: "模型",
     criticModel: "校订模型",
     generatedAt: "生成时间",
-    factsDigest: "事实摘要指纹",
+    factsDigest: "原生成输入指纹",
     sourceIssues: "来源日报",
     archiveError: "周报/月报读取失败",
     invalidTitle: "快照不可展示",
@@ -81,12 +82,27 @@ export function BriefRollupDocument({
   const isZh = locale === "zh";
   const text = copy[locale];
   const payload = rollup.payload;
-  const stats = payload?.stats;
+  const valuationGaps = (["start", "end"] as const).flatMap(side => {
+    const raw = payload?.account_summary?.[side];
+    const account = raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
+    return account.valuation_status === "incomplete" ? [{ side, account }] : [];
+  });
+  const stats = payload?.stats ? { ...payload.stats,
+    ...(valuationGaps.some(gap => gap.side === "start") ? { equity_start: null } : {}),
+    ...(valuationGaps.some(gap => gap.side === "end") ? { equity_end: null } : {}),
+    ...(valuationGaps.length ? { period_change_pct: null } : {}),
+  } : undefined;
   const provenance = payload?.provenance;
   const periodKey = payload?.period_key || rollup.periodKey || "--";
   const periodStart = payload?.date_range.start || rollup.periodStart || "--";
   const periodEnd = payload?.date_range.end || rollup.periodEnd || "--";
   const baseCurrency = rollupBaseCurrency(payload);
+  const displayText = (value: string) => formatArchivedRollupText(value, payload, locale);
+  const originalText = { title: rollup.title, main_storyline: payload?.main_storyline,
+    topics: payload?.topics.map(({ title, synthesis }) => ({ title, synthesis })) };
+  const hasFormattedText = [rollup.title, payload?.main_storyline ?? "",
+    ...(payload?.topics.flatMap(topic => [topic.title, topic.synthesis]) ?? [])]
+    .some(value => displayText(value) !== value);
 
   return (
     <article className="mx-auto flex min-h-full max-w-editorial-column flex-col gap-8 px-5 py-8 md:px-10 lg:px-14">
@@ -94,7 +110,7 @@ export function BriefRollupDocument({
         <p className="font-editorial-caps text-ink-secondary">
           {`VOL.${periodKey} · ${periodStart} ~ ${periodEnd} · ${text.aiSynthesis}`}
         </p>
-        <h1 className="mt-3 font-editorial-display text-ink">{rollup.title}</h1>
+        <h1 className="mt-3 font-editorial-display text-ink">{displayText(rollup.title)}</h1>
         <p className="mt-3 font-data-mono text-xs text-ink-secondary">
           {payload && stats && provenance
             ? text.basedOn(stats.daily_count, provenance.model)
@@ -111,11 +127,19 @@ export function BriefRollupDocument({
           <section className="border-b border-editorial-rule pb-7 text-center">
             <h2 className="font-editorial-caps text-sm text-ink-secondary">{text.storyline}</h2>
             <p className="mt-3 font-editorial-body text-xl leading-9 text-ink">
-              {payload.main_storyline}
+              {displayText(payload.main_storyline)}
             </p>
           </section>
 
           <section className="border-b border-editorial-rule pb-7">
+            {valuationGaps.length ? <Alert title={isZh ? "部分账户估值缺失" : "Incomplete account valuation"} messages={valuationGaps.map(({ side, account }) => {
+              const label = side === "start" ? (isZh ? "期初" : "Start") : (isZh ? "期末" : "End");
+              const symbols = Array.isArray(account.unpriced_symbols) ? account.unpriced_symbols.filter(s => typeof s === "string").join(", ") : "";
+              const reference = typeof account.cost_reference_equity === "number" && Number.isFinite(account.cost_reference_equity)
+                ? money(account.cost_reference_equity, baseCurrency) : "--";
+              return isZh ? `${label}${symbols ? `（${symbols}）` : ""}缺少市场报价，市值与盈亏未知；含成本价的参考总额为 ${reference}，不用于计算期间变化。`
+                : `${label}${symbols ? ` (${symbols})` : ""}: market equity and P&L are unknown. Cost-based reference total ${reference} is excluded from period change.`;
+            })}/> : null}
             <div className="grid gap-4 sm:grid-cols-3">
               <Metric label={text.statsDaily} value={String(stats?.daily_count ?? "--")} />
               <Metric label={text.statsEvents} value={String(stats?.event_count ?? "--")} />
@@ -138,9 +162,9 @@ export function BriefRollupDocument({
                       <span className="font-data-mono text-sm text-editorial-accent">
                         {String(Number.isFinite(topic.index) ? topic.index : position + 1).padStart(2, "0")}
                       </span>
-                      <h3 className="font-editorial-body text-lg font-bold text-ink">{topic.title}</h3>
+                      <h3 className="font-editorial-body text-lg font-bold text-ink">{displayText(topic.title)}</h3>
                     </div>
-                    <p className="mt-2 font-body-sm leading-6 text-ink-secondary">{topic.synthesis}</p>
+                    <p className="mt-2 font-body-sm leading-6 text-ink-secondary">{displayText(topic.synthesis)}</p>
                     {topic.source_items.length ? (
                       <ul className="mt-3 space-y-1.5 border-l border-editorial-rule pl-4">
                         {topic.source_items.map((item) => {
@@ -182,6 +206,12 @@ export function BriefRollupDocument({
       {rollup.warnings.length ? (
         <Alert messages={rollup.warnings} title={text.warnings} />
       ) : null}
+
+      {hasFormattedText ? <details className="border-t border-editorial-rule pt-3">
+        <summary className="cursor-pointer py-2 text-sm text-ink-secondary">{isZh ? "查看原始生成文字" : "Original generated text"}</summary>
+        <p className="mt-2 text-xs leading-6 text-ink-secondary">{isZh ? "正文只调整与快照一致的财务数字和单位，数据库原文没有修改。其他日期、新闻数字和来源标题保持原样。" : "Only source-matched financial formatting changed for display. The stored text, dates and source headlines remain unchanged."}</p>
+        <pre className="mt-3 whitespace-pre-wrap break-words text-xs leading-6 text-ink-secondary">{JSON.stringify(originalText, null, 2)}</pre>
+      </details> : null}
 
       <nav className="flex items-center justify-between gap-4 border-t border-editorial-rule pt-5 font-data-mono text-sm">
         <span className="min-w-0">

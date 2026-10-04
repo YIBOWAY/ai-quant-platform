@@ -173,6 +173,7 @@ export async function assertWholeHermesShellWcagAaContrast(page: Page) {
     const failures: string[] = [];
     for (const element of Array.from(root.querySelectorAll("*"))) {
       const html = element as HTMLElement;
+      if (!html.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) continue;
       const renderedText = textRenderedBy(element);
       if (!renderedText) continue;
       if (
@@ -264,7 +265,12 @@ export async function assertWholeHermesShellControlsUnclipped(page: Page) {
       const overflowClips = (value: string) =>
         ["auto", "clip", "hidden", "scroll"].includes(value);
       const visible = (element: HTMLElement) => {
+        // A summary inside an outer closed details is not visible merely
+        // because it is itself a summary. Browser visibility handles nesting.
+        if (!element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) return false;
+        const closedDetails = element.closest("details:not([open])");
         if (
+          (closedDetails && !element.closest("summary")) ||
           element.closest(
             '[aria-hidden="true"], [hidden], nextjs-portal, [data-nextjs-toast], [data-next-mark]',
           )
@@ -418,11 +424,11 @@ export async function assertWholeHermesShellControlsUnclipped(page: Page) {
 export async function assertWholeHermesShellSemanticStatus(page: Page) {
   await expect(page.locator("main")).toHaveCount(1);
   await expect(
-    page.getByRole("navigation", { name: /Hermes workbench|Hermes 工作台/ }),
+    page.getByRole("tablist", { name: /研究与运行|Research & simulation/ }),
   ).toBeVisible();
   await expect(
     page.getByRole("region", {
-      name: /Hermes workbench main|Hermes 工作台主区/,
+      name: /Hermes Assistant main|Hermes 助手主区/,
     }),
   ).toBeVisible();
 
@@ -448,5 +454,5 @@ export async function assertWholeHermesShellSemanticStatus(page: Page) {
     `visible role=status surfaces need textual status: ${textlessStatuses.join("; ")}`,
   ).toEqual([]);
   await expect(page.getByTestId("global-safety-strip")).not.toHaveText("");
-  await expect(page.getByTestId("hermes-today-state")).not.toHaveText("");
+  await expect(page.locator(".dp-hero-description")).not.toHaveText("");
 }

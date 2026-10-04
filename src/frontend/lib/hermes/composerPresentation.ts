@@ -10,11 +10,6 @@ export type ComposerDraftState = {
   counterText: string;
 };
 
-function shortCommandId(commandId?: string | null): string {
-  if (!commandId) return "";
-  return commandId.length > 8 ? `${commandId.slice(0, 8)}…` : commandId;
-}
-
 export function composerDraftState(
   draft: string,
   locale: Locale,
@@ -41,16 +36,10 @@ export function composerDraftState(
 
 export function formatComposerReceiptStatus(
   status: string,
-  commandId: string | undefined,
-  reason: string | undefined,
+  _commandId: string | undefined,
+  _reason: string | undefined,
   locale: Locale,
 ): string {
-  const command = commandId
-    ? locale === "zh"
-      ? ` · 命令 ${shortCommandId(commandId)}`
-      : ` · command ${shortCommandId(commandId)}`
-    : "";
-  const why = reason ? ` (${reason})` : "";
   const zh: Record<string, string> = {
     accepted: "已接受",
     outcome_unknown: "结果未知——请重试同一次发送，或继续跟踪工作区",
@@ -66,23 +55,15 @@ export function formatComposerReceiptStatus(
     reconciling: "Reconciling",
   };
   const label = (locale === "zh" ? zh : en)[status] ?? status;
-  return `${label}${status === "outcome_unknown" ? "" : command}${why}`;
+  return label;
 }
 
 export function formatComposerLifecycleStatus(
   state: string | null,
-  commandId: string | null | undefined,
-  hermesRunId: string | null | undefined,
+  _commandId: string | null | undefined,
+  _hermesRunId: string | null | undefined,
   locale: Locale,
 ): string {
-  const command = commandId ? ` · ${shortCommandId(commandId)}` : "";
-  const runLabel = locale === "zh" ? "运行" : "run";
-  const run =
-    hermesRunId && hermesRunId.length > 12
-      ? ` · ${runLabel} ${hermesRunId.slice(0, 12)}…`
-      : hermesRunId
-        ? ` · ${runLabel} ${hermesRunId}`
-        : "";
   const zh: Record<string, string> = {
     queued: "排队中",
     leased: "已领取",
@@ -110,9 +91,7 @@ export function formatComposerLifecycleStatus(
     : locale === "zh"
       ? "跟踪中"
       : "Tracking";
-  return `${label}${command}${
-    state === "delivered" || state === "succeeded" ? run : ""
-  }`;
+  return label;
 }
 
 export function composerSubmittingText(locale: Locale): string {
@@ -139,6 +118,21 @@ export function composerErrorMessage(
     return locale === "zh"
       ? "消息超过 16,384 字节，请缩短后再发送。"
       : "The message exceeds 16,384 bytes. Shorten it before sending.";
+  }
+  if (code === "intent_payload_corrupt") {
+    return locale === "zh"
+      ? "本地消息存储读取失败，这条消息尚未发送。请先重启本地服务；如果仍失败，请检查 HQA 日志。不要重试同一次发送。"
+      : "The local message store could not be read, so this message was not sent. Restart the local stack and inspect the HQA log if the error persists; do not retry the same send.";
+  }
+  if (code === "workspace_request_timeout") {
+    return locale === "zh"
+      ? "本机服务 30 秒内没有响应。请检查服务状态后重试。"
+      : "The local service did not respond within 30 seconds. Check its status and try again.";
+  }
+  if (code === "outcome_unknown") {
+    return locale === "zh"
+      ? "请求可能已经被接收，但 30 秒内没有返回结果。请点击“重试同一次发送”，不要另发一条消息。"
+      : "The request may have been accepted but returned no result within 30 seconds. Retry the same send instead of sending a new message.";
   }
   if (
     code === "intent_crypto_unavailable" ||

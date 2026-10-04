@@ -16,6 +16,7 @@ import {
   getFactors,
 } from "@/lib/api";
 import { getServerLocale } from "@/lib/serverLocale";
+import { localizePath } from "@/lib/locale";
 import { agentStudioCutoverHref } from "@/lib/hermes/agentStudioCutover";
 import { hermesFeatureFlags } from "@/lib/hermes/featureFlags";
 
@@ -24,12 +25,12 @@ const copy = {
     eyebrow: "Legacy Research Surface",
     title: "Agent Studio · Read-only",
     inertNote: "Transitional candidate inspection only. This page cannot create or review candidates.",
-    safetyTitle: "Inspection only · no Scene-B authority",
+    safetyTitle: "Inspection only · verified candidates live in the Library",
     safetyBody:
-      "Candidate source and audit records are displayed as text. Task submission and approve/reject controls are intentionally unavailable; the supported Scene-B workflow must pass HQA Gate 1–3.",
-    openHermes: "Open Hermes workbench",
+      "Candidate source and audit records are displayed as text. Task submission and approve/reject controls are unavailable; use the Candidate Library for verified assets.",
+    openHermes: "Open Hermes Assistant",
     candidatePool: "Candidate Pool",
-    candidatePoolHint: "Pending files awaiting manual review.",
+    candidatePoolHint: "Pending files awaiting manual review. Select one to inspect its source and audit trail.",
     noCandidatesTitle: "No candidates",
     noCandidatesDesc: "No candidate artifacts are available for read-only inspection.",
     candidateUnavailableTitle: "Candidate repository unavailable",
@@ -59,12 +60,12 @@ const copy = {
     eyebrow: "旧研究界面",
     title: "智能体工作室 · 只读",
     inertNote: "这里只保留过渡期候选检查，不能创建或审批候选。",
-    safetyTitle: "仅供检查 · 不构成 Scene-B 权威",
+    safetyTitle: "仅供检查 · 已验证资产在候选库",
     safetyBody:
-      "这里只以文本展示候选源码和审计记录。任务提交与批准/拒绝控件已明确关闭；受支持的 Scene-B 流程必须经过 HQA Gate 1–3。",
-    openHermes: "打开 Hermes 工作台",
+      "这里只以文本展示候选源码和审计记录。任务提交与批准/拒绝控件不可用；已验证资产请到候选库查看。",
+    openHermes: "打开 Hermes 助手",
     candidatePool: "候选池",
-    candidatePoolHint: "等待人工复核的待处理文件。",
+    candidatePoolHint: "等待人工复核的待处理文件。点选一条查看源码与审计记录。",
     noCandidatesTitle: "暂无候选",
     noCandidatesDesc: "当前没有可供只读检查的候选产物。",
     candidateUnavailableTitle: "候选仓库不可用",
@@ -101,7 +102,11 @@ function statusTone(status: string | null | undefined): Tone {
   return "neutral";
 }
 
-export default async function AgentStudio() {
+export default async function AgentStudio({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const locale = await getServerLocale();
   const cutoverHref = agentStudioCutoverHref(
     hermesFeatureFlags().agentStudioRedirect,
@@ -112,13 +117,19 @@ export default async function AgentStudio() {
     redirect(cutoverHref);
   }
   const text = copy[locale];
+  const requested = searchParams ? (await searchParams).candidate : undefined;
+  const requestedCandidateId =
+    typeof requested === "string" && requested ? requested : undefined;
   const [candidates, factors] = await Promise.all([
     getAgentCandidates(),
     getFactors(),
   ]);
-  const latestCandidate = candidates.candidates[0];
-  const latestDetail = latestCandidate
-    ? await getAgentCandidateDetail(latestCandidate.candidate_id)
+  const selectedCandidate =
+    candidates.candidates.find(
+      (candidate) => candidate.candidate_id === requestedCandidateId,
+    ) ?? candidates.candidates[0];
+  const selectedDetail = selectedCandidate
+    ? await getAgentCandidateDetail(selectedCandidate.candidate_id)
     : null;
 
   return (
@@ -145,31 +156,45 @@ export default async function AgentStudio() {
               </div>
             ) : candidates.candidates.length ? (
               <ul className="space-y-2">
-                {candidates.candidates.map((candidate) => (
-                  <li
-                    key={candidate.candidate_id}
-                    className="rounded-lg border border-border-subtle bg-bg-surface-muted p-3"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Cpu size={14} className="shrink-0 text-text-secondary" />
-                      <span className="truncate font-data-mono text-xs text-text-primary">
-                        {candidate.candidate_id}
-                      </span>
-                    </div>
-                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                      <StatusPill
-                        label={text.type}
-                        value={candidate.artifact_type ?? "—"}
-                        tone="neutral"
-                      />
-                      <StatusPill
-                        label={text.status}
-                        value={candidate.status ?? "—"}
-                        tone={statusTone(candidate.status)}
-                      />
-                    </div>
-                  </li>
-                ))}
+                {candidates.candidates.map((candidate) => {
+                  const isSelected =
+                    selectedCandidate?.candidate_id === candidate.candidate_id;
+                  return (
+                    <li key={candidate.candidate_id}>
+                      <Link
+                        aria-current={isSelected ? "true" : undefined}
+                        className={`block rounded-lg border p-3 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info ${
+                          isSelected
+                            ? "border-info bg-info/10"
+                            : "border-border-subtle bg-bg-surface-muted hover:border-info/60"
+                        }`}
+                        href={localizePath(
+                          `/agent-studio?candidate=${encodeURIComponent(candidate.candidate_id)}`,
+                          locale,
+                        )}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Cpu size={14} className="shrink-0 text-text-secondary" />
+                          <span className="truncate font-data-mono text-xs text-text-primary">
+                            {candidate.candidate_id}
+                          </span>
+                        </div>
+                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                          <StatusPill
+                            label={text.type}
+                            value={candidate.artifact_type ?? "—"}
+                            tone="neutral"
+                          />
+                          <StatusPill
+                            label={text.status}
+                            value={candidate.status ?? "—"}
+                            tone={statusTone(candidate.status)}
+                          />
+                        </div>
+                      </Link>
+                    </li>
+                  );
+                })}
               </ul>
             ) : (
               <EmptyState title={text.noCandidatesTitle} description={text.noCandidatesDesc} />
@@ -202,7 +227,7 @@ export default async function AgentStudio() {
           <div className="flex min-w-0 items-center gap-2 font-data-mono text-sm text-text-primary">
             <span className="font-label-caps text-text-secondary">{text.selected}</span>
             <span className="truncate">
-              {latestCandidate?.candidate_id ?? text.noCandidateSelected}
+              {selectedCandidate?.candidate_id ?? text.noCandidateSelected}
             </span>
           </div>
           <span className="flex shrink-0 items-center gap-1 rounded-lg border border-warning/40 bg-warning/10 px-2 py-1 font-data-mono text-[10px] uppercase text-warning">
@@ -215,7 +240,7 @@ export default async function AgentStudio() {
             messages={[
               candidates.apiError,
               factors.apiError,
-              latestDetail?.apiError,
+              selectedDetail?.apiError,
             ]}
           />
 
@@ -233,19 +258,19 @@ export default async function AgentStudio() {
             </div>
           </Card>
 
-          {latestDetail?.source_preview ? (
+          {selectedDetail?.source_preview ? (
             <Card>
               <SectionTitle
                 title={text.sourcePreview}
                 hint={text.sourcePreviewSub}
                 right={
                   <span className="font-data-mono text-[10px] uppercase text-text-secondary">
-                    {latestDetail.candidate_id}
+                    {selectedDetail.candidate_id}
                   </span>
                 }
               />
               <pre className="max-h-80 overflow-auto rounded-lg border border-border-subtle bg-bg-surface-muted p-3 font-code-sm text-text-primary">
-                {latestDetail.source_preview}
+                {selectedDetail.source_preview}
               </pre>
             </Card>
           ) : (
@@ -255,14 +280,14 @@ export default async function AgentStudio() {
             />
           )}
 
-          {latestDetail?.audit.length || latestDetail?.reviews.length ? (
+          {selectedDetail?.audit.length || selectedDetail?.reviews.length ? (
             <Card>
               <SectionTitle title={text.auditTimeline} />
               <div className="grid gap-4 lg:grid-cols-2">
                 <div>
                   <h3 className="font-label-caps text-text-secondary">{text.auditEvents}</h3>
                   <ul className="mt-2 space-y-2 font-data-mono text-xs text-text-primary">
-                    {(latestDetail?.audit ?? []).slice(0, 12).map((entry, index) => (
+                    {(selectedDetail?.audit ?? []).slice(0, 12).map((entry, index) => (
                       <li
                         key={`audit-${index}`}
                         className="rounded-lg border border-border-subtle bg-bg-surface-muted p-2"
@@ -274,9 +299,9 @@ export default async function AgentStudio() {
                 </div>
                 <div>
                   <h3 className="font-label-caps text-text-secondary">{text.reviewEvents}</h3>
-                  {(latestDetail?.reviews ?? []).length ? (
+                  {(selectedDetail?.reviews ?? []).length ? (
                     <ul className="mt-2 space-y-2 font-data-mono text-xs text-text-primary">
-                      {latestDetail.reviews.slice(0, 12).map((entry, index) => (
+                      {selectedDetail.reviews.slice(0, 12).map((entry, index) => (
                         <li
                           key={`review-${index}`}
                           className="rounded-lg border border-border-subtle bg-bg-surface-muted p-2"

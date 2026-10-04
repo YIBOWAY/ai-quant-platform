@@ -104,6 +104,49 @@ export type BriefRollupPayload = z.infer<typeof briefRollupPayloadSchema>;
 export type BriefRollupTopic = z.infer<typeof briefRollupTopicSchema>;
 export type BriefRollupSourceItem = z.infer<typeof briefRollupSourceItemSchema>;
 
+/** Readability only. Never infer units from arbitrary prose or edit an archive. */
+export function formatArchivedRollupText(
+  value: string, payload: BriefRollupPayload | null, locale: "zh" | "en",
+): string {
+  if (!payload) return value;
+  const summary = payload.account_summary ?? {};
+  const accounts = [summary.start, summary.end].filter((row): row is Record<string, unknown> =>
+    row !== null && typeof row === "object" && !Array.isArray(row));
+  const valuesFor = (key: string) => accounts.map(row => row[key]).filter((n): n is number =>
+    typeof n === "number" && Number.isFinite(n));
+  const bound = (token: string, values: number[]) => values.includes(Number(token));
+  const money = (token: string) => Number(token).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const ratio = (token: string) => `${(Number(token) * 100).toFixed(2)}%`;
+  const moneyValues = [payload.stats.equity_start, payload.stats.equity_end,
+    ...["equity", "cash", "pnl_abs"].flatMap(valuesFor)].filter((n): n is number =>
+    typeof n === "number" && Number.isFinite(n));
+  const points = [payload.stats.period_change_pct, summary.period_change_pct].filter((n): n is number =>
+    typeof n === "number" && Number.isFinite(n));
+  const labels: Record<string, [string, string]> = {
+    pnl_pct: ["账户盈亏比例", "Account P&L ratio"], invested_pct: ["已投资比例", "Invested proportion"],
+    cash: ["现金", "Cash"], equity: ["账户总资产", "Account equity"], pnl_abs: ["账户盈亏金额", "Account P&L"],
+  };
+  let formatted = value.replace(
+    /\b(pnl_pct|invested_pct|cash|equity|pnl_abs)\b\s*[:=：]?\s*(-?\d+(?:\.\d+)?)(?![\w.%])/g,
+    (whole, field: string, token: string) => bound(token, valuesFor(field))
+      ? `${labels[field][locale === "zh" ? 0 : 1]} ${field.endsWith("_pct") ? ratio(token) : money(token)}` : whole,
+  );
+  formatted = formatted.replace(
+    /(已投资比例(?:由|从|为|[:：])?\s*)(-?\d+(?:\.\d+)?)(?![\w.%])(?:([ \t]*(?:变为|变成|至|到|→)[ \t]*)(-?\d+(?:\.\d+)?)(?![\w.%]))?/g,
+    (whole, prefix: string, start: string, separator?: string, end?: string) => {
+      const known = valuesFor("invested_pct");
+      if (!bound(start, known) || (end !== undefined && !bound(end, known))) return whole;
+      return prefix + ratio(start) + (end === undefined ? "" : separator + ratio(end));
+    },
+  );
+  formatted = formatted.replace(
+    /(?<![\w.])(-?\d+(?:\.\d+)?)(\s*(?:美元|USD)(?![A-Za-z]))/g,
+    (whole, token: string, unit: string) => bound(token, moneyValues) ? money(token) + unit : whole,
+  );
+  return formatted.replace(/(?<![\w.])(-?\d+(?:\.\d+)?)(\s*%)/g,
+    (whole, token: string, unit: string) => bound(token, points) ? Number(token).toFixed(2) + unit : whole);
+}
+
 export type BriefRollupView = {
   publicId: string;
   kind: BriefRollupKind;

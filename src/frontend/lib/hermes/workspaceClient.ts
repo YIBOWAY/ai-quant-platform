@@ -45,9 +45,6 @@ export type WorkspaceActionReceipt = {
   attempt_id?: string;
   result_id?: string;
   terminal_status?: string;
-  gate_id?: string;
-  task_version?: number;
-  gate1_confirmation_id?: string;
 };
 
 export class WorkspaceClientError extends Error {
@@ -63,6 +60,12 @@ export class WorkspaceClientError extends Error {
 
 export function utf8ByteLength(text: string): number {
   return new TextEncoder().encode(text).length;
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join(
+    "",
+  );
 }
 
 export function preflightPrompt(prompt: string): string {
@@ -144,10 +147,15 @@ type SameOriginInit = {
   signal?: AbortSignal;
 };
 
+const WORKSPACE_REQUEST_TIMEOUT_MS = 30_000;
+
 async function sameOriginJson<T>(
   path: string,
   init: SameOriginInit = {},
 ): Promise<T> {
+  const method = (
+    init.method ?? (init.body !== undefined ? "POST" : "GET")
+  ).toUpperCase();
   const headers: Record<string, string> = {
     accept: "application/json",
   };
@@ -166,21 +174,54 @@ async function sameOriginJson<T>(
     headers[CSRF_HEADER_NAME] = csrf;
   }
 
-  const response = await fetch(path, {
-    method: init.method ?? (init.body !== undefined ? "POST" : "GET"),
-    credentials: "same-origin",
-    headers,
-    body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
-    signal: init.signal,
-  });
+  const bounded = new AbortController();
+  const relayCallerAbort = () => bounded.abort(init.signal?.reason);
+  if (init.signal?.aborted) {
+    relayCallerAbort();
+  } else {
+    init.signal?.addEventListener("abort", relayCallerAbort, { once: true });
+  }
+  let deadlineExpired = false;
+  const deadline = setTimeout(() => {
+    deadlineExpired = true;
+    bounded.abort();
+  }, WORKSPACE_REQUEST_TIMEOUT_MS);
 
-  if (!response.ok) {
-    throw await parseError(response);
+  try {
+    const response = await fetch(path, {
+      method,
+      credentials: "same-origin",
+      headers,
+      body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
+      signal: bounded.signal,
+    });
+
+    if (!response.ok) {
+      throw await parseError(response);
+    }
+    if (response.status === 204) {
+      return undefined as T;
+    }
+    return (await response.json()) as T;
+  } catch (error) {
+    if (deadlineExpired && !init.signal?.aborted) {
+      throw method === "GET"
+        ? new WorkspaceClientError(
+            "Workspace request timed out after 30 seconds.",
+            504,
+            "workspace_request_timeout",
+          )
+        : new WorkspaceClientError(
+            "The request outcome is unknown after 30 seconds; retry the same action.",
+            504,
+            "outcome_unknown",
+          );
+    }
+    throw error;
+  } finally {
+    clearTimeout(deadline);
+    init.signal?.removeEventListener("abort", relayCallerAbort);
   }
-  if (response.status === 204) {
-    return undefined as T;
-  }
-  return (await response.json()) as T;
 }
 
 export function ownerGetJson<T>(path: string, signal?: AbortSignal): Promise<T> {
@@ -1365,174 +1406,7 @@ export async function requestHermesRunStop(
   return receipt;
 }
 
-/** V7e: Domain Gate 1/2/3 projection — never shares command-approval shape. */
-export type WorkspaceGateProjection = {
-  gate_id: string;
-  gate_kind: "gate1" | "gate2" | "gate3" | string;
-  attempt_ref?: string | null;
-  command_id?: string | null;
-  command_ref?: string | null;
-  hermes_session_id?: string | null;
-  hermes_run_id?: string | null;
-  hqa_run_ref?: string | null;
-  hqa_gate_ref?: string | null;
-  managed_session_ref?: string | null;
-  kind?: string | null;
-  status?: string | null;
-  expected_status?: string | null;
-  task_id?: string | null;
-  task_ref?: string | null;
-  source_file_ref?: string | null;
-  universe?: string | null;
-  reviewed_source_sha256?: string | null;
-  gate1_confirmation_id?: string | null;
-  candidate_id?: string | null;
-  candidate_ref?: string | null;
-  expected_digest?: string | null;
-  final_backtest_receipt_id?: string | null;
-  final_backtest_receipt_ref?: string | null;
-  base_commit?: string | null;
-  hqa_receipt_ref?: string | null;
-  hqa_receipt_digest?: string | null;
-  promotion_id?: string | null;
-  worktree?: string | null;
-  patch?: string | null;
-  manifest?: string | null;
-  human_git_commit_required?: boolean | null;
-  auto_commit?: false | null;
-  reviewed_commit?: string | null;
-  task_version?: number | null;
-  task_status?: "completed" | null;
-  task_terminal_outcome?: "completed" | null;
-  attempt_status?: "completed" | null;
-  attempt_terminal_outcome?: "completed" | null;
-  domain_gate_outcome?: "passed" | null;
-  provider_evidence_ref?: string | null;
-  workflow_audit_status?: "consistent" | null;
-  workflow_audit_ref?: string | null;
-  workflow_audit_digest?: string | null;
-  hqa_completion_receipt_ref?: string | null;
-  hqa_completion_receipt_digest?: string | null;
-  expires_at?: string | null;
-  note?: string | null;
-  decided_at?: string | null;
-};
-
-export type Gate1SourceEvidence = {
-  schema_version: "1.0";
-  gate_id: string;
-  workspace_id: string;
-  source_file_ref: string;
-  reviewed_source_sha256: string;
-  observed_source_sha256: string;
-  client_verified_sha256: string;
-  byte_length: number;
-  media_type: "text/x-python; charset=utf-8";
-  source_utf8: string;
-};
-
-type Gate1SourceEvidenceWire = Omit<
-  Gate1SourceEvidence,
-  "client_verified_sha256"
->;
-
-function bytesToHex(bytes: Uint8Array): string {
-  return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join(
-    "",
-  );
-}
-
-/** Independently re-hash exact UTF-8 bytes in the browser before review. */
-export async function verifyGate1SourceEvidence(
-  wire: Gate1SourceEvidenceWire,
-  expected: {
-    workspaceId: string;
-    gateId: string;
-    reviewedSourceSha256: string;
-  },
-): Promise<Gate1SourceEvidence> {
-  if (
-    wire.schema_version !== "1.0" ||
-    wire.workspace_id !== expected.workspaceId ||
-    wire.gate_id !== expected.gateId ||
-    wire.reviewed_source_sha256 !== expected.reviewedSourceSha256 ||
-    wire.observed_source_sha256 !== expected.reviewedSourceSha256 ||
-    wire.media_type !== "text/x-python; charset=utf-8" ||
-    typeof wire.source_file_ref !== "string" ||
-    !wire.source_file_ref.startsWith("/") ||
-    !Number.isInteger(wire.byte_length) ||
-    wire.byte_length < 1 ||
-    wire.byte_length > 1_048_576 ||
-    typeof wire.source_utf8 !== "string" ||
-    !wire.source_utf8
-  ) {
-    throw new WorkspaceClientError(
-      "Gate 1 source evidence does not match the durable challenge",
-      409,
-      "paper_gate_source_evidence_mismatch",
-    );
-  }
-  const payload = new TextEncoder().encode(wire.source_utf8);
-  if (payload.byteLength !== wire.byte_length) {
-    throw new WorkspaceClientError(
-      "Gate 1 source byte length changed in transit",
-      409,
-      "paper_gate_source_evidence_mismatch",
-    );
-  }
-  if (!globalThis.crypto?.subtle) {
-    throw new WorkspaceClientError(
-      "browser SHA-256 verifier is unavailable",
-      503,
-      "paper_gate_source_verifier_unavailable",
-    );
-  }
-  const clientDigest = bytesToHex(
-    new Uint8Array(await globalThis.crypto.subtle.digest("SHA-256", payload)),
-  );
-  if (clientDigest !== expected.reviewedSourceSha256) {
-    throw new WorkspaceClientError(
-      "Gate 1 source failed independent browser SHA-256 verification",
-      409,
-      "paper_gate_source_digest_mismatch",
-    );
-  }
-  return {
-    ...wire,
-    client_verified_sha256: clientDigest,
-  };
-}
-
-export async function fetchGate1SourceEvidence(options: {
-  gateId: string;
-  reviewedSourceSha256: string;
-  workspaceId?: string;
-  signal?: AbortSignal;
-}): Promise<Gate1SourceEvidence> {
-  await ensureOwnerSession(options.signal);
-  const workspaceId = options.workspaceId ?? PLATFORM_WORKSPACE_ID;
-  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(options.gateId)) {
-    throw new WorkspaceClientError("gate_id is invalid", 400, "validation");
-  }
-  if (!/^[0-9a-f]{64}$/.test(options.reviewedSourceSha256)) {
-    throw new WorkspaceClientError(
-      "reviewed_source_sha256 must be lowercase SHA-256",
-      400,
-      "validation",
-    );
-  }
-  const wire = await sameOriginJson<Gate1SourceEvidenceWire>(
-    `/api/workspace/${encodeURIComponent(workspaceId)}/gates/${encodeURIComponent(options.gateId)}/source`,
-    { method: "GET", signal: options.signal },
-  );
-  return verifyGate1SourceEvidence(wire, {
-    workspaceId,
-    gateId: options.gateId,
-    reviewedSourceSha256: options.reviewedSourceSha256,
-  });
-}
-
-/** V7f: typed result projection on snapshot/follow spine (not bare id). */
+/** Typed result projection on the snapshot/follow spine. */
 export type WorkspaceResultProjection = {
   result_id: string;
   /** Spine/authority id slot compatibility. */
@@ -1580,327 +1454,7 @@ export type WorkspaceResultProjection = {
   } | null;
 };
 
-export function buildConfirmFormulaSourceAction(input: {
-  taskId: string;
-  reviewedSourceSha256: string;
-  confirmationNote: string;
-  clientActionId: string;
-  workspaceId: string;
-}): Record<string, unknown> {
-  const taskId = input.taskId.startsWith("task:")
-    ? input.taskId.slice("task:".length)
-    : input.taskId;
-  if (!/^[0-9a-f]{64}$/.test(input.reviewedSourceSha256)) {
-    throw new WorkspaceClientError(
-      "reviewed_source_sha256 must be lowercase SHA-256",
-      400,
-      "validation",
-    );
-  }
-  if (!input.confirmationNote.trim()) {
-    throw new WorkspaceClientError(
-      "confirmation_note must be nonempty",
-      400,
-      "validation",
-    );
-  }
-  return {
-    schema_version: 1,
-    kind: "gate1.formula_source.confirm",
-    client_action_id: input.clientActionId,
-    workspace: { workspace_id: input.workspaceId },
-    task_ref: `task:${taskId}`,
-    reviewed_source_sha256: input.reviewedSourceSha256,
-    confirmation_note: input.confirmationNote,
-  };
-}
-
-export function buildReviewCandidateCASAction(input: {
-  candidateId: string;
-  expectedDigest: string;
-  note: string;
-  clientActionId: string;
-  workspaceId: string;
-}): Record<string, unknown> {
-  const candidateId = input.candidateId.startsWith("candidate:")
-    ? input.candidateId.slice("candidate:".length)
-    : input.candidateId;
-  if (!/^[0-9a-f]{64}$/.test(input.expectedDigest)) {
-    throw new WorkspaceClientError(
-      "expected_digest must be lowercase SHA-256",
-      400,
-      "validation",
-    );
-  }
-  if (!input.note.trim()) {
-    throw new WorkspaceClientError("note must be nonempty", 400, "validation");
-  }
-  return {
-    schema_version: 1,
-    kind: "gate2.candidate.review",
-    client_action_id: input.clientActionId,
-    workspace: { workspace_id: input.workspaceId },
-    candidate_ref: `candidate:${candidateId}`,
-    expected_digest: input.expectedDigest,
-    expected_status: "pending",
-    note: input.note,
-  };
-}
-
-export function buildPreparePromotionReviewAction(input: {
-  candidateId: string;
-  expectedDigest: string;
-  finalBacktestReceiptId: string;
-  baseCommit: string;
-  clientActionId: string;
-  workspaceId: string;
-}): Record<string, unknown> {
-  const candidateId = input.candidateId.startsWith("candidate:")
-    ? input.candidateId.slice("candidate:".length)
-    : input.candidateId;
-  const receiptId = input.finalBacktestReceiptId.startsWith("receipt:")
-    ? input.finalBacktestReceiptId.slice("receipt:".length)
-    : input.finalBacktestReceiptId;
-  if (!/^[0-9a-f]{64}$/.test(input.expectedDigest)) {
-    throw new WorkspaceClientError(
-      "expected_digest must be lowercase SHA-256",
-      400,
-      "validation",
-    );
-  }
-  if (!/^[0-9a-f]{40}$/.test(input.baseCommit)) {
-    throw new WorkspaceClientError(
-      "base_commit must be lowercase 40-hex",
-      400,
-      "validation",
-    );
-  }
-  return {
-    schema_version: 1,
-    kind: "gate3.promotion_review.prepare",
-    client_action_id: input.clientActionId,
-    workspace: { workspace_id: input.workspaceId },
-    candidate_ref: `candidate:${candidateId}`,
-    expected_digest: input.expectedDigest,
-    final_backtest_receipt_ref: `receipt:${receiptId}`,
-    base_commit: input.baseCommit,
-  };
-}
-
-type PaperGateReceiptKind = "gate1" | "gate2" | "gate3";
-
-const PAPER_GATE_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
-const GATE1_CONFIRMATION_ID_RE = /^gate1-[0-9a-f]{32}$/;
-
-function requireExpectedPaperGateId(value: string): string {
-  if (!PAPER_GATE_ID_RE.test(value)) {
-    throw new WorkspaceClientError(
-      "expected_gate_id must be an exact paper Gate identifier",
-      400,
-      "validation",
-    );
-  }
-  return value;
-}
-
-function requireExpectedGate1ConfirmationId(value: string): string {
-  if (!GATE1_CONFIRMATION_ID_RE.test(value)) {
-    throw new WorkspaceClientError(
-      "expected_gate1_confirmation_id must be an exact Gate 1 continuation",
-      400,
-      "validation",
-    );
-  }
-  return value;
-}
-
-/**
- * Treat the BFF response as untrusted input. A successful paper Gate mutation
- * is usable only when it proves the exact action/Gate identity and returns a
- * durable, valid Task continuation. Gate 2/3 must preserve the Gate 1 lineage
- * projected to the user before the mutation.
- */
-function validatePaperGateReceipt(
-  receipt: unknown,
-  expected: {
-    kind: PaperGateReceiptKind;
-    clientActionId: string;
-    gateId: string;
-    gate1ConfirmationId?: string;
-  },
-): WorkspaceActionReceipt {
-  if (
-    receipt === null ||
-    typeof receipt !== "object" ||
-    (receipt as WorkspaceActionReceipt).client_action_id !==
-      expected.clientActionId ||
-    (receipt as WorkspaceActionReceipt).gate_id !== expected.gateId
-  ) {
-    throw new WorkspaceClientError(
-      "paper Gate receipt does not match the immutable action and Gate",
-      503,
-      "paper_gate_receipt_identity_mismatch",
-    );
-  }
-
-  const exactReceipt = receipt as WorkspaceActionReceipt;
-  if (exactReceipt.status !== "accepted") {
-    return exactReceipt;
-  }
-  if (
-    !Number.isSafeInteger(exactReceipt.task_version) ||
-    (exactReceipt.task_version ?? 0) < 1
-  ) {
-    throw new WorkspaceClientError(
-      "accepted paper Gate receipt has no valid Task continuation",
-      503,
-      "paper_gate_receipt_continuation_invalid",
-    );
-  }
-  if (
-    typeof exactReceipt.gate1_confirmation_id !== "string" ||
-    !GATE1_CONFIRMATION_ID_RE.test(exactReceipt.gate1_confirmation_id)
-  ) {
-    throw new WorkspaceClientError(
-      "accepted paper Gate receipt has no valid Gate 1 continuation",
-      503,
-      "paper_gate_receipt_continuation_invalid",
-    );
-  }
-  if (
-    expected.kind !== "gate1" &&
-    exactReceipt.gate1_confirmation_id !== expected.gate1ConfirmationId
-  ) {
-    throw new WorkspaceClientError(
-      "paper Gate receipt changed the reviewed Gate 1 continuation",
-      503,
-      "paper_gate_receipt_continuation_mismatch",
-    );
-  }
-  return exactReceipt;
-}
-
-export async function confirmFormulaSource(options: {
-  taskId: string;
-  reviewedSourceSha256: string;
-  confirmationNote: string;
-  expectedGateId: string;
-  clientActionId?: string;
-  workspaceId?: string;
-  signal?: AbortSignal;
-}): Promise<WorkspaceActionReceipt> {
-  const expectedGateId = requireExpectedPaperGateId(options.expectedGateId);
-  await ensureOwnerSession(options.signal);
-  const workspaceId = options.workspaceId ?? PLATFORM_WORKSPACE_ID;
-  const clientActionId = options.clientActionId ?? crypto.randomUUID();
-  const action = buildConfirmFormulaSourceAction({
-    taskId: options.taskId,
-    reviewedSourceSha256: options.reviewedSourceSha256,
-    confirmationNote: options.confirmationNote,
-    clientActionId,
-    workspaceId,
-  });
-  const receipt = await sameOriginJson<unknown>(
-    `/api/workspace/${encodeURIComponent(workspaceId)}/act`,
-    {
-      method: "POST",
-      csrf: true,
-      signal: options.signal,
-      body: { action },
-    },
-  );
-  return validatePaperGateReceipt(receipt, {
-    kind: "gate1",
-    clientActionId,
-    gateId: expectedGateId,
-  });
-}
-
-export async function reviewCandidateCAS(options: {
-  candidateId: string;
-  expectedDigest: string;
-  note: string;
-  expectedGateId: string;
-  expectedGate1ConfirmationId: string;
-  clientActionId?: string;
-  workspaceId?: string;
-  signal?: AbortSignal;
-}): Promise<WorkspaceActionReceipt> {
-  const expectedGateId = requireExpectedPaperGateId(options.expectedGateId);
-  const expectedGate1ConfirmationId = requireExpectedGate1ConfirmationId(
-    options.expectedGate1ConfirmationId,
-  );
-  await ensureOwnerSession(options.signal);
-  const workspaceId = options.workspaceId ?? PLATFORM_WORKSPACE_ID;
-  const clientActionId = options.clientActionId ?? crypto.randomUUID();
-  const action = buildReviewCandidateCASAction({
-    candidateId: options.candidateId,
-    expectedDigest: options.expectedDigest,
-    note: options.note,
-    clientActionId,
-    workspaceId,
-  });
-  const receipt = await sameOriginJson<unknown>(
-    `/api/workspace/${encodeURIComponent(workspaceId)}/act`,
-    {
-      method: "POST",
-      csrf: true,
-      signal: options.signal,
-      body: { action },
-    },
-  );
-  return validatePaperGateReceipt(receipt, {
-    kind: "gate2",
-    clientActionId,
-    gateId: expectedGateId,
-    gate1ConfirmationId: expectedGate1ConfirmationId,
-  });
-}
-
-export async function preparePromotionReview(options: {
-  candidateId: string;
-  expectedDigest: string;
-  finalBacktestReceiptId: string;
-  baseCommit: string;
-  expectedGateId: string;
-  expectedGate1ConfirmationId: string;
-  clientActionId?: string;
-  workspaceId?: string;
-  signal?: AbortSignal;
-}): Promise<WorkspaceActionReceipt> {
-  const expectedGateId = requireExpectedPaperGateId(options.expectedGateId);
-  const expectedGate1ConfirmationId = requireExpectedGate1ConfirmationId(
-    options.expectedGate1ConfirmationId,
-  );
-  await ensureOwnerSession(options.signal);
-  const workspaceId = options.workspaceId ?? PLATFORM_WORKSPACE_ID;
-  const clientActionId = options.clientActionId ?? crypto.randomUUID();
-  const action = buildPreparePromotionReviewAction({
-    candidateId: options.candidateId,
-    expectedDigest: options.expectedDigest,
-    finalBacktestReceiptId: options.finalBacktestReceiptId,
-    baseCommit: options.baseCommit,
-    clientActionId,
-    workspaceId,
-  });
-  const receipt = await sameOriginJson<unknown>(
-    `/api/workspace/${encodeURIComponent(workspaceId)}/act`,
-    {
-      method: "POST",
-      csrf: true,
-      signal: options.signal,
-      body: { action },
-    },
-  );
-  return validatePaperGateReceipt(receipt, {
-    kind: "gate3",
-    clientActionId,
-    gateId: expectedGateId,
-    gate1ConfirmationId: expectedGate1ConfirmationId,
-  });
-}
-
-/** V7g-A-M1: hermetic Vertical A options research bind (fixture only). */
+/** Hermetic Vertical A options research bind (fixture only). */
 export function buildBindOptionsVerticalAAction(input: {
   ticker: string;
   goalNote: string;
@@ -2025,8 +1579,6 @@ export type WorkspaceSnapshot = {
   results?: WorkspaceResultProjection[] | string[];
   /** L5a/V7a: Hermes command-approval challenges; empty when none pending. */
   approvals?: WorkspaceApprovalProjection[];
-  /** V7e: Domain Gate 1/2/3 surfaces; never mixed into approvals[]. */
-  gates?: WorkspaceGateProjection[];
   /** Production projection: legacy hermetic rows or canonical PG release rows. */
   public_cutovers?: WorkspacePublicCutoverResponse[];
   authority_health?: Record<string, string>;
@@ -2061,8 +1613,6 @@ export type WorkspaceEventPage = {
   mutation_enabled?: boolean;
   /** V7d: approvals projection on follow pages (pending + recent decided). */
   approvals?: WorkspaceApprovalProjection[];
-  /** V7e: gates projection on follow pages (separate from approvals). */
-  gates?: WorkspaceGateProjection[];
   /** V7f: typed results projection on follow pages. */
   results?: WorkspaceResultProjection[];
   /** Canonical public-cutover facts; follow may omit when unchanged. */

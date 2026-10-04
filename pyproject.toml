@@ -13,6 +13,7 @@ authors = [
   { name = "AI Quant Platform Team" }
 ]
 dependencies = [
+  "exchange-calendars==4.13.2",
   "duckdb>=0.10",
   "futu-api>=10.4.6408",
   "numpy>=1.26,<2",

@@ -58,7 +58,8 @@ def test_scores_normal_contract_with_core_metrics() -> None:
     assert result.daily_theta_cost == pytest.approx(0.10)
     assert result.theta_burn_7d == pytest.approx(0.70)
     assert result.vega_pct_of_premium == pytest.approx(0.20 / 5.25)
-    assert result.estimated_iv_crush_loss == pytest.approx(1.0)
+    assert result.estimated_iv_change_pnl == pytest.approx(-1.0)
+    assert result.estimated_iv_change_pct == pytest.approx(-1.0 / 5.25)
     assert result.delta_per_dollar == pytest.approx(0.55 * 100 / 5.25)
     assert result.iv_rank == pytest.approx(50.0)
     assert result.iv_hv_ratio == pytest.approx(1.25)
@@ -67,9 +68,7 @@ def test_scores_normal_contract_with_core_metrics() -> None:
 
 
 def test_missing_greeks_degrades_to_none_with_warning() -> None:
-    result = score_buy_side_contract(
-        _normal_leg(delta=None, gamma=None, theta=None, vega=None)
-    )
+    result = score_buy_side_contract(_normal_leg(delta=None, gamma=None, theta=None, vega=None))
 
     assert result.delta_per_dollar is None
     assert result.gamma_theta_ratio is None
@@ -130,8 +129,19 @@ def test_vega_unit_convention_is_per_one_vol_point() -> None:
         iv_crush_vol_points=-10.0,
     )
 
-    assert result.estimated_iv_crush_loss == pytest.approx(2.5)
-    assert result.estimated_iv_crush_loss_pct == pytest.approx(0.25)
+    assert result.estimated_iv_change_pnl == pytest.approx(-2.5)
+    assert result.estimated_iv_change_pct == pytest.approx(-0.25)
+
+
+def test_positive_iv_change_is_expansion_gain_not_crush_loss() -> None:
+    result = score_buy_side_contract(
+        _normal_leg(vega=0.25, bid=10.0, ask=10.0),
+        iv_crush_vol_points=5.0,
+    )
+
+    assert result.estimated_iv_change_pnl == pytest.approx(1.25)
+    assert result.estimated_iv_change_pct == pytest.approx(0.125)
+    assert "estimated_iv_crush_loss" not in type(result).model_fields
 
 
 def test_target_below_implied_move_warning() -> None:

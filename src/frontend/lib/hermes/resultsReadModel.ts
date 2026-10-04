@@ -331,7 +331,7 @@ export function normalizeHermesResultDetailResponse(
       ? item !== null && resource !== null
       : value.read_status === "degraded"
         ? item !== null
-      : value.read_status === "missing" || value.read_status === "unavailable"
+      : value.read_status === "missing"
         ? item === null && resource === null
         : nullsAreConsistent;
   if (

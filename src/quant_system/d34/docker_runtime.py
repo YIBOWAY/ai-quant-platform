@@ -13,6 +13,9 @@ from pathlib import Path
 from typing import Any
 
 _IMAGE_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+_FAILURE_STREAM_HEAD_TAIL_BYTES = 2048
+_STDOUT_FAILURE_FILE = "docker_failure.stdout.txt"
+_STDERR_FAILURE_FILE = "docker_failure.stderr.txt"
 
 
 class D34DockerRuntimeError(RuntimeError):
@@ -72,7 +75,9 @@ class D34DockerRuntime:
         self._run = process_runner
         self._run_repository = repository_runner
 
-    def _validate(self, *, job_id: str, command: Sequence[str]) -> None:
+    def _validate(
+        self, *, job_id: str, command: Sequence[str], timeout_seconds: int
+    ) -> None:
         roots = (
             self.config.workspace_root,
             self.config.platform_root,
@@ -95,7 +100,7 @@ class D34DockerRuntime:
             or not self.config.image_ref.strip()
             or not command
             or any(not isinstance(value, str) or not value for value in command)
-            or not 30 <= self.config.timeout_seconds <= 86400
+            or not 30 <= timeout_seconds <= 86400
             or any(not Path(root).resolve().is_dir() for root in roots)
             or env_file_invalid
         ):
@@ -156,6 +161,46 @@ class D34DockerRuntime:
                 cleanup[f"{label}_error"] = type(exc).__name__
         return cleanup
 
+    @staticmethod
+    def _clip_failure_stream(text: str) -> tuple[str, bool]:
+        raw = text.encode("utf-8")
+        limit = _FAILURE_STREAM_HEAD_TAIL_BYTES
+        if len(raw) <= limit * 2:
+            return text, False
+        omitted = len(raw) - (limit * 2)
+        head = raw[:limit].decode("utf-8", errors="replace")
+        tail = raw[-limit:].decode("utf-8", errors="replace")
+        return f"{head}\n<<<truncated {omitted} bytes>>>\n{tail}", True
+
+    @staticmethod
+    def _secret_literals(env_file: Path | None) -> tuple[str, ...]:
+        if env_file is None:
+            return ()
+        try:
+            lines = env_file.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeError):
+            return ()
+        secrets: list[str] = []
+        for line in lines:
+            if not line.strip() or line.lstrip().startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            name = key.strip()
+            literal = value.strip()
+            if not literal:
+                continue
+            if name.endswith(("_KEY", "_TOKEN", "_SECRET", "_PASSWORD")):
+                secrets.append(literal)
+        return tuple(sorted(set(secrets), key=len, reverse=True))
+
+    @staticmethod
+    def _redact_secrets(text: str, secrets: Sequence[str]) -> str:
+        redacted = text
+        for secret in secrets:
+            if secret:
+                redacted = redacted.replace(secret, "<redacted>")
+        return redacted
+
     def _write_failure_receipt(
         self,
         *,
@@ -170,8 +215,19 @@ class D34DockerRuntime:
         cleanup: dict[str, object],
         repository_changes: Sequence[dict[str, Any]],
     ) -> None:
-        stdout_text = self._process_text(stdout)
-        stderr_text = self._process_text(stderr)
+        secrets = self._secret_literals(self.config.env_file)
+        stdout_text = self._redact_secrets(self._process_text(stdout), secrets)
+        stderr_text = self._redact_secrets(self._process_text(stderr), secrets)
+        stdout_clip, stdout_truncated = self._clip_failure_stream(stdout_text)
+        stderr_clip, stderr_truncated = self._clip_failure_stream(stderr_text)
+        job_dir = self.config.workspace_root / "jobs" / job_id
+        job_dir.mkdir(parents=True, exist_ok=True)
+        stdout_path = job_dir / _STDOUT_FAILURE_FILE
+        stderr_path = job_dir / _STDERR_FAILURE_FILE
+        stdout_path.write_text(stdout_clip, encoding="utf-8")
+        stderr_path.write_text(stderr_clip, encoding="utf-8")
+        stdout_path.chmod(0o600)
+        stderr_path.chmod(0o600)
         document = {
             "contract": "hqa.d34_docker_failure/v1",
             "job_id": job_id,
@@ -183,18 +239,23 @@ class D34DockerRuntime:
             "returncode": returncode,
             "stdout_bytes": len(stdout_text.encode("utf-8")),
             "stdout_digest": hashlib.sha256(stdout_text.encode("utf-8")).hexdigest(),
+            "stdout_file": _STDOUT_FAILURE_FILE,
+            "stdout_truncated": stdout_truncated,
             "stderr_bytes": len(stderr_text.encode("utf-8")),
             "stderr_digest": hashlib.sha256(stderr_text.encode("utf-8")).hexdigest(),
+            "stderr_file": _STDERR_FAILURE_FILE,
+            "stderr_truncated": stderr_truncated,
+            "redacted": bool(secrets),
             "cleanup": cleanup,
             "repository_changes": list(repository_changes),
         }
-        path = self.config.workspace_root / "jobs" / job_id / "docker_failure.json"
-        path.parent.mkdir(parents=True, exist_ok=True)
+        path = job_dir / "docker_failure.json"
         temporary = path.with_name(f".{path.name}.tmp")
         temporary.write_text(
             json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n",
             encoding="utf-8",
         )
+        temporary.chmod(0o600)
         temporary.replace(path)
 
     def _repository_snapshot(self, *, repository: str, root: Path) -> dict[str, Any]:
@@ -335,8 +396,17 @@ class D34DockerRuntime:
             "d34_docker_output_invalid", "D-34 container emitted no JSON receipt"
         )
 
-    def run(self, *, job_id: str, command: Sequence[str]) -> D34DockerReceipt:
-        self._validate(job_id=job_id, command=command)
+    def run(
+        self,
+        *,
+        job_id: str,
+        command: Sequence[str],
+        timeout_seconds: int | None = None,
+    ) -> D34DockerReceipt:
+        timeout = (
+            self.config.timeout_seconds if timeout_seconds is None else timeout_seconds
+        )
+        self._validate(job_id=job_id, command=command, timeout_seconds=timeout)
         image_digest = self._image_digest()
         repositories_before = self._repository_snapshots()
         name = "hqa-d34-" + hashlib.sha256(job_id.encode("utf-8")).hexdigest()[:20]
@@ -374,7 +444,7 @@ class D34DockerRuntime:
                 capture_output=True,
                 text=True,
                 check=True,
-                timeout=self.config.timeout_seconds,
+                timeout=timeout,
             )
         except subprocess.TimeoutExpired as exc:
             cleanup = self._cleanup_container(name, stop_first=True)

@@ -21,6 +21,9 @@ describe("/brief route contract", () => {
       "getCachedBriefPaperAccount",
       "getCachedBriefPaperAccountEquityCurve",
       "getCachedBriefPaperAccountPerformance",
+      "getCachedRemoteBook",
+      "getCachedHungSleeveEffect",
+      "composeBriefLede",
       "getRecentRuns",
       "getAgentCandidates",
       "getNewsItems",
@@ -44,6 +47,7 @@ describe("/brief route contract", () => {
     expect(source).not.toContain("getPaperAccountPerformance(");
     expect(source).not.toContain("getPaperAccount(");
     expect(source).not.toContain("getPaperAccountEquityCurve(");
+    expect(source).not.toContain("getPaperStrategySleeves");
   });
 
   it("does not call the provider-coupled health route during SSR", () => {
@@ -67,6 +71,7 @@ describe("/brief route contract", () => {
     expect(source).toContain("getCachedAsiaRadarSummary");
     expect(source).toContain("buildAsiaRadarNote");
     expect(source).toContain("@/lib/briefAsiaRadarNote");
+    expect(source).toContain("@/lib/briefLede");
   });
 
   it("reuses dashboard formatting, run-link, and locale helpers", () => {
@@ -91,13 +96,13 @@ describe("/brief route contract", () => {
     expect(source).toContain("paper-ink");
     expect(source).toContain("text-ink");
     expect(source).toContain("font-editorial-display");
-    expect(source).toContain("Daily Morning Brief");
-    expect(source).toContain("每日晨报");
+    expect(source).toContain("Daily Brief");
+    expect(source).toContain("量化日报");
     expect(source).toContain("PAPER VS SPY · QQQ");
     expect(source).toContain("Futu QFQ daily closes");
     expect(source).toContain("account ledger");
     expect(source).toContain("selectedRange");
-    expect(source).toContain("平台市场手记");
+    expect(source).toContain("市场概况");
     expect(source).toContain("Platform recorded backtest");
     expect(source).toContain("Options daily scan");
     expect(source).toContain("safeExternalUrl(item.url)");

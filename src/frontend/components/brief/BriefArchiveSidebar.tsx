@@ -51,6 +51,8 @@ type SidebarLocale = keyof typeof copy;
 
 export type BriefArchiveSidebarViewProps = {
   activeKind: BriefArchiveEntryKind;
+  activeIssueDate?: string | null;
+  activePeriodKey?: string | null;
   activePublicId?: string | null;
   error?: string | null;
   groups: BriefArchiveGroup[];
@@ -58,6 +60,55 @@ export type BriefArchiveSidebarViewProps = {
   onSelectKind?: (kind: BriefArchiveEntryKind) => void;
   status: "loading" | "error" | "ready";
 };
+
+function isoWeekKey(isoDate: string): string | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate);
+  if (!match) {
+    return null;
+  }
+  const date = new Date(
+    Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])),
+  );
+  const dayNum = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+  const year = date.getUTCFullYear();
+  const yearStart = new Date(Date.UTC(year, 0, 1));
+  const week = Math.ceil(((date.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  return `${year}-W${String(week).padStart(2, "0")}`;
+}
+
+export function entryMatchesSidebarDocument(
+  entry: BriefArchiveEntry,
+  kind: BriefArchiveEntryKind,
+  activePublicId?: string | null,
+  activeIssueDate?: string | null,
+  activePeriodKey?: string | null,
+): boolean {
+  if (activePublicId && entry.public_id === activePublicId) {
+    return true;
+  }
+  if (kind === "weekly") {
+    const week = /^\d{4}-W\d{2}$/.test(activePeriodKey ?? "")
+      ? activePeriodKey
+      : isoWeekKey(activeIssueDate ?? "");
+    return Boolean(entry.iso_week && week && entry.iso_week === week);
+  }
+  if (kind === "monthly") {
+    const month = /^\d{4}-\d{2}$/.test(activePeriodKey ?? "")
+      ? activePeriodKey
+      : /^\d{4}-\d{2}-\d{2}$/.test(activeIssueDate ?? "")
+        ? activeIssueDate?.slice(0, 7)
+        : null;
+    return Boolean(entry.month && month && entry.month === month);
+  }
+  if (kind === "daily" && /^\d{4}-W\d{2}$/.test(activePeriodKey ?? "")) {
+    return isoWeekKey(entry.issue_date) === activePeriodKey;
+  }
+  if (kind === "daily" && activePeriodKey && /^\d{4}-\d{2}$/.test(activePeriodKey)) {
+    return entry.issue_date.startsWith(`${activePeriodKey}-`);
+  }
+  return false;
+}
 
 function groupLabel(key: string, kind: BriefArchiveEntryKind, locale: SidebarLocale) {
   if (kind === "monthly") {
@@ -104,6 +155,8 @@ function entryHref(entry: BriefArchiveEntry, kind: BriefArchiveEntryKind, locale
 /** Pure presentational sidebar: fully determined by props, SSR-renderable. */
 export function BriefArchiveSidebarView({
   activeKind,
+  activeIssueDate = null,
+  activePeriodKey = null,
   activePublicId = null,
   error = null,
   groups,
@@ -113,19 +166,46 @@ export function BriefArchiveSidebarView({
 }: BriefArchiveSidebarViewProps) {
   const text = copy[locale];
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [mobileOpen, setMobileOpen] = useState(false);
   const kinds: BriefArchiveEntryKind[] = ["daily", "weekly", "monthly"];
 
   function toggle(key: string) {
     setCollapsed((current) => ({ ...current, [key]: !current[key] }));
   }
 
+  const anyActive = groups.some((candidate) =>
+    candidate.entries.some((entry) =>
+      entryMatchesSidebarDocument(
+        entry,
+        activeKind,
+        activePublicId,
+        activeIssueDate,
+        activePeriodKey,
+      ),
+    ),
+  );
+
   return (
     <aside
       aria-label={text.heading}
-      className="hidden h-full w-64 shrink-0 flex-col border-r border-editorial-rule bg-paper-surface md:flex"
+      className="flex w-full shrink-0 flex-col border-b border-editorial-rule bg-paper-surface md:h-full md:w-64 md:border-b-0 md:border-r"
       data-testid="brief-archive-sidebar"
     >
-      <div className="border-b border-editorial-rule px-4 pb-3 pt-4">
+      <button
+        aria-controls="brief-archive-panel"
+        aria-expanded={mobileOpen}
+        className="app-touch-target flex min-h-11 w-full items-center justify-between px-4 font-data-mono text-xs text-ink md:hidden"
+        onClick={() => setMobileOpen((open) => !open)}
+        type="button"
+      >
+        <span>{text.heading} · {text.tabs[activeKind]}</span>
+        <span aria-hidden="true">{mobileOpen ? "▴" : "▾"}</span>
+      </button>
+      <div
+        className={`${mobileOpen ? "flex" : "hidden"} max-h-[60vh] min-h-0 flex-col md:flex md:max-h-none md:flex-1`}
+        id="brief-archive-panel"
+      >
+        <div className="border-b border-editorial-rule px-4 pb-3 pt-4">
         <div className="font-editorial-caps text-[11px] tracking-[0.18em] text-ink-secondary">
           {text.heading}
         </div>
@@ -150,9 +230,9 @@ export function BriefArchiveSidebarView({
             );
           })}
         </div>
-      </div>
+        </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
+        <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
         {status === "loading" ? (
           <p className="px-2 py-6 text-center font-data-mono text-xs text-ink-secondary">
             {text.loading}
@@ -173,9 +253,18 @@ export function BriefArchiveSidebarView({
         ) : null}
         {status === "ready"
           ? groups.map((group, index) => {
+              const groupHasActive = group.entries.some((entry) =>
+                entryMatchesSidebarDocument(
+                  entry,
+                  activeKind,
+                  activePublicId,
+                  activeIssueDate,
+                  activePeriodKey,
+                ),
+              );
               const expanded =
                 collapsed[`${activeKind}:${group.key}`] === undefined
-                  ? index === 0
+                  ? groupHasActive || (index === 0 && !anyActive)
                   : !collapsed[`${activeKind}:${group.key}`];
               return (
                 <section className="mb-2" key={group.key}>
@@ -193,10 +282,19 @@ export function BriefArchiveSidebarView({
                   {expanded ? (
                     <ul>
                       {group.entries.map((entry) => {
-                        const active = entry.public_id === activePublicId;
+                        const active = entryMatchesSidebarDocument(
+                          entry,
+                          activeKind,
+                          activePublicId,
+                          activeIssueDate,
+                          activePeriodKey,
+                        );
                         return (
                           <li key={`${entry.kind}-${entry.public_id}`}>
                             <Link
+                              aria-current={
+                                entry.public_id === activePublicId ? "page" : undefined
+                              }
                               className={`flex items-baseline gap-2 px-2 py-1.5 transition-colors hover:bg-paper-surface-muted ${
                                 active ? "bg-paper-surface-muted" : ""
                               }`}
@@ -229,13 +327,17 @@ export function BriefArchiveSidebarView({
               );
             })
           : null}
+        </div>
       </div>
     </aside>
   );
 }
 
 type SidebarProps = {
+  activeIssueDate?: string | null;
+  activePeriodKey?: string | null;
   activePublicId?: string | null;
+  documentKind?: BriefArchiveEntryKind;
   locale: SidebarLocale;
 };
 
@@ -246,8 +348,21 @@ type RollupTabState = {
   status: FetchStatus;
 };
 
-export function BriefArchiveSidebar({ activePublicId = null, locale }: SidebarProps) {
-  const [activeKind, setActiveKind] = useState<BriefArchiveEntryKind>("daily");
+export function BriefArchiveSidebar({
+  activeIssueDate = null,
+  activePeriodKey = null,
+  activePublicId = null,
+  documentKind,
+  locale,
+}: SidebarProps) {
+  const documentTab = documentKind ?? "daily";
+  const [userKind, setUserKind] = useState<BriefArchiveEntryKind | null>(null);
+  const [seenDocumentTab, setSeenDocumentTab] = useState(documentTab);
+  if (seenDocumentTab !== documentTab) {
+    setSeenDocumentTab(documentTab);
+    setUserKind(null);
+  }
+  const activeKind = userKind ?? documentTab;
   const [view, setView] = useState<BriefArchiveViewResponse | null>(null);
   const [status, setStatus] = useState<FetchStatus>("loading");
   // Rollup tabs are cached per `${locale}:${kind}` so switching locales never
@@ -345,11 +460,13 @@ export function BriefArchiveSidebar({ activePublicId = null, locale }: SidebarPr
   return (
     <BriefArchiveSidebarView
       activeKind={activeKind}
+      activeIssueDate={activeIssueDate}
+      activePeriodKey={activePeriodKey}
       activePublicId={activePublicId}
       error={viewStatus === "error" ? text.unavailable : null}
       groups={groups}
       locale={locale}
-      onSelectKind={setActiveKind}
+      onSelectKind={setUserKind}
       status={viewStatus}
     />
   );

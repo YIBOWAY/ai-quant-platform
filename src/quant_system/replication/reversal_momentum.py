@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import math
+import uuid
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -119,37 +121,55 @@ def build_reversal_momentum_replication(
     *,
     initial_cash: float = 1.0,
     top_n: int | None = None,
+    run_id: str | None = None,
+    trials_root: str | Path | None = None,
 ) -> dict[str, Any]:
     """Build the paper-inspired monthly long-short workflow proxy."""
 
+    trial_run_id = run_id or f"replication-{uuid.uuid4().hex}"
     data_evidence = _data_evidence(ohlcv)
     warnings = _scope_warnings(data_evidence)
     if ohlcv.empty:
-        return _empty_result(
-            initial_cash,
-            [*warnings, "No OHLCV rows were available."],
-            data_evidence=data_evidence,
+        return _remember_replication_trial(
+            _empty_result(
+                initial_cash,
+                [*warnings, "No OHLCV rows were available."],
+                data_evidence=data_evidence,
+            ),
+            ohlcv,
+            run_id=trial_run_id,
+            trials_root=trials_root,
         )
 
     monthly = _monthly_panel(ohlcv)
     if monthly.empty or monthly["symbol"].nunique() < 2:
-        return _empty_result(
-            initial_cash,
-            [*warnings, "At least two symbols with monthly closes are required."],
-            data_evidence=data_evidence,
+        return _remember_replication_trial(
+            _empty_result(
+                initial_cash,
+                [*warnings, "At least two symbols with monthly closes are required."],
+                data_evidence=data_evidence,
+            ),
+            ohlcv,
+            run_id=trial_run_id,
+            trials_root=trials_root,
         )
 
     low_price_observations = _low_price_observation_count(monthly)
     signal_frame = _signal_frame(monthly)
     if signal_frame.empty:
-        return _empty_result(
-            initial_cash,
-            [
-                *warnings,
-                "Not enough monthly history. Need roughly 14 monthly closes for "
-                "12-2 momentum.",
-            ],
-            data_evidence=data_evidence,
+        return _remember_replication_trial(
+            _empty_result(
+                initial_cash,
+                [
+                    *warnings,
+                    "Not enough monthly history. Need roughly 14 monthly closes for "
+                    "12-2 momentum.",
+                ],
+                data_evidence=data_evidence,
+            ),
+            ohlcv,
+            run_id=trial_run_id,
+            trials_root=trials_root,
         )
 
     effective_top_n = top_n or max(
@@ -182,14 +202,19 @@ def build_reversal_momentum_replication(
     ].sort_values("return_date")
 
     if composite_returns.empty:
-        return _empty_result(
-            initial_cash,
-            [
-                *warnings,
-                "The selected universe did not produce any investable "
-                "monthly long-short observations."
-            ],
-            data_evidence=data_evidence,
+        return _remember_replication_trial(
+            _empty_result(
+                initial_cash,
+                [
+                    *warnings,
+                    "The selected universe did not produce any investable "
+                    "monthly long-short observations."
+                ],
+                data_evidence=data_evidence,
+            ),
+            ohlcv,
+            run_id=trial_run_id,
+            trials_root=trials_root,
         )
 
     equity_curve = _equity_curve(composite_returns, initial_cash=initial_cash)
@@ -217,34 +242,96 @@ def build_reversal_momentum_replication(
             "with prior-month close below $1."
         )
 
-    return {
-        "paper": PAPER_METADATA,
-        "methodology": _methodology(
-            formation=formation,
-            data_evidence=data_evidence,
-        ),
-        "data_evidence": data_evidence,
-        "metrics": metrics,
-        "diagnostics": diagnostics,
-        "equity_curve": dataframe_records(equity_curve),
-        "monthly_returns": dataframe_records(monthly_returns_frame),
-        "positions": dataframe_records(pd.DataFrame(positions)),
-        "legs": [
-            {
-                "strategy": "reversal",
-                "signal": "Contrarian rank on the previous month's return.",
-            },
-            {
-                "strategy": "momentum",
-                "signal": "Continuation rank on months t-12 through t-2.",
-            },
-            {
-                "strategy": "composite",
-                "signal": "Equal blend of reversal and longer-term momentum ranks.",
-            },
-        ],
-        "warnings": warnings,
-    }
+    return _remember_replication_trial(
+        {
+            "paper": PAPER_METADATA,
+            "methodology": _methodology(
+                formation=formation,
+                data_evidence=data_evidence,
+            ),
+            "data_evidence": data_evidence,
+            "metrics": metrics,
+            "diagnostics": diagnostics,
+            "equity_curve": dataframe_records(equity_curve),
+            "monthly_returns": dataframe_records(monthly_returns_frame),
+            "positions": dataframe_records(pd.DataFrame(positions)),
+            "legs": [
+                {
+                    "strategy": "reversal",
+                    "signal": "Contrarian rank on the previous month's return.",
+                },
+                {
+                    "strategy": "momentum",
+                    "signal": "Continuation rank on months t-12 through t-2.",
+                },
+                {
+                    "strategy": "composite",
+                    "signal": "Equal blend of reversal and longer-term momentum ranks.",
+                },
+            ],
+            "warnings": warnings,
+        },
+        ohlcv,
+        run_id=trial_run_id,
+        trials_root=trials_root,
+    )
+
+
+def _remember_replication_trial(
+    payload: dict[str, Any],
+    ohlcv: pd.DataFrame,
+    *,
+    run_id: str,
+    trials_root: str | Path | None,
+) -> dict[str, Any]:
+    from quant_system.config.settings import load_settings
+    from quant_system.research.trials import (
+        ResearchTrial,
+        TrialsLedger,
+        daily_returns_from_equity,
+    )
+
+    symbols = (
+        sorted({str(symbol).strip().upper() for symbol in ohlcv["symbol"].tolist()})
+        if not ohlcv.empty and "symbol" in ohlcv
+        else []
+    )
+    equities = [
+        float(row["equity"])
+        for row in payload.get("equity_curve") or []
+        if "equity" in row
+    ]
+    daily_returns = daily_returns_from_equity(equities)
+    metadata = {"run_id": run_id, "doi": PAPER_METADATA["doi"]}
+    ledger_root = (
+        Path(trials_root)
+        if trials_root is not None
+        else Path(load_settings().data.data_dir) / "trials"
+    )
+    ledger = TrialsLedger(ledger_root)
+    if daily_returns:
+        ledger.append(
+            ResearchTrial.record(
+                kind="strategy_replication",
+                subject="reversal_momentum",
+                universe=symbols,
+                daily_returns=daily_returns,
+                source=str(payload.get("data_evidence", {}).get("sample_or_real") or ""),
+                metadata=metadata,
+            )
+        )
+    else:
+        ledger.append(
+            ResearchTrial.skipped(
+                kind="strategy_replication",
+                subject="reversal_momentum",
+                universe=symbols,
+                reason="replication_no_daily_returns",
+                source=str(payload.get("data_evidence", {}).get("sample_or_real") or ""),
+                metadata=metadata,
+            )
+        )
+    return payload
 
 
 def _monthly_panel(ohlcv: pd.DataFrame) -> pd.DataFrame:

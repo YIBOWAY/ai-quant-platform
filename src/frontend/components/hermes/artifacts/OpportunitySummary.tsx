@@ -4,7 +4,7 @@ import type { HermesArtifact } from "@/lib/api";
 import type { Locale } from "@/lib/locale";
 import { artifactCopy } from "./copy";
 import { Fact } from "./Fact";
-import { formatDateTime, qualityTone, safeDomId } from "./formatters";
+import { artifactStatusLabel, formatDateTime, qualityTone, safeDomId } from "./formatters";
 import { TechnicalDetails } from "./TechnicalDetails";
 
 export type OpportunitySummaryProps = {
@@ -18,6 +18,39 @@ export function OpportunitySummary({ artifact, locale }: OpportunitySummaryProps
   const resolution = artifact.data.resolution_counts;
   const missReasons = artifact.data.miss_reason_counts;
   const conclusion = `${text.totalOpportunities}: ${artifact.data.total_count}`;
+  const actionable = [
+    resolution.acted,
+    resolution.open,
+    resolution.deferred,
+    resolution.action_failed,
+    resolution.declined,
+    resolution.missed,
+    resolution.expired_coverage_unknown,
+    resolution.unknown,
+  ].reduce((sum, value) => sum + value, 0);
+  // A window where nothing was actionable is noise: keep one honest muted
+  // line on the duty front page instead of a full headline card.
+  if (artifact.quality === "degraded" && actionable === 0) {
+    return (
+      <article
+        aria-labelledby={headingId}
+        data-hermes-artifact-kind="opportunity_summary"
+        data-collapsed="no_actionable_signal"
+        className="rounded-lg border border-border-subtle bg-bg-surface px-4 py-2"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="font-body-sm text-text-secondary">
+            {text.opportunityNoise(artifact.data.total_count)}
+          </p>
+          <StatusPill
+            label={text.status}
+            value={artifactStatusLabel(artifact.status || artifact.quality, locale)}
+            tone={qualityTone(artifact.quality)}
+          />
+        </div>
+      </article>
+    );
+  }
 
   return (
     <article aria-labelledby={headingId} data-hermes-artifact-kind="opportunity_summary">
@@ -39,7 +72,7 @@ export function OpportunitySummary({ artifact, locale }: OpportunitySummaryProps
           </div>
           <StatusPill
             label={text.status}
-            value={artifact.status || artifact.quality}
+            value={artifactStatusLabel(artifact.status || artifact.quality, locale)}
             tone={qualityTone(artifact.quality)}
           />
         </div>

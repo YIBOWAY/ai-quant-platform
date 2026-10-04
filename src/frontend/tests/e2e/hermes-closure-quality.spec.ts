@@ -6,6 +6,8 @@ import {
   assertWholeHermesShellWcagAaContrast,
 } from "./helpers/hermes-closure-gates";
 import { installLoopbackOnlyGuard } from "./helpers/hermes-page-gates";
+import { assertCurrentHermesDesk } from "./helpers/current-hermes-desk";
+import { collectBrowserErrors, expectNoBrowserErrors } from "./helpers/console-error-gate";
 
 const viewports = [
   { name: "wide", width: 1440, height: 900 },
@@ -29,40 +31,21 @@ const modeMatches =
   process.env.PW_HERMES_LIFECYCLE_FIXTURE !== "1";
 
 function collectBrowserProblems(page: Page) {
-  const consoleProblems: string[] = [];
-  const pageErrors: string[] = [];
-  const httpProblems: string[] = [];
-  page.on("console", (message) => {
-    if (message.type() === "error" || message.type() === "warning") {
-      consoleProblems.push(`${message.type()}: ${message.text()}`);
-    }
-  });
-  page.on("pageerror", (error) => {
-    pageErrors.push(error.message);
-  });
-  page.on("response", (response) => {
-    if (response.status() >= 400) {
-      httpProblems.push(
-        `${response.status()} ${response.request().method()} ${response.url()}`,
-      );
-    }
-  });
-  return { consoleProblems, httpProblems, pageErrors };
+  const gate = collectBrowserErrors(page, fixture === "offline" ? [{ method: "GET", status: 503, url: "/api/assistant/remote/book" }] : []);
+  page.on("console", message => { if (message.type() === "warning") gate.problems.push(message.text()); });
+  return gate;
 }
 
 async function openFixturePage(
   page: Page,
   viewport: (typeof viewports)[number],
-  expectedState: string,
+  _expectedState: string,
 ) {
   const externalRequests = await installLoopbackOnlyGuard(page);
   const problems = collectBrowserProblems(page);
   await page.setViewportSize(viewport);
   await page.goto("/zh/hermes", { waitUntil: "networkidle" });
-  await expect(page.getByTestId("hermes-today-state")).toHaveAttribute(
-    "data-state",
-    expectedState,
-  );
+  await assertCurrentHermesDesk(page);
   return { externalRequests, problems };
 }
 
@@ -71,9 +54,7 @@ function expectCleanBrowser(
   problems: ReturnType<typeof collectBrowserProblems>,
 ) {
   expect(externalRequests).toEqual([]);
-  expect(problems.consoleProblems).toEqual([]);
-  expect(problems.pageErrors).toEqual([]);
-  expect(problems.httpProblems).toEqual([]);
+  expectNoBrowserErrors(problems);
 }
 
 if (modeMatches) {
@@ -123,6 +104,9 @@ if (modeMatches) {
     await expect(
       assertWholeHermesShellControlsUnclipped(page),
     ).rejects.toThrow(/covered/);
+
+    await page.setContent(`<div data-hermes-workbench-a11y><details><summary>Closed diagnostics</summary><details open><summary style="width:900px">Hidden nested disclosure</summary><button style="width:900px">Hidden control</button></details></details></div>`);
+    await assertWholeHermesShellControlsUnclipped(page);
   });
 
   test("@combined-fixture whole-shell root resolver accepts nested markers and rejects siblings", async ({
@@ -172,6 +156,26 @@ if (modeMatches) {
         expectedState,
       );
       await assertWholeHermesShellControlsUnclipped(page);
+      if (viewport.name === "mobile") {
+        // Regression: the open drawer used to cover the "返回今日" toggle that
+        // is the only way back out on a phone. The strip now stays on top.
+        const chatToggle = page.locator('[aria-controls="hermes-chat-rail"]');
+        await chatToggle.click();
+        await expect(chatToggle).toHaveAttribute("aria-expanded", "true");
+        await expect(page.locator("#hermes-chat-rail")).toHaveAttribute("data-open", "true");
+        await expect
+          .poll(() =>
+            chatToggle.evaluate((element) => {
+              const rect = element.getBoundingClientRect();
+              const top = document.elementFromPoint(
+                rect.left + rect.width / 2,
+                rect.top + rect.height / 2,
+              );
+              return top !== null && (top === element || element.contains(top));
+            }),
+          )
+          .toBe(true);
+      }
       expectCleanBrowser(externalRequests, problems);
     });
 

@@ -12,6 +12,7 @@ from quant_system.hermes.agent_workspace import (
     PlatformAgentWorkspace as _PlatformAgentWorkspace,
 )
 from quant_system.hermes.agent_workspace_actions import (
+    AgentWorkspaceActionError,
     BindOptionsVerticalA,
     WorkspaceRef,
     action_to_document,
@@ -147,9 +148,8 @@ def test_bind_completed_with_evidence_and_snapshot() -> None:
     assert health["attempt"] == "hermetic"
     assert health["run"] == "hermetic"
     assert health["result"] == "hermetic"
-    # Never invent approvals/gates from bind
+    # Never invent command approvals from bind.
     assert snap["approvals"] == []
-    assert snap["gates"] == []
 
 
 def test_bind_completed_degraded_without_evidence() -> None:
@@ -226,10 +226,7 @@ def test_conversation_turn_does_not_invent_task() -> None:
     }
 
 
-def test_start_research_still_dark() -> None:
-    """Bind is separate; StartResearch remains dark with explicit reason_code."""
-    from quant_system.hermes.agent_workspace_actions import StartResearch
-
+def test_retired_start_research_action_is_rejected_without_vertical_rows() -> None:
     doc = {
         "schema_version": 1,
         "kind": "research.start",
@@ -240,12 +237,8 @@ def test_start_research_still_dark() -> None:
         "payload_digest": "a" * 64,
         "initial_mode": "plan_only",
     }
-    parsed = parse_user_action_v1(doc)
-    assert type(parsed) is StartResearch
-    receipt = submit_action(_settings(), doc, mutation_enabled=True)
-    assert receipt.status == "unavailable"
-    assert receipt.reason_code == "research_workflow_submission_unavailable"
-    # Bind path still works independently; research never invents vertical rows.
+    with pytest.raises(AgentWorkspaceActionError, match="unknown UserActionV1 kind"):
+        parse_user_action_v1(doc)
     assert project_workspace_tasks(WS) == []
     bind = parse_user_action_v1(_bind_doc(client_action_id="act-vs-research"))
     assert type(bind) is BindOptionsVerticalA

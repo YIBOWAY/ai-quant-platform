@@ -17,13 +17,17 @@ describe("paper account available-cash fail-closed (V1.6c)", () => {
       resolvePaperAccountAvailableCash({
         apiError: "503: paper account unavailable",
         available_cash: 1_000_000,
+        manual_available_cash: 1_000_000,
       }),
     ).toBeNull();
   });
 
   it("returns the real number when there is no apiError", () => {
     expect(
-      resolvePaperAccountAvailableCash({ available_cash: 250_000 }),
+      resolvePaperAccountAvailableCash({
+        available_cash: 900_000,
+        manual_available_cash: 250_000,
+      }),
     ).toBe(250_000);
   });
 
@@ -31,7 +35,10 @@ describe("paper account available-cash fail-closed (V1.6c)", () => {
     expect(resolvePaperAccountAvailableCash(null)).toBeNull();
     expect(resolvePaperAccountAvailableCash(undefined)).toBeNull();
     expect(
-      resolvePaperAccountAvailableCash({ available_cash: Number.NaN }),
+      resolvePaperAccountAvailableCash({
+        available_cash: 500_000,
+        manual_available_cash: Number.NaN,
+      }),
     ).toBeNull();
   });
 

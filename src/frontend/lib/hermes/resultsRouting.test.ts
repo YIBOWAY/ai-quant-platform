@@ -139,7 +139,8 @@ describe("buildHermesResultsPageModel", () => {
       }),
     );
     expect(model.filters.activeSummary).toContain("回测");
-    expect(model.filters.activeSummary).toContain("completed");
+    expect(model.filters.activeSummary).toContain("已完成");
+    expect(model.filters.activeSummary).not.toContain("completed");
     expect(model.filters.clearHref).toBe("/zh/hermes/results");
     expect(model.filters.search).toEqual({
       action: "/zh/hermes/results",
@@ -226,7 +227,7 @@ describe("buildHermesResultsPageModel", () => {
         },
         "zh",
       ),
-    ).toBe("/zh/hermes/approvals?candidate=result-safe_01");
+    ).toBe("/zh/library?candidate=result-safe_01");
     expect(
       buildHermesOriginalResultHref(
         {

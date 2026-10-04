@@ -1,20 +1,14 @@
-# Paper Strategy Sleeves MVP-1 Execution Notes
+# Paper Strategy Sleeves Execution Notes
 
-> Status: first through fourth MVP-1 slices implemented on 2026-06-26. MVP-2
-> pending execution foundation implemented on 2026-06-27. Domain models, local
-> storage, cash/lot accounting foundations, backend API contract, daily signal
-> generation, manual signal CLI, `/paper-trading` Strategy Sleeves workspace,
-> manual pending execution plan creation, and the backend next-open execution
-> processor are available. Manual processing API/CLI entrypoints and UI
-> execution-state controls are available. Opt-in read-only Futu/OpenD checks now
-> cover both signal generation and paper execution processing. MVP-3 Slice 1
-> adds a shared operations runner plus scheduler-safe one-shot CLI/status
-> commands. MVP-3 Slice 2 adds optional manual-sleeve LaunchAgent templates.
-> D-33 (2026-08-10) separately adds a five-minute, dual-Flag LaunchAgent that
-> acts only on `automation_managed=true` sleeves; manual sleeves stay one-shot.
-> Phase 1a-4 v2 Slice 9A (2026-07-10) separates observation from recovery:
-> every strategy-sleeve GET and `ops-status` is strictly read-only; crash
-> recovery now requires an explicit mutation or `paper strategies recover-pending`.
+> **Current boundary (2026-08-27):** the domain models, storage, API/UI, manual
+> signal/execution paths, shared operations runner and recovery journal are
+> implemented. Generic `paper strategies` commands remain explicit one-shot
+> paper operations. Formal natural observation for enabled,
+> `automation_managed=true` sleeves is owned only by
+> `com.aiquant.d34-paper-cycle`; the optional generic LaunchAgent templates are
+> legacy compatibility assets and are not that schedule. Every GET and
+> `ops-status` remains observational; recovery requires an explicit mutation or
+> `paper strategies recover-pending`.
 
 ## What Exists Now
 
@@ -36,14 +30,16 @@ The first slice establishes the accounting and persistence base:
   sleeves while sells only consume the addressed sleeve lot.
 - `PaperStrategySleeveService.create_sleeve()` for signal-only and allocated
   sleeve creation. Allocated sleeve cash is moved from the manual sleeve's
-  allocation book and does not create new account principal.
+  unreserved available cash and does not create new account principal.
 
 `PaperAccount.cash` remains the legacy total cash field. The existing
 `POST /api/paper/account/rebalance` path still uses the old full-account
 rebalance semantics and is not the Strategy Sleeves entrypoint. It is rejected
 with `409 strategy_sleeve_positions_present` when actual sleeve-owned lots are
 present, so it cannot sell strategy sleeve holdings outside the sleeve
-execution processor.
+execution processor. Manual orders consume only manual-source lots and
+`manual_available_cash`; sleeve execution consumes only the addressed sleeve's
+cash and lots.
 
 The second slice exposes the backend API contract:
 
@@ -55,10 +51,15 @@ The second slice exposes the backend API contract:
 | `POST` | `/api/paper/strategy-sleeves` | Creates signal-only or allocated sleeves. |
 | `GET` | `/api/paper/strategy-sleeves` | Lists finalized sleeves without reconciling pending files. |
 | `GET` | `/api/paper/strategy-sleeves/{id}` | Returns persisted sleeve, lots, signals, and executions without recovery writes. |
+| `GET` | `/api/paper/strategy-sleeves/hung-effect` | Reconstructs official hung-sleeve NAV/cost/SPY from committed journals and same-day Futu QFQ closes; never writes or recovers state. |
 | `POST` | `/api/paper/strategy-sleeves/{id}/signals` | Generates and persists one daily signal. |
 | `POST` | `/api/paper/strategy-sleeves/{id}/executions` | Creates one pending execution plan from a selected generated signal. |
 | `GET` | `/api/paper/strategy-sleeves/ops/status` | Returns a best-effort read-only status, including separate pending sleeve/journal counts. |
 | `POST` | `/api/paper/strategy-sleeves/executions/process` | Processes due pending execution plans once. |
+| `GET` | `/api/assistant/remote/book` | Projects requests, verified candidates, hung candidates and fossils without reconciliation or writes. |
+| `POST` | `/api/assistant/remote/research` | Records one owner/CSRF-protected, material- and operation-digest-bound chat research request; missing/invalid material or mandate mismatch writes nothing. |
+| `GET` | `/api/assistant/remote/request/{operation_id}` | Reads one exact chat research result projection; never runs the worker or reconciles. |
+| `POST` | `/api/assistant/remote/hang` | Binds an explicitly selected digest-bound verified candidate to one allocated paper sleeve; research dispatch never calls it automatically. |
 | `POST` | `/api/paper/strategy-sleeves/{id}/pause` | Pauses a running sleeve. |
 | `POST` | `/api/paper/strategy-sleeves/{id}/resume` | Resumes a paused sleeve. |
 | `POST` | `/api/paper/strategy-sleeves/{id}/stop` | Stops the sleeve and keeps holdings. |
@@ -67,15 +68,59 @@ Active strategy config names are unique at creation time. Reusing a name for a
 different config returns `409 strategy_config_name_conflict`; changing the same
 config through `/versions` keeps the config identity and increments `version`.
 
-Allocated sleeve creation runs under the existing paper-account in-process lock
-and filesystem lock. It allocates from `sleeve_cash["manual"]`, writes the sleeve
-cash allocation into the account cash book, and uses a `sleeve.pending.json`
-journal before finalizing `sleeve.json`. If the process exits after the account
-allocation is saved but before finalization, GET list/detail/status leaves the
-journal untouched. Run `quant-system paper strategies recover-pending`, or a
-later explicit strategy mutation, to reconcile it against
-`PaperAccount.sleeve_cash`. Recovery does not create or process a new execution
-plan.
+Allocated sleeve creation resolves the selected account adapter through
+`build_paper_account_repository` and takes its mutation lock before the sleeve
+storage lock. In file/mirror mode that includes the filesystem account lock; in
+canonical mode it is the PostgreSQL advisory lock. It allocates from
+`manual_available_cash()` so pending manual buy orders stay reserved, writes the
+sleeve cash allocation into the selected account fact source, and uses a
+`sleeve.pending.json` journal before finalizing
+`sleeve.json`. If the process exits after the account allocation is saved but
+before finalization, GET list/detail/status leaves the journal untouched. Run
+`quant-system paper strategies recover-pending`, or a later explicit strategy
+mutation, to reconcile it against `PaperAccount.sleeve_cash`. Recovery does not
+create or process a new execution plan.
+
+## Assistant remote candidate hang
+
+`POST /api/assistant/remote/hang` is the separate, explicit promotion step after
+research has produced a verified candidate. `/library` is the only product
+surface that exposes this internal action under the user-facing label
+"Enable simulated running" / “启用模拟运行”. Research verification alone is
+insufficient: DSR, locked-book correlation and cost admission must all pass.
+The owner/CSRF-protected request must name the
+candidate and repeat the exact source digest displayed by the GET projection;
+the implementation compares it both before mutation and again inside the final
+account→sleeve→book critical section, then validates the persisted source bytes.
+Research dispatch cannot turn this into an automatic "hang if passed" path;
+the legacy shortcut fields are not part of any production or generated contract.
+
+`hang_candidate` resolves the account through the same repository factory as
+orders and sleeve creation. One critical section holds the account repository,
+sleeve storage and remote-book locks in that order while it:
+
+1. inspects the persisted raw partition and raw/materialized allocation ledgers
+   before constructing `PaperAccount`; existing drift fails without a write;
+2. reloads the remote book and reconciles pending sleeves already represented in
+   the selected account;
+3. persists any exact unbound remote-hang lineage as PAUSED/non-observable before
+   validating it; signals, executions, fills, lots, journals or a non-$10,000
+   initial/current allocation make recovery fail closed;
+4. rejects a new allocation with `hang_recovery_required` while any other
+   unbound remote-hang sleeve needs book recovery;
+5. evaluates DSR, locked-book correlation and cost admission gates; and
+6. persists `pending PAUSED sleeve → account allocation → finalized PAUSED
+   sleeve → book binding → RUNNING activation`.
+
+A missing canonical account returns `paper_account_bootstrap_required`; an
+unavailable canonical database remains a visible failure. Neither case creates
+or updates a file account. A save known not to have committed discards the
+pending sleeve; a committed-but-lost response, finalize failure, book-save
+failure or final activation failure keeps enough evidence for the next explicit
+retry to converge on the same allocation. Bare legacy and `not_book_bound`
+remote-hang orphans are made non-observable before recovery checks. Preview,
+digest-less and other fossil reasons remain rejected across repeated retries and
+cannot acquire a recoverable activation marker.
 
 The third slice adds manual daily signal generation:
 
@@ -152,9 +197,23 @@ external scheduler. The FastAPI process does not run an in-process recurring
 trading loop. When processing pending executions without an explicit
 `target_date`, the service selects only plans whose `target_date` is the local
 run date. Historical catch-up or replay must pass `target_date` explicitly.
-Unavailable paper prices or provider failures are recorded on the execution as
-`blocked` with reason `price_unavailable`; they are not silently retried or
-filled with sample data.
+Unavailable paper prices or provider failures are retried a bounded number of
+times with a short backoff inside the same processing run (default 2 retries,
+30 s apart; each attempt is recorded on the plan under
+`metadata["price_unavailable_retry"]`). The bounded retries and that 30 s
+backoff run **outside** the account/sleeve mutation locks: only the re-read
+re-validation and the persistent writes stay inside the lock, so a concurrent
+API/CLI mutation is never blocked by a price outage. If every attempt fails, the
+execution
+is recorded as `blocked` with reason `price_unavailable` (or
+`strategy_definition_open_data_unavailable` for digest-bound definitions); it
+is never filled with sample data and never retried silently. A `next_open`
+plan is executable only on its target date: each processing run first marks
+any older still-unexecuted plan — pending, or blocked by those same transient
+price reasons — as `missed_window`, preserving the prior status and reason
+under `metadata["missed_window"]`. Plans blocked by deterministic authority
+rejections (for example insufficient cash or policy blocks) stay `blocked`
+and are never retried.
 
 MVP-3 Slice 0 adds recovery journals for filled execution plans:
 
@@ -169,6 +228,23 @@ MVP-3 Slice 0 adds recovery journals for filled execution plans:
   account+sleeve locks
 - corrupt pending journal files are preserved as
   `<execution_id>.corrupt-*.json` and skipped rather than deleted silently
+
+## Official hung-sleeve effect reporting
+
+`GET /api/paper/strategy-sleeves/hung-effect` is the single report source for
+the Hermes paper tab and the morning brief. It validates committed journal
+identity, fill-driven cash/quantity transitions, adjacent state continuity and
+the latest canonical sleeve/lots before calculating any mark. Each observation
+date is `sleeve cash + owned lot quantity × same-day Futu 1d QFQ close`;
+turnover uses fill notional and cost drag uses the actual fill commission. SPY
+is fetched independently so an unavailable benchmark does not erase a valid
+sleeve NAV.
+
+Only a true zero-observation state is `empty`. Missing/tampered journals,
+missing strategy prices, untrusted provider/adjustment provenance and book/effect
+count mismatches are explicit `unavailable` states. The report never substitutes
+current remaining cash, full-account equity, manual inventory or fossil lots.
+The GET path is observational and does not reconcile pending journals.
 
 MVP-3 Slice 1 adds the shared operations runner in
 `src/quant_system/execution/paper_strategy_operations.py`. CLI commands, API
@@ -188,7 +264,9 @@ quant-system paper strategies ops-status --target-date 2026-06-29 --format json
 given date and skips sleeves that already have a signal for that date.
 `execute-due` is the scheduler-friendly alias for the existing one-shot pending
 execution processor. `ops-status` reports finalized/pending sleeves, due work,
-pending journal files, blocked executions, and recovery-required counts. It
+pending journal files, blocked executions for the requested `target_date`, and
+recovery-required counts. Historical blocked executions remain queryable by
+their own date and do not make today's read model look blocked. It
 does not load the account repository, acquire mutation locks, repair corrupt
 journals, or change disk state; its multi-file result is a best-effort rather
 than transactionally consistent snapshot.
@@ -245,7 +323,7 @@ curl "http://127.0.0.1:8765/api/paper/strategy-sleeves/ops/status?target_date=20
 The API accepts `target_date=YYYY-MM-DD` and currently supports
 `execution_window=next_open`.
 
-MVP-3 Slice 2 adds macOS LaunchAgent assets and a runbook:
+MVP-3 Slice 2 added legacy/optional macOS LaunchAgent assets and a runbook:
 
 - `scripts/run_quant_backend.sh`
 - `scripts/run_quant_frontend.sh`
@@ -257,31 +335,9 @@ MVP-3 Slice 2 adds macOS LaunchAgent assets and a runbook:
 
 The backend/frontend LaunchAgents are long-running local services. Strategy
 sleeve jobs are one-shot commands with `KeepAlive=false`; UI availability does
-not imply automatic execution is enabled.
-
-## D-33 automatic paper cycle
-
-`com.aiquant.factor-automation` is installed by `local_mac_stack.sh`; it is not
-one of the optional legacy manual-sleeve schedulers. Both Platform and HQA Flag
-pairs must be enabled or the driver reports disabled before mutation. Each
-five-minute tick first maintains automatic sleeve risk and then considers only
-running sleeves whose metadata has `automation_managed=true`:
-
-- local Tuesday-Saturday after 06:10: generate at most one signal for the date
-  and materialize one next-weekday `next_open` plan;
-- local Monday-Friday after 21:35: process due plans once through the existing
-  paper execution/journal service;
-- signal and execution identities make replays and concurrent driver races
-  idempotent; manual sleeves are excluded;
-- order creation re-checks sleeve and aggregate limits. Risk/limit blocks are
-  counted; unexpected identity/config errors fail the driver instead of being
-  reported as success.
-
-This uses a weekday rule, not an exchange-holiday calendar. Closed-market or
-missing-data cases must remain no-order/blocked facts; they must not fabricate a
-fill. The FastAPI lifecycle still does not host this scheduler. Full operation,
-pause/quarantine/demote, and rollback semantics are in
-`/Users/sunyibo/programs/Hermes-quant-agent/docs/runbooks/full-automation-paper.md`.
+not imply automatic execution is enabled. The current local stack owns the
+backend/frontend services, and formal hung-sleeve observation uses the separate
+D34 paper-cycle rather than these generic templates.
 
 The fourth MVP-2 slice exposes the same manual execution lifecycle in the
 `/paper-trading` Strategy Sleeves workspace. For each sleeve, the panel shows
@@ -323,22 +379,19 @@ JSON writes use temp files and atomic replace. Signal and execution JSONL
 persistence rewrites the complete file atomically for these foundation slices.
 Lots are persisted as parquet snapshots.
 
-## Not Implemented Yet
+## Remaining generic-sleeve boundaries
 
-Do not document or present these as available commands or UI workflows until a
-later slice implements them:
+The following are not generic CLI/UI capabilities:
 
 - `quant-system paper strategies config-create`
 - `quant-system paper strategies sleeve-create`
-- scheduled or automatic strategy execution
-- enabled macOS LaunchAgent scheduling before the operator explicitly installs it
 - near-close simulated fills
 - lot transfer between manual and strategy sleeves
 
-The next implementation line is documented in
-[`docs/design/paper_strategy_sleeves_mvp3_operations_plan.md`](../design/paper_strategy_sleeves_mvp3_operations_plan.md).
-MVP-3 continues with retry semantics and a frontend operator status surface. It
-must not add duplicate schedulers or any real broker trading path.
+The formal D34 paper-cycle is implemented, but it is not a general-purpose
+automatic sleeve runner: it accepts only enabled digest-bound sleeves and
+does not make the commands above available. The dated MVP-3 plan is historical
+design evidence, not the current NEXT.
 
 ## Real Futu Integration Tests
 
@@ -361,10 +414,66 @@ instantiate Futu trade contexts.
 Run them only when a local read-only OpenD service is intentionally available:
 
 ```bash
-QS_TEST_FUTU_OPEND=1 ./ai-quant/bin/python -m pytest tests/test_paper_strategy_sleeves_futu_integration.py -q
+QS_TEST_FUTU_OPEND=1 ./.venv/bin/python -m pytest tests/test_paper_strategy_sleeves_futu_integration.py -q
 ```
 
 ## Verification
+
+### Assistant remote canonical hang changes
+
+Run the ordinary remote/API contract without PostgreSQL-marked cases:
+
+```bash
+./.venv/bin/python -m pytest -q \
+  tests/test_assistant_remote.py \
+  tests/test_api_assistant_remote.py \
+  -m 'not pg'
+```
+
+Then point `QS_TEST_DATABASE_URL` only at a throwaway/test-named PostgreSQL base
+and run the six disposable-database cases. Each test creates and drops its own
+sibling database; never use the live `quantplatform` database:
+
+```bash
+QS_TEST_DATABASE_URL='postgresql://.../quantplatform_tmp' \
+  ./.venv/bin/python -m pytest -q tests/test_assistant_remote.py -m pg
+```
+
+These cases cover the normal canonical allocation/no-file-side-write path,
+known account-save failure, commit response loss, finalize failure, book-save
+failure, and missing canonical account. Concurrency, orphan blocking and fossil
+recovery contracts remain in the non-PG focused set.
+
+### Hung-effect and brief reporting changes
+
+For changes limited to the read-only hung-effect/API/brief/Hermes Today chain,
+run the directly affected selectors instead of both repositories' full suites:
+
+```bash
+./.venv/bin/python -m pytest -q \
+  tests/test_d34_hung_sleeve_effect.py \
+  tests/test_api_paper_strategy_sleeves.py \
+  tests/test_brief_auto_archive.py
+
+cd src/frontend
+npx vitest run \
+  lib/briefLede.test.ts \
+  lib/briefRouteContract.test.ts \
+  components/hermes/desk/HermesDeskToday.test.ts
+```
+
+When schemas or generated clients change, also run
+`npm --prefix src/frontend run check:api-types`; the broader Python response-type
+export test currently has a known baseline failure, so compare its exact node
+rather than calling it passed. When rendered copy or wiring changes, finish with
+one real read-only GET/page smoke and confirm the report inputs are unchanged.
+At `e30af59` these selectors
+recorded 79 Python and 19 frontend passes; those counts are a receipt, not a
+future gate. A Platform-only reporting change does not require the HQA full
+suite unless an HQA consumer contract also changes. Keep the Platform full suite
+for a batch/release boundary or a genuinely unbounded shared change.
+
+### Broader sleeve changes
 
 Focused backend verification:
 
@@ -378,8 +487,8 @@ git diff --check
 On macOS in this checkout the equivalent interpreter path is:
 
 ```bash
-./ai-quant/bin/python -m pytest tests/test_paper_account.py tests/test_api_paper_account.py tests/test_paper_strategy_sleeves.py tests/test_paper_strategy_signals.py tests/test_paper_strategy_execution.py tests/test_paper_strategy_operations.py tests/test_api_paper_strategy_sleeves.py tests/test_cli.py tests/test_factors_pipeline.py -q
-./ai-quant/bin/python -m ruff check src/quant_system/execution/account.py src/quant_system/execution/paper_strategy_sleeves.py src/quant_system/execution/paper_strategy_sleeve_storage.py src/quant_system/execution/paper_strategy_signal_service.py src/quant_system/execution/paper_strategy_execution_service.py src/quant_system/execution/paper_strategy_operations.py src/quant_system/factors/pipeline.py src/quant_system/api/schemas/paper.py src/quant_system/api/routes/paper.py src/quant_system/cli.py tests/test_paper_strategy_sleeves.py tests/test_paper_strategy_signals.py tests/test_paper_strategy_execution.py tests/test_paper_strategy_operations.py tests/test_api_paper_strategy_sleeves.py tests/test_cli.py tests/test_factors_pipeline.py
+./.venv/bin/python -m pytest tests/test_paper_account.py tests/test_api_paper_account.py tests/test_paper_strategy_sleeves.py tests/test_paper_strategy_signals.py tests/test_paper_strategy_execution.py tests/test_paper_strategy_operations.py tests/test_api_paper_strategy_sleeves.py tests/test_cli.py tests/test_factors_pipeline.py -q
+./.venv/bin/python -m ruff check src/quant_system/execution/account.py src/quant_system/execution/paper_strategy_sleeves.py src/quant_system/execution/paper_strategy_sleeve_storage.py src/quant_system/execution/paper_strategy_signal_service.py src/quant_system/execution/paper_strategy_execution_service.py src/quant_system/execution/paper_strategy_operations.py src/quant_system/factors/pipeline.py src/quant_system/api/schemas/paper.py src/quant_system/api/routes/paper.py src/quant_system/cli.py tests/test_paper_strategy_sleeves.py tests/test_paper_strategy_signals.py tests/test_paper_strategy_execution.py tests/test_paper_strategy_operations.py tests/test_api_paper_strategy_sleeves.py tests/test_cli.py tests/test_factors_pipeline.py
 git diff --check
 ```
 

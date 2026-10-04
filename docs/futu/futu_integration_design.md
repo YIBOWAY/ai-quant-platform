@@ -1,5 +1,11 @@
 # 富途只读集成设计
 
+> **冻结的历史集成设计。** 本文记录引入 Futu 前后的 2026-05 设计假设，正文中的
+> “当前不存在”、`/data-explorer`、旧 provider 默认值和回滚步骤不是现役事实。
+> 当前行为请读 [Futu 行情提供方](futu_market_data_provider.md)、
+> [Futu 期权提供方](futu_options_data_provider.md)与
+> [期权推荐指南](../guides/options-recommendations.md)。
+
 ## 1. 范围
 
 本阶段引入富途 OpenAPI / OpenD 作为以下场景的主要**只读**行情数据来源：

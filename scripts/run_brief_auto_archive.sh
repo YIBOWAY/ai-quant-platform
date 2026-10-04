@@ -55,6 +55,14 @@ esac
 export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 cd "$ROOT"
 
+# This reads committed paper records and only writes its own explanation cache.
+# A failed model attempt must not prevent the existing daily archive.
+paper_evaluation_rc=0
+"$VENV_PY" -m quant_system.research.paper_evaluation || paper_evaluation_rc=$?
+if [[ "$paper_evaluation_rc" -ne 0 ]]; then
+  echo "paper_evaluation_refresh_exit_code=$paper_evaluation_rc brief_archive_continues=true" >&2
+fi
+
 archive_rc=0
 "$VENV_PY" -m quant_system.cli brief auto-archive || archive_rc=$?
 if [[ "$archive_rc" -ne 0 ]]; then
@@ -71,4 +79,7 @@ fi
 if [[ "$(date +%d)" == "01" ]]; then
   "$VENV_PY" -m quant_system.cli brief rollup --kind monthly || rollup_rc=$?
 fi
-exit "$rollup_rc"
+if [[ "$rollup_rc" -ne 0 ]]; then
+  exit "$rollup_rc"
+fi
+exit "$paper_evaluation_rc"

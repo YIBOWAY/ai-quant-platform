@@ -1,5 +1,9 @@
 # 2026-06-23 Remediation Ledger
 
+> **历史冻结（2026-08-26）：**本台账是 2026-06-23 的裁决与整改快照，不再维护
+> 当前队列。`Done`、`Pending`、HEAD 和路由判断只代表当时；不得从未完成行推断
+> NEXT。当前入口见 [`../INDEX.md`](../INDEX.md)。
+
 本台账把 2026-06-11 全项目评估报告从“历史诊断”转换为当前可执行的整改路线。它基于当前仓库 HEAD `197bc17`、`docs/` 现行文档、`.understand-anything/` code graph 资产，以及 2026-06-23 的人工裁决。
 
 ## User Decisions

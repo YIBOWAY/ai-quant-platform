@@ -61,7 +61,7 @@ const copy = {
     unfreeze: "Unfreeze account",
     freezeFailed: (reason: string) => `Freeze toggle failed${reason ? `: ${reason}` : ""}`,
     orderOk: (s: string) => `Order ${s}`,
-    orderPending: (reason: string) => `Limit order queued${reason ? `: ${reason}` : ""}`,
+    orderPending: () => "Limit order queued for a later price check",
     orderPartial: (reason: string) => `Order partially filled${reason ? `: ${reason}` : ""}`,
     orderNotFilled: (reason: string) => `Order not filled${reason ? `: ${reason}` : ""}`,
     pendingChecked: (filled: number, pending: number) =>
@@ -123,7 +123,7 @@ const copy = {
     unfreeze: "解冻账户",
     freezeFailed: (reason: string) => `冻结开关切换失败${reason ? `：${reason}` : ""}`,
     orderOk: (s: string) => `订单${s === "filled" ? "已成交" : s}`,
-    orderPending: (reason: string) => `限价单已挂起${reason ? `：${reason}` : ""}`,
+    orderPending: () => "限价单已挂起，等待后续价格检查",
     orderPartial: (reason: string) => `订单部分成交${reason ? `：${reason}` : ""}`,
     orderNotFilled: (reason: string) => `订单未成交${reason ? `：${reason}` : ""}`,
     pendingChecked: (filled: number, pending: number) =>
@@ -207,6 +207,12 @@ export function AccountTradePanel({
   const isHydrated = useIsHydrated();
   const text = copy[locale];
   const [receipt, setReceipt] = useState<Receipt | null>(null);
+  const [freezeOverride, setFreezeOverride] = useState<{
+    source: boolean;
+    value: boolean;
+  } | null>(null);
+  const accountFrozen =
+    freezeOverride?.source === killSwitch ? freezeOverride.value : killSwitch;
   const rebalanceStrategies = accountRebalanceStrategies(strategies);
   const defaultRebalanceStrategyId =
     rebalanceStrategies[0]?.id ?? "cross_sectional_top_n";
@@ -239,13 +245,13 @@ export function AccountTradePanel({
         toast.success(text.orderOk(payload.order.status), {
           action: {
             label: text.viewOnMap,
-            onClick: () => router.push(localizePath("/position-map", locale)),
+            onClick: () => router.push(localizePath("/paper-trading?view=map", locale)),
           },
         });
       } else if (payload.order.status === "partially_filled") {
         toast.warning(text.orderPartial(payload.order.rejected_reason ?? ""));
       } else if (payload.order.status === "pending") {
-        toast.warning(text.orderPending(payload.order.rejected_reason ?? ""));
+        toast.warning(text.orderPending());
       } else {
         toast.warning(text.orderNotFilled(payload.order.rejected_reason ?? ""));
       }
@@ -270,7 +276,7 @@ export function AccountTradePanel({
         toast.success(text.rebalanceOk(filled), {
           action: {
             label: text.viewOnMap,
-            onClick: () => router.push(localizePath("/position-map", locale)),
+            onClick: () => router.push(localizePath("/paper-trading?view=map", locale)),
           },
         });
         setReceipt({
@@ -285,8 +291,9 @@ export function AccountTradePanel({
   const freezeMutation = useMutation({
     mutationFn: (enabled: boolean) =>
       apiPost<PaperAccountResponse>("/api/paper/account/kill-switch", { enabled }),
-    onSuccess: (_payload, enabled) => {
-      toast.success(text.frozenToggle(enabled));
+    onSuccess: (payload) => {
+      setFreezeOverride({ source: killSwitch, value: payload.kill_switch });
+      toast.success(text.frozenToggle(payload.kill_switch));
       router.refresh();
     },
     onError: (error) => {
@@ -328,7 +335,7 @@ export function AccountTradePanel({
       >
         <fieldset
           className="contents"
-          disabled={!isHydrated || killSwitch || manualMutation.isPending}
+          disabled={!isHydrated || accountFrozen || manualMutation.isPending}
         >
         <div>
           <h2 className="font-label-caps text-text-primary">{text.manualTitle}</h2>
@@ -392,7 +399,7 @@ export function AccountTradePanel({
         {manualError ? <p className="font-body-sm text-danger">{manualError}</p> : null}
         <TerminalToolbarButton
           className="h-9"
-          disabled={!isHydrated || killSwitch || manualMutation.isPending}
+          disabled={!isHydrated || accountFrozen || manualMutation.isPending}
           type="submit"
           tone="info"
         >
@@ -405,7 +412,7 @@ export function AccountTradePanel({
         className="h-9"
         disabled={
           !isHydrated ||
-          killSwitch ||
+          accountFrozen ||
           pendingOrderCount === 0 ||
           processPendingMutation.isPending
         }
@@ -425,7 +432,7 @@ export function AccountTradePanel({
       >
         <fieldset
           className="contents"
-          disabled={!isHydrated || killSwitch || rebalanceMutation.isPending}
+          disabled={!isHydrated || accountFrozen || rebalanceMutation.isPending}
         >
         <div>
           <h2 className="font-label-caps text-text-primary">{text.rebalanceTitle}</h2>
@@ -468,7 +475,7 @@ export function AccountTradePanel({
         {rebalanceError ? <p className="font-body-sm text-danger">{rebalanceError}</p> : null}
         <TerminalToolbarButton
           className="h-9"
-          disabled={!isHydrated || killSwitch || rebalanceMutation.isPending}
+          disabled={!isHydrated || accountFrozen || rebalanceMutation.isPending}
           type="submit"
           tone="warning"
         >
@@ -483,7 +490,7 @@ export function AccountTradePanel({
             <h2 className="font-label-caps text-text-primary">{text.receiptTitle}</h2>
             <Link
               className="flex items-center gap-1 font-body-sm text-info underline-offset-2 hover:underline"
-              href={localizePath("/position-map", locale)}
+              href={localizePath("/paper-trading?view=map", locale)}
             >
               {text.viewOnMap}
               <ArrowRight size={13} />
@@ -529,17 +536,17 @@ export function AccountTradePanel({
           <p className="mt-1 font-body-sm text-text-secondary">{text.freezeDesc}</p>
         </div>
         <div>
-          <ToneBadge tone={killSwitch ? "danger" : "success"}>
-            {killSwitch ? text.frozen : text.active}
+          <ToneBadge tone={accountFrozen ? "danger" : "success"}>
+            {accountFrozen ? text.frozen : text.active}
           </ToneBadge>
         </div>
         <TerminalToolbarButton
           className="h-9"
           disabled={!isHydrated || freezeMutation.isPending}
-          onClick={() => freezeMutation.mutate(!killSwitch)}
+          onClick={() => freezeMutation.mutate(!accountFrozen)}
           tone="warning"
         >
-          {killSwitch ? text.unfreeze : text.freeze}
+          {accountFrozen ? text.unfreeze : text.freeze}
         </TerminalToolbarButton>
       </div>
     </div>

@@ -5,10 +5,19 @@ import json
 from fastapi.testclient import TestClient
 
 from quant_system.api.server import create_app
+from quant_system.config.settings import DataSettings, Settings
 
+
+def _isolated_data_settings(tmp_path) -> DataSettings:
+    return DataSettings(
+        data_dir=tmp_path / "data",
+        parquet_dir=tmp_path / "parquet",
+        duckdb_path=tmp_path / "quant_system.duckdb",
+        reports_dir=tmp_path / "reports",
+    )
 
 def test_reversal_momentum_replication_api_runs_with_sample_data(tmp_path) -> None:
-    client = TestClient(create_app(output_dir=tmp_path))
+    client = TestClient(create_app(settings=Settings(data=_isolated_data_settings(tmp_path)), output_dir=tmp_path))
 
     response = client.post(
         "/api/replications/reversal-momentum/run",
@@ -58,10 +67,15 @@ def test_reversal_momentum_replication_api_runs_with_sample_data(tmp_path) -> No
         == payload["metrics"]["observation_months"]
     )
     assert payload["safety"]["live_trading_enabled"] is False
+    from quant_system.research.trials import TrialsLedger
+
+    trials = TrialsLedger(tmp_path / "data" / "trials").list()
+    assert len(trials) == 1
+    assert trials[0].metadata["run_id"] == payload["run_id"]
 
 
 def test_reversal_momentum_replication_api_validates_symbols(tmp_path) -> None:
-    client = TestClient(create_app(output_dir=tmp_path))
+    client = TestClient(create_app(settings=Settings(data=_isolated_data_settings(tmp_path)), output_dir=tmp_path))
 
     response = client.post(
         "/api/replications/reversal-momentum/run",
@@ -77,7 +91,7 @@ def test_reversal_momentum_replication_api_validates_symbols(tmp_path) -> None:
 
 
 def test_reversal_momentum_replication_detail_404_for_unknown_run(tmp_path) -> None:
-    client = TestClient(create_app(output_dir=tmp_path))
+    client = TestClient(create_app(settings=Settings(data=_isolated_data_settings(tmp_path)), output_dir=tmp_path))
 
     response = client.get("/api/replications/reversal-momentum/replication-missing")
 
@@ -100,7 +114,7 @@ def test_reversal_momentum_result_write_failure_does_not_publish_metadata(
         fail_result_write,
     )
     client = TestClient(
-        create_app(output_dir=tmp_path),
+        create_app(settings=Settings(data=_isolated_data_settings(tmp_path)), output_dir=tmp_path),
         raise_server_exceptions=False,
     )
 

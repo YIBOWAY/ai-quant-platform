@@ -48,7 +48,10 @@ export type HermesUnifiedResultSummary = {
   resourceId: string;
   displayTitle: string;
   summary: string | null;
+  displayTitleZh?: string | null;
+  summaryZh?: string | null;
   status: string;
+  freshness: HermesResultsResponse["items"][number]["freshness"];
   occurredAt: string;
   source: HermesResultsResponse["items"][number]["source"];
 };

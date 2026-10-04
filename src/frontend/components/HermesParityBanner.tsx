@@ -3,12 +3,12 @@ import { hermesHomeHref } from "@/lib/hermes/routes";
 
 const copy = {
   en: {
-    body: "The Hermes workbench is the default research entry; this page still keeps full capability. Merge/redirect is not complete and does not mean this page is retired.",
-    link: "Open Hermes workbench",
+    body: "Hermes Assistant is the default research entry; this page still keeps full capability. Merge/redirect is not complete and does not mean this page is retired.",
+    link: "Open Hermes Assistant",
   },
   zh: {
-    body: "Hermes 工作台是默认研究入口；本页仍保留完整能力。合并/redirect 未完成，不代表本页已退役。",
-    link: "打开 Hermes 工作台",
+    body: "Hermes 助手是默认研究入口；本页仍保留完整能力。合并与重定向尚未完成，不代表本页已退役。",
+    link: "打开 Hermes 助手",
   },
 } as const;
 

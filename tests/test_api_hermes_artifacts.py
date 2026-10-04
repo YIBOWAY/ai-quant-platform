@@ -1590,3 +1590,101 @@ def test_hermes_artifacts_rejects_nested_timestamps_beyond_clock_skew(
     assert response.json()["warnings"] == [
         {"source": "artifact_feed", "code": "feed_clock_skew"}
     ]
+
+
+def test_hermes_artifacts_accepts_ledger_split_fields_on_portfolio_risk(
+    tmp_path,
+) -> None:
+    now = datetime.now(UTC).replace(microsecond=0)
+    risk_data = _risk_data()
+    risk_data["account_equity"] = 1_053_879.53
+    risk_data["ledger_split"] = True
+    risk_data["reason_codes"] = ["paper_account_ledger_split"]
+    feed_path = tmp_path / "manifest.v1.json"
+    feed_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.1",
+                "read_status": "available",
+                "as_of": now.isoformat().replace("+00:00", "Z"),
+                "items": [
+                    {
+                        "id": "risk-ledger-split",
+                        "kind": "portfolio_risk",
+                        "occurred_at": now.isoformat().replace("+00:00", "Z"),
+                        "quality": "degraded",
+                        "status": "degraded",
+                        "data": risk_data,
+                    }
+                ],
+                "sources": _sources_v11(
+                    portfolio_risk={
+                        "status": "available",
+                        "latest_at": now.isoformat().replace("+00:00", "Z"),
+                    }
+                ),
+                "warnings": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    settings = Settings(
+        hermes_artifacts=HermesArtifactSettings(feed_path=feed_path),
+    )
+    client = TestClient(create_app(settings=settings, output_dir=tmp_path / "platform"))
+
+    response = client.get("/api/hermes/artifacts")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["read_status"] == "available"
+    item = payload["items"][0]
+    assert item["data"]["account_equity"] == 1_053_879.53
+    assert item["data"]["ledger_split"] is True
+    assert item["data"]["reason_codes"] == ["paper_account_ledger_split"]
+
+
+def test_hermes_artifacts_rejects_non_bool_ledger_split(tmp_path) -> None:
+    now = datetime.now(UTC).replace(microsecond=0)
+    risk_data = _risk_data()
+    risk_data["account_equity"] = 1.0
+    risk_data["ledger_split"] = "yes"
+    feed_path = tmp_path / "manifest.v1.json"
+    feed_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.1",
+                "read_status": "available",
+                "as_of": now.isoformat().replace("+00:00", "Z"),
+                "items": [
+                    {
+                        "id": "risk-bad-split",
+                        "kind": "portfolio_risk",
+                        "occurred_at": now.isoformat().replace("+00:00", "Z"),
+                        "quality": "available",
+                        "status": "available",
+                        "data": risk_data,
+                    }
+                ],
+                "sources": _sources_v11(
+                    portfolio_risk={
+                        "status": "available",
+                        "latest_at": now.isoformat().replace("+00:00", "Z"),
+                    }
+                ),
+                "warnings": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    settings = Settings(
+        hermes_artifacts=HermesArtifactSettings(feed_path=feed_path),
+    )
+    client = TestClient(create_app(settings=settings, output_dir=tmp_path / "platform"))
+
+    response = client.get("/api/hermes/artifacts")
+
+    assert response.status_code == 200
+    assert response.json()["warnings"] == [
+        {"source": "artifact_feed", "code": "feed_corrupt"}
+    ]

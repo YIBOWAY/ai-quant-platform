@@ -341,6 +341,29 @@ def test_build_facts_extracts_days_items_and_computes_stats() -> None:
     assert facts["warnings"] == ["w-a", "w-b"]
 
 
+@pytest.mark.parametrize("new_flag", [True, False])
+def test_missing_market_price_cannot_become_rollup_equity_or_period_return(new_flag):
+    issues = _issues()
+    first_account = issues[0][2]["account"]
+    first_account["positions"] = [{"symbol": "MU", "price_kind": "avg_cost_fallback"}]
+    if new_flag:
+        first_account.update(
+            valuation_status="incomplete", market_equity=None, unpriced_symbols=["MU"]
+        )
+    original = json.dumps(issues, default=str, sort_keys=True)
+    facts = build_facts(kind="weekly", period_key="2026-W33", period_start=date(2026, 8, 10),
+        period_end=date(2026, 8, 16), locale="zh", issues=issues)
+    assert facts["stats"]["equity_start"] is None
+    assert facts["stats"]["period_change_pct"] is None
+    account = facts["account_summary"]["start"]
+    assert account["valuation_status"] == "incomplete"
+    assert account["cost_reference_equity"] == 100_000
+    assert account["cash"] == 60_000
+    assert all(account[key] is None for key in ("equity", "pnl_abs", "pnl_pct", "invested_pct"))
+    assert any("MU" in warning for warning in facts["warnings"])
+    assert json.dumps(issues, default=str, sort_keys=True) == original
+
+
 # --- generate_rollup pipeline ----------------------------------------------
 
 

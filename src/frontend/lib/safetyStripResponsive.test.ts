@@ -17,5 +17,8 @@ describe("SafetyBadge responsive copy", () => {
     expect(source).toContain("killSwitchOn");
     expect(source).toContain("paperObservationOn");
     expect(source).toContain("health.status");
+    expect(source).toContain('const apiStatus = health.status === "available" ? text.available : text.unavailable');
+    expect(source).toContain("{ label: text.api, value: apiStatus }");
+    expect(source).not.toContain("${text.api} ${health.status}");
   });
 });

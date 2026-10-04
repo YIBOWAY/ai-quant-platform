@@ -5,6 +5,10 @@ test.describe("phase14 buy-side options assistant smoke", () => {
 
   test("buy-side assistant submits a thesis and renders recommendations", async ({ page }) => {
     await page.route("**/api/options/buy-side/assistant", async (route) => {
+      const request = route.request().postDataJSON() as Record<string, unknown>;
+      expect(request).not.toHaveProperty("spot_price");
+      expect(request).not.toHaveProperty("iv_rank");
+      expect(request).not.toHaveProperty("historical_volatility");
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -37,7 +41,7 @@ test.describe("phase14 buy-side options assistant smoke", () => {
               break_even: 204.8,
               required_move_pct: 2.4,
               theta_burn_7d_pct: 4.2,
-              estimated_iv_crush_loss_pct: 6.5,
+              estimated_iv_change_pct: -6.5,
               liquidity_score: 88,
               risk_reward: 1.08,
               expected_move_pct: 7.9,
@@ -100,7 +104,7 @@ test.describe("phase14 buy-side options assistant smoke", () => {
               break_even: 208,
               required_move_pct: 4,
               theta_burn_7d_pct: 5.2,
-              estimated_iv_crush_loss_pct: 9.5,
+              estimated_iv_change_pct: -9.5,
               liquidity_score: 80,
               risk_reward: null,
               expected_move_pct: 7.9,

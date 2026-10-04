@@ -5,6 +5,7 @@ import type { Locale } from "@/lib/locale";
 import { artifactCopy } from "./copy";
 import { Fact } from "./Fact";
 import {
+  artifactStatusLabel,
   formatDateTime,
   formatDecimal,
   formatPercent,
@@ -48,7 +49,7 @@ export function PredictionSummary({ artifact, locale }: PredictionSummaryProps) 
           </div>
           <StatusPill
             label={text.status}
-            value={artifact.status || artifact.quality}
+            value={artifactStatusLabel(artifact.status || artifact.quality, locale)}
             tone={qualityTone(artifact.quality)}
           />
         </div>

@@ -51,6 +51,7 @@ class Alpha101Factor(BaseFactor):
 class Alpha101_001(Alpha101Factor):
     factor_id = "alpha101_001"
     factor_name = "Alpha101 001"
+    display_name_zh = "Alpha101 因子 001"
     default_lookback = 20
     formula = (
         r"\operatorname{rank}(\operatorname{ts\_argmax}("
@@ -68,6 +69,7 @@ class Alpha101_001(Alpha101Factor):
 class Alpha101_002(Alpha101Factor):
     factor_id = "alpha101_002"
     factor_name = "Alpha101 002"
+    display_name_zh = "Alpha101 因子 002"
     default_lookback = 6
     formula = (
         r"-1 * correlation(rank(delta(log(volume),2)), "
@@ -90,6 +92,7 @@ class Alpha101_002(Alpha101Factor):
 class Alpha101_003(Alpha101Factor):
     factor_id = "alpha101_003"
     factor_name = "Alpha101 003"
+    display_name_zh = "Alpha101 因子 003"
     default_lookback = 10
     formula = r"-1 * correlation(rank(open), rank(volume), 10)"
     description = f"{CITATION}; Alpha#3 original formula: ${formula}$."
@@ -107,6 +110,7 @@ class Alpha101_003(Alpha101Factor):
 class Alpha101_004(Alpha101Factor):
     factor_id = "alpha101_004"
     factor_name = "Alpha101 004"
+    display_name_zh = "Alpha101 因子 004"
     default_lookback = 9
     formula = r"-1 * ts_rank(rank(low), 9)"
     description = f"{CITATION}; Alpha#4 original formula: ${formula}$."
@@ -119,6 +123,7 @@ class Alpha101_004(Alpha101Factor):
 class Alpha101_005(Alpha101Factor):
     factor_id = "alpha101_005"
     factor_name = "Alpha101 005"
+    display_name_zh = "Alpha101 因子 005"
     default_lookback = 10
     formula = r"rank(open - sum(vwap,10)/10) * (-1 * abs(rank(close - vwap)))"
     description = (
@@ -136,6 +141,7 @@ class Alpha101_005(Alpha101Factor):
 class Alpha101_006(Alpha101Factor):
     factor_id = "alpha101_006"
     factor_name = "Alpha101 006"
+    display_name_zh = "Alpha101 因子 006"
     default_lookback = 10
     formula = r"-1 * correlation(open, volume, 10)"
     description = f"{CITATION}; Alpha#6 original formula: ${formula}$."
@@ -148,6 +154,7 @@ class Alpha101_006(Alpha101Factor):
 class Alpha101_007(Alpha101Factor):
     factor_id = "alpha101_007"
     factor_name = "Alpha101 007"
+    display_name_zh = "Alpha101 因子 007"
     default_lookback = 60
     formula = (
         r"(adv20 < volume) ? "
@@ -169,6 +176,7 @@ class Alpha101_007(Alpha101Factor):
 class Alpha101_008(Alpha101Factor):
     factor_id = "alpha101_008"
     factor_name = "Alpha101 008"
+    display_name_zh = "Alpha101 因子 008"
     default_lookback = 10
     formula = (
         r"-1 * rank((sum(open,5) * sum(returns,5)) - "
@@ -185,6 +193,7 @@ class Alpha101_008(Alpha101Factor):
 class Alpha101_009(Alpha101Factor):
     factor_id = "alpha101_009"
     factor_name = "Alpha101 009"
+    display_name_zh = "Alpha101 因子 009"
     default_lookback = 5
     formula = (
         r"(0 < ts_min(delta(close,1),5)) ? delta(close,1) : "
@@ -203,6 +212,7 @@ class Alpha101_009(Alpha101Factor):
 class Alpha101_010(Alpha101Factor):
     factor_id = "alpha101_010"
     factor_name = "Alpha101 010"
+    display_name_zh = "Alpha101 因子 010"
     default_lookback = 4
     formula = (
         r"rank((0 < ts_min(delta(close,1),4)) ? delta(close,1) : "

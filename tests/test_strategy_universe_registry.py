@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from quant_system.factors.registry import build_default_factor_registry
 from quant_system.strategies.registry import build_default_strategy_registry
 from quant_system.universe.registry import build_default_universe_registry
 
@@ -40,7 +41,7 @@ def test_universe_registry_lists_research_presets() -> None:
     assert etf.benchmark_symbol == "SPY"
 
 
-def test_strategy_and_factor_metadata_expose_optional_zh_display_names() -> None:
+def test_default_strategy_and_factor_metadata_always_expose_zh_display_names() -> None:
     from quant_system.factors.examples import MomentumFactor
 
     registry = build_default_strategy_registry()
@@ -54,3 +55,12 @@ def test_strategy_and_factor_metadata_expose_optional_zh_display_names() -> None
     momentum = MomentumFactor().metadata
     assert momentum.factor_name == "Momentum"
     assert momentum.display_name_zh == "动量"
+
+    assert all(
+        isinstance(item.display_name_zh, str) and item.display_name_zh.strip()
+        for item in registry.list_metadata()
+    )
+    assert all(
+        isinstance(item.display_name_zh, str) and item.display_name_zh.strip()
+        for item in build_default_factor_registry().list_metadata()
+    )

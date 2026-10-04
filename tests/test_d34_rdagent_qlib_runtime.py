@@ -13,14 +13,30 @@ from quant_system.d34.rdagent_qlib_runtime import (
 from quant_system.d34.research_driver import D34ResearchRequest
 
 
+def test_cost_meter_flags_zero_acc_cost_increment_after_llm_path() -> None:
+    meter = RDAgentCostMeter.__new__(RDAgentCostMeter)
+    meter._reservation = 6.0
+    meter._module = type("Module", (), {"ACC_COST": 12.5})()
+    meter._baseline = 12.5
+    assert meter.spent() == 0.0
+    assert meter.metering_alert(spent=0.0) == "d34_budget_metering_failed"
+    meter._baseline = 10.0
+    assert meter.spent() == 2.5
+    assert meter.metering_alert(spent=2.5) is None
+    meter._module = None
+    assert meter.metering_alert(spent=0.0) is None
+
+
 def test_rdagent_proposal_uses_structured_json_and_prior_receipts(tmp_path) -> None:
     provider = tmp_path / "provider"
     provider.mkdir()
     request = D34ResearchRequest.model_validate(
         {
-            "contract": "hqa.d34_research_request/v1",
+            "contract": "hqa.d34_research_request/v2",
             "job_id": "job-12345678",
-            "mandate_id": "mandate-12345678",
+            "run_id": "attempt-12345678",
+            "resource_envelope_id": "local-paper-research-v1",
+            "resource_policy_digest": "f539564775cd6f0c51fbd8478697265c1f4df86987513dad5e7a842b92191270",
             "snapshot_id": "snapshot-12345678",
             "snapshot_digest": "a" * 64,
             "snapshot_source": "futu",
@@ -29,10 +45,10 @@ def test_rdagent_proposal_uses_structured_json_and_prior_receipts(tmp_path) -> N
             "calendar": [
                 "2026-07-01T00:00:00+00:00",
                 "2026-07-02T00:00:00+00:00",
-                "2026-07-03T00:00:00+00:00",
+                "2026-07-06T00:00:00+00:00",
             ],
-            "max_iterations": 1,
-            "experiments_per_iteration": 1,
+            "max_iterations": 3,
+            "experiments_per_iteration": 3,
             "top_k": 1,
             "objective": "Find one useful paper factor.",
         }
@@ -77,10 +93,15 @@ def test_rdagent_proposal_uses_structured_json_and_prior_receipts(tmp_path) -> N
     assert backend.response_format_present is False
     assert "iteration-01-experiment-01" in backend.prompt
     assert '"title"' in backend.prompt
+    assert '"short_window": 0' in backend.prompt
+    assert "0 means no skip" in backend.prompt
+    assert "Do not use 1 as a sentinel" in backend.prompt
     assert '"long_window"' in backend.prompt
     assert '"rationale"' in backend.prompt
     assert "Do not output Python" in backend.prompt
     assert "composed" in backend.prompt
+    assert '"qlib_expr": "$close/Ref($close,20)-1"' in backend.prompt
+    assert "time-series percentile" in backend.prompt
 
 
 def test_target_weights_shift_scores_to_next_trade_day() -> None:
@@ -97,7 +118,7 @@ def test_target_weights_shift_scores_to_next_trade_day() -> None:
     calendar = (
         "2026-07-01T00:00:00+00:00",
         "2026-07-02T00:00:00+00:00",
-        "2026-07-03T00:00:00+00:00",
+        "2026-07-06T00:00:00+00:00",
     )
 
     weights = shifted_target_weights(
@@ -114,7 +135,7 @@ def test_target_weights_shift_scores_to_next_trade_day() -> None:
             "target_weight": 0.99,
         },
         {
-            "tradeable_ts": pd.Timestamp("2026-07-03T00:00:00Z"),
+            "tradeable_ts": pd.Timestamp("2026-07-06T00:00:00Z"),
             "symbol": "QQQ",
             "target_weight": 0.99,
         },

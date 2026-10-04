@@ -1,19 +1,15 @@
 # 历史审计
 
-本文件夹中的文件作为历史背景资料予以保留。它们记录了早期的评审发现与修复计划，其中部分发现至今已得到解决。
+> 本地路径说明（公开版）：文中未随本版提供的 `artifacts/`、`evidence/` 和运行目录是本地证据坐标或路径示例，原件未公开；不能把路径存在当作公开证据。详见[公开范围说明](../publication-20261004.md)。
 
-如需了解平台当前状态，请从以下文档开始：
+[2026-06-23 整改台账](remediation_ledger_2026-06-23.md)保留当时的决定与验证记录，不代表当前待办。
 
-- [remediation_ledger_2026-06-23.md](remediation_ledger_2026-06-23.md) — 2026-06-23 整改快照；用于追溯当时裁决，不维护当前队列。
-- [../../README.md](../../README.md)
-- [../INDEX.md](../INDEX.md)
-- [../OVERVIEW.md](../OVERVIEW.md)
-- [../delivery/phase_13_delivery.md](../delivery/phase_13_delivery.md)
-- [../delivery/phase_14_delivery.md](../delivery/phase_14_delivery.md)
-- [FRONTEND_REAL_DATA_REVIEW_2026-05-31.md](FRONTEND_REAL_DATA_REVIEW_2026-05-31.md)
+> **只读历史索引（2026-08-26）：**本目录记录早期审计、裁决和整改过程，不维护
+> 当前状态、当前问题列表或 NEXT。下文的“状态补充”按发生日期保留，不能当作累积到
+> 2026-08-26 的 changelog；历史报告中的路径、计数和结论也必须按当时快照理解。
 
-当前状态与实现计划以 [../INDEX.md](../INDEX.md) 为入口。本 README 和 ledger 只保留
-历史审计与当时的状态补充，不再追加新的工程进度。
+平台当前文档从 [`../INDEX.md`](../INDEX.md) 进入。本目录不再列一组容易随代码
+漂移的“当前文档”，也不追加新的工程进度。
 
 2026-06-15 状态补充：评估报告中“显式 provider 请求失败静默降级 sample”的
 小项已加固。股票数据 provider override 现在只接受 `sample` / `futu` /

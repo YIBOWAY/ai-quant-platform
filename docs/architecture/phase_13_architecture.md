@@ -1,133 +1,135 @@
-# 阶段 13 架构 - 期权雷达 (Options Radar)
+# 阶段 13 架构：期权推荐
 
-## 模块
+本模块从真实 Futu 期权链生成本地卖方研究快照。它没有交易上下文、账户解锁或下单
+路径。现役用户合同见[期权推荐指南](../guides/options-recommendations.md)。
+
+## 组件
 
 ```text
 src/quant_system/options/
-  universe.py          committed S&P 500 + Nasdaq 100 universe loader
-  rate_limiter.py      token-bucket pacing for read-only Futu calls
-  iv_history.py        local IV history and IV Rank
-  earnings_calendar.py offline earnings-date lookup
-  market_regime.py     VIX regime classifier (V5 dual factor)
-  vix_data.py          Yahoo Chart REST fetcher + CSV cache for ^VIX/^VIX3M
-  radar.py             cross-ticker scanner and score calculation
-  radar_storage.py     daily JSONL snapshot store
-  sample_provider.py   deterministic offline provider
+  universe.py          策展 34 标的与隔离宽池加载
+  data_refresh.py      财报、除息事件、VIX 和维护用 universe 刷新
+  daily_task.py        输入刷新、进度状态、逐标的扫描和终态编排
+  rate_limiter.py      Futu 只读调用节流
+  iv_history.py        ATM30 Call+Put 双腿 IV history 与 IVR warming
+  seller_score.py      报价/事件硬条件与物理预期赔付 EV
+  radar.py             跨标的扫描、partial 结果和 Top-20 排序
+  radar_storage.py     v3 generation 文件、哈希校验和原子 meta 指针
+  scan_lock.py         定时与手动任务共用的跨进程锁
 
 src/quant_system/api/routes/options_radar.py
-  POST /api/options/refresh/universe
+  POST /api/options/daily-scan/run
+  GET  /api/options/daily-scan/status
+  GET  /api/options/daily-scan/dates
+  GET  /api/options/daily-scan
+  GET  /api/options/daily-scan/symbol/{ticker}
+  POST /api/options/refresh/universe      # 维护接口，页面不调用
   POST /api/options/refresh/earnings
   POST /api/options/refresh/vix
-  POST /api/options/daily-scan/run
-  GET /api/options/daily-scan/dates
-  GET /api/options/daily-scan/status
-  GET /api/options/daily-scan
 
-src/quant_system/cli.py
-  quant-system options daily-scan   manual scan over existing local inputs
-  quant-system options daily-task   scheduled refresh + scan task
-
-src/quant_system/api/server.py
-  optional startup catch-up when QS_OPTIONS_RADAR_STARTUP_CATCHUP_ENABLED=true
-
-src/frontend/app/options-radar/page.tsx
-  src/frontend/components/forms/OptionsRadarView.tsx
-  daily scan viewer with filters, scheduled-task status, detail expansion, CSV export
+src/frontend/components/forms/OptionsRadarView.tsx
+  六态页面、立即更新、进度轮询、每秒耗时、筛选、紧凑表格、详情和 CSV 导出
 ```
 
-## ASCII 架构图
+## 数据流
 
 ```text
-           +----------------------+
-           | sp500_nasdaq100.csv  |
-           +----------+-----------+
-                      |
-                      v
-           +----------------------+
-           | OptionsUniverse      |
-           +----------+-----------+
-                      |
-                      v
-+---------------------+----------------------+
-| RateLimitedFutuProvider / SampleProvider   |
-+---------------------+----------------------+
-                      |
-                      v
-           +----------------------+
-           | Existing Screener    |
-           +----------+-----------+
-                      |
-      +---------------+----------------+
-      | IV Rank | Earnings | VIX regime |
-      +---------------+----------------+
-            ^                   ^
-            |                   |
-  iv_history/*.csv    vix_history.csv (Yahoo Chart REST)
-                      |
-                      v
-           +----------------------+
-           | RadarSnapshotStore   |
-           +----------+-----------+
-                      |
-        +-------------+-------------+
-        v                           v
-  Local API                    Frontend table
+HQA 22:00 Hermes cron ─┐
+                       ├─> Platform daily-task ─> refresh earnings/dividends/VIX
+页面“立即更新” POST ────┘                         │
+                                                 v
+tracked curated_wheel.csv (exact 34) ─> RateLimitedFutuProvider
+                                                 │
+                     ┌───────────────────────────┼─────────────────────┐
+                     v                           v                     v
+                option chains              ATM30 IV history      event evidence
+                     └───────────────────────────┼─────────────────────┘
+                                                 v
+                             hard gates + physical expected payout EV
+                                                 v
+                                 partial-capable global Top 20
+                                                 v
+                     {date}.{generation}.jsonl + atomic {date}_meta.json
+                                                 v
+                                      GET API -> /options-radar
 ```
 
-## 调度任务
+## 调度与手动任务
 
-`quant-system options daily-task` 是 Windows 任务计划程序的推荐入口。它按顺序：
+HQA 拥有 macOS 调度，Platform 不在 FastAPI lifespan 内启动扫描：
 
-1. 通过 `options/data_refresh.py` 刷新本地标的池 CSV。
-2. 通过同一刷新模块刷新本地财报日历 CSV。
-3. 刷新本地 VIX/VIX3M 历史 CSV。
-4. 使用刷新后的路径调用 `run_options_radar`。
-5. 写入每日 JSONL 快照、元数据和 `daily_task_status.json`。
+- 现役 Hermes cron job `hqa-options-collect` 周一至周六北京时间 22:00 调用同一套
+  `daily-task`；dormant `com.aiquant.options-collect` LaunchAgent 不得同时加载。
+- 工作日正式输出固定为真实 Futu、跟踪的 exact 34 标的和正式目录。
+- 周六先写正式 34 标的快照，再顺序运行 top-100 宽池；宽池写入独立 `wide`
+  目录，但可复用正式真实 Futu IV history。
+- `POST /api/options/daily-scan/run` 获得同一把锁后返回 `202 queued`，后台继续；
+  已有任务时返回 `409 options_scan_already_running`。
+- API 启动补跑已经退役。服务启动本身不刷新 universe、事件、VIX 或推荐快照。
 
-`daily-scan` 保留为人工调试和只扫描已有输入缓存的命令。
-`GET /api/options/daily-scan/status` 只读返回最近一次
-`daily_task_status.json`；`/options-radar` 用它显示调度任务最近状态。
-`daily-task`、CLI `daily-scan`、`POST /api/options/daily-scan/run` 和启动补跑共享
-雷达输出目录下的 `options_radar_scan.lock`，避免多个进程同时写每日快照、IV history
-或状态文件。
+正式 `daily-task` 必须使用 tracked curated universe 和 `top=34`。CLI `daily-scan`
+只允许写非正式输出目录，用于有界诊断；sample 的所有输入、输出与 IV history 还必须
+全部隔离。
 
-API 启动补跑默认关闭，避免服务启动时意外触发慢速 OpenD 扫描。设置
-`QS_OPTIONS_RADAR_STARTUP_CATCHUP_ENABLED=true` 后，FastAPI lifespan 会检查
-`RadarSnapshotStore.latest_date()`；如果最近一个常规美股交易日快照缺失，会在后台运行一次
-`daily-scan` 等价扫描，并把 `source="startup_catchup"` 的 running /
-completed / failed 状态写入 `daily_task_status.json`。周末和常规美股整天休市日会
-回退到上一个交易日；临时闭市和半日交易仍由调度/人工流程处理。该补跑会在同一锁内
-先刷新本地标的池、财报日历和 VIX 输入，再运行扫描；若扫描锁已被调度或手动扫描持有，启动补跑直接跳过，
-不写入 running/failed 状态，也不覆盖现有 `daily_task_status.json`。
+## 输入证据
 
-## 故障隔离
+每次任务按顺序处理：
 
-每个标的 (ticker) 都是独立扫描的。单个 OpenD、权限或无数据的失败会被记录在 `failed_tickers` 中，并且不会中断整个运行。
+1. 加载 tracked 34 标的（正式路径不联网替换该名单）。
+2. 刷新公开财报日历；策展标的的新结果按 ticker 合并进既有宽表。
+3. 刷新公开除息日期和每股股息证据。
+4. 刷新 VIX/VIX3M 本地历史。
+5. 用 Futu 逐标的取得标的快照、到期日、期权链与报价。
 
-## 快照写入
+页面「高级数据源」只提供财报和 VIX 的维护按钮，不提供 universe 刷新按钮。
+`POST /api/options/refresh/universe` 仍是维护 API，不属于正式页面流程。
+财报 fallback 与除息 yfinance 获取最多使用 6 个并发请求，写盘仍在汇总后单线程完成，
+结果按 ticker 排序；单标的失败保留为缺失证据，不伪造事件。
 
-雷达快照以运行日期为键。对同一日期再次运行扫描时，会用新的报告重写当天的 JSONL 和元数据文件，并在写入前合并掉重复的标的/合约/策略行。这样可以防止来自同一天较早运行的过期行被并入当前快照。
+## 推荐模型
 
-## 限速
+报价、价差、OI、Delta、DTE、IV、目标 session 报价与无风险利率先作为硬条件；
+非 ETF 还要求财报证据，备兑看涨要求除息证据。除息日落入到期窗口时，外在价值还
+必须高于每股股息。
 
-Futu 行情接口默认按每 30 秒 10 次调用进行节流。市场快照的批量大小默认为 200，低于 Futu 文档中记载的 400 代码上限。
+物理测度 EV 使用：
 
-## VIX 数据源
+```text
+sigma = min(IV, HV) when valid HV exists, otherwise IV
+mu = risk_free_rate + equity_risk_premium
+expected_value = extrinsic_premium - lognormal_physical_expected_payout
+recommendation_score = annualized_expected_value * liquidity_factor
+```
 
-VIX/VIX3M 收盘价通过普通的 HTTPS GET 从 `query1.finance.yahoo.com/v8/finance/chart` 获取。该抓取器为只读，且不使用任何 API key。错误会被记录并降级为一个空 Series，因此短暂的中断不会中止扫描；CLI 会降级为 `market_regime=Unknown`，并且不施加任何卖方惩罚。
+`QS_OPTIONS_RADAR_EQUITY_RISK_PREMIUM` 默认 `0.04`，可配置。只有正的
+`expected_value` 进入推荐排序。IVR 少于 30 个正式 session 时是 `warming`，不作为
+缺失硬门；非法 IVR 仍拒绝。
 
-市场状态 (regime) 在每次扫描时计算一次，并被序列化进每个候选项中，包括 `market_regime`（`Normal` / `Elevated` / `Panic` / `Unknown`）和 `market_regime_penalty`（按策略从 `global_score` 中扣减的分数）。前端 `RegimeBanner` 从 API 载荷中读取这些字段。
+## Partial 与状态
 
-## 刷新数据源
+每个 ticker 独立失败。成功标的继续形成候选，失败标的进入 `failed_tickers`，任务终态
+为 `completed_with_warnings`。raw meta 的 `empty` 只说明 generation 候选行数为 0，
+不证明 34 个标的完整成功；API 再结合覆盖率、freshness 与数据证据投影
+`empty|unavailable`，两者不能脱离 task/coverage 混读。
 
-雷达 UI 和 API 默认使用公开只读的刷新方式：
+`daily_task_status.json` 采用原子替换，记录 queued/running/terminal、步骤、目标 session、
+进度、成功/失败覆盖率和错误。状态接口检测到遗留 running 但扫描锁已不存在时，会投影
+为 interrupted failure，不把僵尸状态展示成仍在运行。
 
-- universe：来自 GitHub 支持的来源的公开 S&P 500 + Nasdaq 100 快照
-- earnings：Nasdaq 公开日历，同时仍明确支持 `yfinance`
-- VIX：Yahoo Chart，然后回退到 Cboe 公开 CSV
+## v3 快照
 
-`sample` 数据源仍可用于确定性的离线测试，并在 UI 中作为单独的本地样本选项展示。
+`options_recommendations/v3` 每次写入新的 generation JSONL，再原子替换当天 meta
+指针。当前评分模型名仍为 `seller_ev_liquidity_v1`。meta 固定记录数据文件名、
+SHA-256、行数、策展 universe digest、覆盖率、`as_of`、risk-free rate、
+`equity_risk_premium` 和 shortfall 原因。读取器不只校验结构和哈希，还会用当前
+物理 EV、股息与评分公式逐行重算。版本字符串相同不代表旧 generation 一定兼容：
+缺少当前必填字段或由旧公式生成的较早 v3 会读成 `unavailable`，不会继续展示。
+
+同一 session 的新写入会替换 meta 指针；当前防止 `as_of` 回退，但尚未防止覆盖率
+回退。因此较晚的 partial generation 可能替换较早的完整 generation。这个已知边界必须
+在页面和验收中通过 scanned/failed 覆盖率显式呈现。
 
 ## 只读边界
 
-仅行情数据方法被封装。Yahoo VIX 抓取为匿名公开 GET。这里没有交易上下文，也没有任何路由或按钮能够下单。
+Futu 仅使用行情上下文；公开事件/VIX 刷新仅写本地研究缓存。所有 API、CLI、定时任务
+与页面都不能提交订单、解锁账户或修改 paper/live 账户。

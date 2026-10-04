@@ -3,7 +3,10 @@ import path from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { BriefArchiveSidebarView } from "./BriefArchiveSidebar";
+import {
+  BriefArchiveSidebarView,
+  entryMatchesSidebarDocument,
+} from "./BriefArchiveSidebar";
 import type { BriefArchiveGroup } from "@/lib/briefArchive";
 import {
   buildBriefRollupSidebarGroups,
@@ -131,6 +134,14 @@ describe("BriefArchiveSidebarView", () => {
     expect(en).toContain("Monthly");
   });
 
+  it("offers the active archive tab through a mobile history disclosure", () => {
+    const html = render({});
+
+    expect(html).toContain('aria-controls="brief-archive-panel"');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain("历史 · 日报");
+  });
+
   it("labels the heading as history instead of archive", () => {
     expect(render({})).toContain("历史");
     expect(render({ locale: "en" })).toContain("History");
@@ -166,6 +177,65 @@ describe("BriefArchiveSidebarView", () => {
       .find((chunk) => chunk.includes("brf_20260811_alpha"));
     expect(activeLink).toBeDefined();
     expect(activeLink).toContain("bg-paper-surface-muted");
+    expect(activeLink).toContain('aria-current="page"');
+  });
+
+  it("highlights the weekly issue covering the open daily date", () => {
+    const html = render({
+      activeKind: "weekly",
+      activeIssueDate: "2026-08-11",
+      activePublicId: "brf_20260811_alpha",
+      groups: weeklyGroups,
+    });
+    const weekly = html
+      .split("<a")
+      .find((chunk) => chunk.includes("brw_20260810_x1y2z3"));
+    const other = html
+      .split("<a")
+      .find((chunk) => chunk.includes("brw_20260803_a1b2c3"));
+    expect(weekly).toBeDefined();
+    expect(weekly).toContain("hover:bg-paper-surface-muted bg-paper-surface-muted");
+    expect(other).toBeDefined();
+    expect(other).not.toContain("hover:bg-paper-surface-muted bg-paper-surface-muted");
+  });
+
+  it("highlights the monthly issue covering the open daily date", () => {
+    const html = render({
+      activeKind: "monthly",
+      activeIssueDate: "2026-08-11",
+      activePublicId: "brf_20260811_alpha",
+      groups: monthlyGroups,
+    });
+    const august = html
+      .split("<a")
+      .find((chunk) => chunk.includes("brm_202608_d4e5f6"));
+    const july = html
+      .split("<a")
+      .find((chunk) => chunk.includes("brm_202607_g7h8i9"));
+    expect(august).toBeDefined();
+    expect(august).toContain("hover:bg-paper-surface-muted bg-paper-surface-muted");
+    expect(july).toBeDefined();
+    expect(july).not.toContain("hover:bg-paper-surface-muted bg-paper-surface-muted");
+  });
+
+  it.each([
+    {
+      periodKey: "2026-W33",
+      expected: ["2026-08-11"],
+    },
+    {
+      periodKey: "2026-08",
+      expected: ["2026-08-11", "2026-08-04"],
+    },
+  ])("matches daily issues covered by $periodKey", ({ expected, periodKey }) => {
+    const entries = dailyGroups.flatMap((group) => group.entries);
+    expect(
+      entries
+        .filter((entry) =>
+          entryMatchesSidebarDocument(entry, "daily", null, null, periodKey),
+        )
+        .map((entry) => entry.issue_date),
+    ).toEqual(expected);
   });
 
   it("renders ISO week markers and rollup links on the weekly tab", () => {
@@ -376,5 +446,7 @@ describe("BriefArchiveSidebar container contract", () => {
     expect(source).toContain("buildBriefRollupSidebarGroups");
     // Rollup entries deep-link to the rollup detail route.
     expect(source).toContain('"/brief/rollup"');
+    expect(source).toContain("documentKind ?? \"daily\"");
+    expect(source).toContain("activeIssueDate");
   });
 });

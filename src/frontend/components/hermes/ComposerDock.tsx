@@ -45,6 +45,8 @@ export type ComposerDockProps = {
   locale?: Locale;
   /** Incremented by the controller once the durable submit is accepted. */
   draftResetToken?: number;
+  /** Narrow rail: one field, no full-page dock chrome. */
+  compact?: boolean;
 };
 
 /**
@@ -78,6 +80,7 @@ function ComposerDockStateful({
   onStartNewSession,
   newSessionLabel = "New conversation",
   locale = "en",
+  compact = false,
 }: ComposerDockProps) {
   const [draft, setDraft] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
@@ -150,18 +153,30 @@ function ComposerDockStateful({
       : null;
 
   const displayStatus = localError ?? statusText;
+  const showByteCount = !compact || draftState.overLimitBytes > 0;
 
   return (
-    <div className="bg-transparent px-4 pb-4 pt-2">
+    <div
+      className={compact ? "bg-transparent" : "bg-transparent px-4 pb-4 pt-2"}
+      data-hermes-composer-variant={compact ? "rail" : "dock"}
+    >
       <form
-        className="mx-auto flex w-full max-w-[var(--spacing-chat-max)] flex-col gap-2"
+        className={
+          compact
+            ? "flex w-full flex-col gap-1.5"
+            : "mx-auto flex w-full max-w-[var(--spacing-chat-max)] flex-col gap-2"
+        }
         onSubmit={handleSubmit}
       >
         {onStartNewSession ? (
-          <div className="flex justify-end">
+          <div className={compact ? "flex justify-start" : "flex justify-end"}>
             <button
               aria-label={newSessionLabel}
-              className="app-touch-target inline-flex items-center gap-1.5 rounded-md px-2 font-body-sm text-text-secondary transition-colors hover:text-text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
+              className={
+                compact
+                  ? "app-touch-target inline-flex items-center gap-1 rounded-md px-1.5 font-body-sm text-[var(--dp-text-faint)] transition-colors hover:text-[var(--dp-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
+                  : "app-touch-target inline-flex items-center gap-1.5 rounded-md px-2 font-body-sm text-text-secondary transition-colors hover:text-text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
+              }
               disabled={busy || submitting}
               onClick={() => void handleStartNewSession()}
               ref={newSessionButtonRef}
@@ -172,7 +187,13 @@ function ComposerDockStateful({
             </button>
           </div>
         ) : null}
-        <div className="rounded-[var(--radius-input)] border border-border-subtle bg-bg-surface p-2 shadow-[var(--shadow-composer)] transition-colors focus-within:border-[var(--color-hermes)]/50 motion-reduce:transition-none">
+        <div
+          className={
+            compact
+              ? "dp-composer-box p-1.5"
+              : "rounded-[var(--radius-input)] border border-border-subtle bg-bg-surface p-2 shadow-[var(--shadow-composer)] transition-colors focus-within:border-[var(--color-hermes)]/50 motion-reduce:transition-none"
+          }
+        >
           <label className="sr-only" htmlFor="hermes-composer-draft">
             {label}
           </label>
@@ -185,11 +206,15 @@ function ComposerDockStateful({
               localError || draftState.overLimitBytes > 0 ? true : undefined
             }
             aria-label={label}
-            className="app-touch-target block max-h-32 min-h-[44px] w-full resize-y border-none bg-transparent px-2 py-2 font-body-md text-text-primary placeholder:text-text-secondary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-info disabled:cursor-not-allowed disabled:opacity-70 read-only:cursor-not-allowed read-only:opacity-70"
+            className={
+              compact
+                ? "app-touch-target block max-h-28 min-h-[44px] w-full resize-none border-none bg-transparent px-2 py-2 text-[12.5px] leading-relaxed text-[var(--dp-text)] placeholder:text-[var(--dp-text-faint)] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-info disabled:cursor-not-allowed disabled:opacity-70 read-only:cursor-not-allowed read-only:opacity-70"
+                : "app-touch-target block max-h-32 min-h-[44px] w-full resize-y border-none bg-transparent px-2 py-2 font-body-md text-text-primary placeholder:text-text-secondary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-info disabled:cursor-not-allowed disabled:opacity-70 read-only:cursor-not-allowed read-only:opacity-70"
+            }
             disabled={disabled || busy || submitting}
             placeholder={placeholder}
             readOnly={disabled}
-            rows={2}
+            rows={compact ? 3 : 2}
             value={disabled ? "" : draft}
             onChange={(event) => {
               if (disabled) return;
@@ -202,8 +227,10 @@ function ComposerDockStateful({
               className={`font-body-sm ${
                 draftState.overLimitBytes > 0
                   ? "text-danger"
-                  : "text-text-secondary"
-              }`}
+                  : compact
+                    ? "text-[var(--dp-text-faint)]"
+                    : "text-text-secondary"
+              } ${showByteCount ? "" : "sr-only"}`}
               data-testid="hermes-composer-byte-count"
               id="hermes-composer-byte-count"
             >
@@ -219,8 +246,12 @@ function ComposerDockStateful({
               <span
                 className={`flex h-9 w-9 items-center justify-center rounded-full transition-colors motion-reduce:transition-none ${
                   submitEnabled
-                    ? "bg-[var(--color-hermes-strong)] text-white"
-                    : "bg-bg-surface-muted text-text-secondary opacity-50"
+                    ? compact
+                      ? "bg-[var(--dp-accent)] text-[var(--dp-accent-ink)]"
+                      : "bg-[var(--color-hermes-strong)] text-white"
+                    : compact
+                      ? "bg-[var(--dp-bg-hover)] text-[var(--dp-text-faint)] opacity-50"
+                      : "bg-bg-surface-muted text-text-secondary opacity-50"
                 }`}
               >
                 <Send size={16} />
@@ -229,12 +260,26 @@ function ComposerDockStateful({
           </div>
         </div>
         {hint ? (
-          <p className="font-body-sm text-text-secondary">{hint}</p>
+          <p
+            className={
+              compact
+                ? "font-body-sm text-[var(--dp-text-faint)]"
+                : "font-body-sm text-text-secondary"
+            }
+          >
+            {hint}
+          </p>
         ) : null}
         <div className="flex flex-wrap items-center gap-2">
           <p
             aria-atomic="true"
-            className={`font-body-sm ${localError ? "rounded-md bg-bg-base px-2 py-1 text-danger" : "text-text-secondary"}`}
+            className={`font-body-sm ${
+              localError
+                ? "rounded-md bg-bg-base px-2 py-1 text-danger"
+                : compact
+                  ? "text-[var(--dp-text-faint)]"
+                  : "text-text-secondary"
+            }`}
             data-testid="hermes-composer-status"
             id="hermes-composer-status"
             role="status"

@@ -87,8 +87,6 @@ def _hermes_command_ledger_status(settings: SettingsDep) -> dict[str, Any]:
         "admission_mode": ready["admission_mode"],
         "admission_workspace_id": ready["admission_workspace_id"],
         "configured_release_workspace_id": (ready["configured_release_workspace_id"]),
-        "candidate_admission_id": ready["candidate_admission_id"],
-        "candidate_admission_digest": ready["candidate_admission_digest"],
         "connector_liveness_ready": bool(ready["connector_liveness_ready"]),
         "connector_liveness_reason": ready["connector_liveness_reason"],
         "connector_worker_id": ready["connector_worker_id"],

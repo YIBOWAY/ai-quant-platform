@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, computed_field, field_validator, model_validator
 
+from quant_system.options.seller_score import SellerScoreBreakdown
+
 StrategyType = Literal["sell_put", "covered_call"]
 BuySideStrategyType = Literal[
     "long_call",
@@ -65,9 +67,7 @@ BuySideRiskWarning = Literal[
 ]
 BuySideLegSide = Literal["long", "short"]
 
-_RISK_ATTRIBUTION_KEYS = frozenset(
-    {"direction", "time", "volatility", "liquidity"}
-)
+_RISK_ATTRIBUTION_KEYS = frozenset({"direction", "time", "volatility", "liquidity"})
 
 
 def _parse_iso_date(value: str, *, field_name: str) -> date:
@@ -118,7 +118,7 @@ class OptionsScreenerConfig(BaseModel):
     top_n: int = Field(default=100, ge=1, le=1000)
     min_mid_price: float = Field(default=0.0, ge=0)
     min_avg_daily_volume: float = Field(default=0.0, ge=0)  # underlying ADV (shares/day)
-    min_market_cap: float = Field(default=0.0, ge=0)        # USD; 0 = disabled
+    min_market_cap: float = Field(default=0.0, ge=0)  # USD; 0 = disabled
     # Phase 13 placeholders. Both default to 0/disabled because they require
     # daily IV history and an earnings calendar that Futu OpenAPI does not expose.
     # The radar scanner (Phase 13) will populate these via persisted snapshots
@@ -126,6 +126,15 @@ class OptionsScreenerConfig(BaseModel):
     min_iv_rank: float = Field(default=0.0, ge=0, le=100)
     avoid_earnings_within_days: int = Field(default=0, ge=0)
     include_rejected: bool = False
+    estimated_round_trip_fee_per_contract: float | None = Field(
+        default=None,
+        ge=0,
+        allow_inf_nan=False,
+        description=(
+            "User-estimated total opening and closing fees in USD per "
+            "100-share contract. None means unknown."
+        ),
+    )
 
 
 class OptionsScreenerCandidate(BaseModel):
@@ -149,6 +158,12 @@ class OptionsScreenerCandidate(BaseModel):
     theta: float | None = None
     vega: float | None = None
     premium_per_contract: float | None = None
+    bid_premium_per_contract: float | None = None
+    bid_annualized_yield: float | None = None
+    fee_adjusted_bid_annualized_yield: float | None = None
+    estimated_round_trip_fee_per_contract: float | None = None
+    screen_passed: bool = False
+    preference_rejection_reasons: list[str] = Field(default_factory=list)
     moneyness: float | None = None
     distance_pct: float | None = None
     days_to_expiry: int | None = None
@@ -160,10 +175,30 @@ class OptionsScreenerCandidate(BaseModel):
     market_cap: float | None = None
     iv_rank: float | None = None
     earnings_date: str | None = None
+    earnings_in_window: bool = False
+    ex_dividend_date: str | None = None
+    ex_dividend_in_window: bool = False
+    dividend_per_share: float | None = None
+    extrinsic_value: float | None = None
+    gross_annualized_yield: float | None = None
+    pop: float | None = None
+    otm_pct: float | None = None
+    breakeven: float | None = None
+    take_profit_50_price: float | None = None
+    manage_at_21_dte: str | None = None
+    expected_value: float | None = None
+    excess_annualized_ev: float | None = None
+    liquidity_factor: float | None = None
+    recommendation_score: float | None = None
+    recommendation_score_model: str | None = None
+    hard_gate_passed: bool = False
+    recommendation_rejection_reasons: list[str] = Field(default_factory=list)
     market_regime: Literal["Normal", "Elevated", "Panic", "Unknown"] | None = None
     market_regime_penalty: float = 0.0
     rating: Literal["Strong", "Watch", "Avoid"]
     notes: list[str] = Field(default_factory=list)
+    seller_score: SellerScoreBreakdown | None = None
+    quote_as_of: str | None = None
 
 
 class OptionsScreenerResult(BaseModel):
@@ -188,9 +223,21 @@ class OptionsScreenerResult(BaseModel):
     market_regime_w_vix: float | None = None
     market_regime_vix_density: float | None = None
     market_regime_term_ratio: float | None = None
+    iv_measure: str | None = None
+    atm30_iv: float | None = None
+    iv_rank: float | None = None
+    iv_quote_as_of: str | None = None
     candidates: list[OptionsScreenerCandidate]
     rejected_count: int = 0
     rejection_summary: dict[str, int] = Field(default_factory=dict)
+    scanned_contract_count: int = 0
+    identity_rejected_count: int = 0
+    hard_gate_rejected_count: int = 0
+    preference_rejected_count: int = 0
+    eligible_count: int = 0
+    watch_candidates: list[OptionsScreenerCandidate] = Field(default_factory=list)
+    requested_min_apr: float = 0.0
+    apr_alternative_max_percent: float | None = None
     assumptions: list[str]
 
 
@@ -322,6 +369,8 @@ class BuySideStrategyScore(BaseModel):
     iv_crash_risk_score: float | None = Field(default=None, ge=0, le=100)
     breakeven_difficulty_score: float | None = Field(default=None, ge=0, le=100)
     theta_pain_score: float | None = Field(default=None, ge=0, le=100)
+    theta_safety_score: float | None = Field(default=None, ge=0, le=100)
+    greek_efficiency_score: float | None = Field(default=None, ge=0, le=100)
     leverage_efficiency: float | None = Field(default=None, ge=0)
     cost_of_convexity: float | None = Field(default=None, ge=0)
 
@@ -355,9 +404,7 @@ class BuySideStrategyCandidate(BaseModel):
     def _validate_risk_attribution(cls, value: dict[str, float]) -> dict[str, float]:
         keys = set(value)
         if keys != _RISK_ATTRIBUTION_KEYS:
-            raise ValueError(
-                "risk_attribution must contain direction, time, volatility, liquidity"
-            )
+            raise ValueError("risk_attribution must contain direction, time, volatility, liquidity")
         for score in value.values():
             if score < 0 or score > 100:
                 raise ValueError("risk_attribution values must be between 0 and 100")

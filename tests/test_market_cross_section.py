@@ -81,6 +81,10 @@ def test_build_cross_section_has_strict_provenance_and_no_valuation_metrics() ->
     forbidden = {"pe", "pb", "erp", "crowding", "risk_list", "valuation"}
     assert forbidden.isdisjoint(overview)
     assert all(forbidden.isdisjoint(row) for row in overview["rows"])
+    risk = overview["risk_observations"]
+    assert risk["status"] == "unavailable"
+    assert all(item["value"] is None for item in risk["observations"])
+    assert risk["unavailable_count"] == 7  # Short price history and absent VIX inputs.
 
 
 def test_rank_is_dynamic_from_returns() -> None:

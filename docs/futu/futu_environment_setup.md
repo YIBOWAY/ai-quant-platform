@@ -29,8 +29,8 @@
 
 官方富途 OpenD 技能已安装到全局 Codex 技能目录：
 
-- `C:\Users\86189\.codex\skills\futuapi`
-- `C:\Users\86189\.codex\skills\install-futu-opend`
+- `C:\Users\<user>\.codex\skills\futuapi`
+- `C:\Users\<user>\.codex\skills\install-futu-opend`
 
 已安装的 `futuapi` 技能同时包含行情与交易辅助脚本。本项目仅使用行情/只读部分。
 

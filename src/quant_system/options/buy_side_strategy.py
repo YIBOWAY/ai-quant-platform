@@ -77,6 +77,23 @@ def generate_buy_side_candidates(
 
     if option_chain.empty:
         return _empty_result(request, ["empty option chain"])
+    missing_volatility_inputs = []
+    if request.iv_rank is None:
+        missing_volatility_inputs.append("iv_rank")
+    if request.historical_volatility is None or request.historical_volatility <= 0:
+        missing_volatility_inputs.append("historical_volatility")
+    if missing_volatility_inputs:
+        raise ValueError(
+            "buy_side_volatility_data_unavailable: missing " + ", ".join(missing_volatility_inputs)
+        )
+    atm_mids_by_expiry = resolve_atm_straddle_mids(
+        option_chain,
+        spot_price=request.spot_price,
+    )
+    if not atm_mids_by_expiry:
+        raise ValueError(
+            "buy_side_volatility_data_unavailable: missing same-expiry ATM call/put midpoint"
+        )
     calls = _prepare_calls(option_chain, request)
     if calls.empty:
         return _empty_result(request, ["no usable call options"])
@@ -86,12 +103,43 @@ def generate_buy_side_candidates(
         if request.strategy_types is not None
         else _strategy_types_for_view(request.view_type)
     )
+    relevant_expiries: set[str] = set()
+    for strategy_type in strategy_types:
+        min_dte, max_dte = _dte_range(strategy_type, request)
+        relevant_expiries.update(
+            calls.loc[
+                (calls["_dte"] >= min_dte) & (calls["_dte"] <= max_dte),
+                "expiry",
+            ].astype(str)
+        )
+    missing_atm_expiries = sorted(relevant_expiries - atm_mids_by_expiry.keys())
+    if missing_atm_expiries:
+        raise ValueError(
+            "buy_side_volatility_data_unavailable: missing same-expiry ATM "
+            "call/put midpoint for " + ", ".join(missing_atm_expiries)
+        )
     candidates: list[BuySideStrategyCandidate] = []
     for strategy_type in strategy_types:
         if strategy_type in {"long_call", "leaps_call"}:
-            candidates.extend(_long_call_candidates(calls, request, strategy_type, market_regime))
+            candidates.extend(
+                _long_call_candidates(
+                    calls,
+                    request,
+                    strategy_type,
+                    market_regime,
+                    atm_mids_by_expiry,
+                )
+            )
         else:
-            candidates.extend(_spread_candidates(calls, request, strategy_type, market_regime))
+            candidates.extend(
+                _spread_candidates(
+                    calls,
+                    request,
+                    strategy_type,
+                    market_regime,
+                    atm_mids_by_expiry,
+                )
+            )
 
     ranked = sorted(
         candidates,
@@ -151,18 +199,67 @@ def _prepare_calls(option_chain: pd.DataFrame, request: BuySideStrategyRequest) 
     if frame.empty:
         return frame
     frame["expiry"] = frame["expiry"].astype(str)
-    frame["_dte"] = frame.get("option_expiry_date_distance")
-    if frame["_dte"].isna().all():
-        frame["_dte"] = frame["expiry"].map(
-            lambda value: _days_to_expiry(value, request.as_of_date)
-        )
+    frame["_dte"] = frame["expiry"].map(lambda value: _days_to_expiry(value, request.as_of_date))
     frame["_dte"] = pd.to_numeric(frame["_dte"], errors="coerce")
     frame["strike"] = pd.to_numeric(frame["strike"], errors="coerce")
-    frame["delta"] = pd.to_numeric(frame.get("delta"), errors="coerce")
+    required_metrics = (
+        "implied_volatility",
+        "delta",
+        "gamma",
+        "theta",
+        "vega",
+        "open_interest",
+        "volume",
+    )
+    for field in required_metrics:
+        frame[field] = pd.to_numeric(frame.get(field), errors="coerce")
     frame["_mid"] = frame.apply(lambda row: _mid(row.get("bid"), row.get("ask")), axis=1)
-    return frame.dropna(
-        subset=["symbol", "expiry", "strike", "_dte", "_mid"]
-    ).reset_index(drop=True)
+    frame = frame.dropna(
+        subset=[
+            "symbol",
+            "expiry",
+            "strike",
+            "_dte",
+            "_mid",
+            *required_metrics,
+        ]
+    )
+    frame = frame.loc[
+        (frame["implied_volatility"] > 0) & (frame["open_interest"] > 0) & (frame["volume"] > 0)
+    ]
+    return frame.reset_index(drop=True)
+
+
+def resolve_atm_straddle_mids(
+    option_chain: pd.DataFrame,
+    *,
+    spot_price: float,
+) -> dict[str, tuple[float, float]]:
+    required_columns = ("option_type", "expiry", "strike", "bid", "ask")
+    missing_columns = [column for column in required_columns if column not in option_chain.columns]
+    if missing_columns:
+        raise ValueError(
+            "buy_side_volatility_data_unavailable: missing required option-chain "
+            "columns: " + ", ".join(missing_columns)
+        )
+    frame = option_chain.copy()
+    frame["option_type"] = frame["option_type"].astype(str).str.upper()
+    frame["expiry"] = frame["expiry"].astype(str)
+    frame["strike"] = pd.to_numeric(frame["strike"], errors="coerce")
+    frame["_mid"] = frame.apply(lambda row: _mid(row.get("bid"), row.get("ask")), axis=1)
+    frame = frame.dropna(subset=["expiry", "strike", "_mid"])
+    frame = frame.loc[frame["_mid"] > 0].copy()
+    resolved: dict[str, tuple[float, float]] = {}
+    for expiry, group in frame.groupby("expiry"):
+        calls = group.loc[group["option_type"] == "CALL", ["strike", "_mid"]]
+        puts = group.loc[group["option_type"] == "PUT", ["strike", "_mid"]]
+        pairs = calls.merge(puts, on="strike", suffixes=("_call", "_put"))
+        if pairs.empty:
+            continue
+        pairs["_distance"] = (pairs["strike"] - spot_price).abs()
+        row = pairs.sort_values(["_distance", "strike"]).iloc[0]
+        resolved[str(expiry)] = (float(row["_mid_call"]), float(row["_mid_put"]))
+    return resolved
 
 
 def _strategy_types_for_view(view_type: BuySideViewType) -> list[BuySideStrategyType]:
@@ -197,7 +294,7 @@ def _delta_range(
     request: BuySideStrategyRequest,
 ) -> tuple[float, float]:
     if strategy_type in {"leaps_call", "leaps_call_spread"}:
-        return 0.65, 0.85
+        return 0.75, 0.85
     if request.view_type == "short_term_speculative_bullish":
         return 0.30, 0.60
     return 0.45, 0.70
@@ -208,14 +305,16 @@ def _long_call_candidates(
     request: BuySideStrategyRequest,
     strategy_type: BuySideStrategyType,
     market_regime: VixRegimeSnapshot | None,
+    atm_mids_by_expiry: dict[str, tuple[float, float]],
 ) -> list[BuySideStrategyCandidate]:
     min_dte, max_dte = _dte_range(strategy_type, request)
     min_delta, max_delta = _delta_range(strategy_type, request)
     delta_abs = calls["delta"].abs()
+    delta_allowed = (delta_abs >= min_delta) & (delta_abs <= max_delta)
+    if strategy_type not in {"leaps_call", "leaps_call_spread"}:
+        delta_allowed = delta_abs.isna() | delta_allowed
     frame = calls.loc[
-        (calls["_dte"] >= min_dte)
-        & (calls["_dte"] <= max_dte)
-        & (delta_abs.isna() | ((delta_abs >= min_delta) & (delta_abs <= max_delta)))
+        (calls["_dte"] >= min_dte) & (calls["_dte"] <= max_dte) & delta_allowed
     ].copy()
     candidates = []
     for row in frame.to_dict(orient="records"):
@@ -227,10 +326,16 @@ def _long_call_candidates(
             continue
         metrics = score_buy_side_contract(
             leg,
+            atm_call_mid=(atm_mids_by_expiry.get(leg.expiry) or (None, None))[0],
+            atm_put_mid=(atm_mids_by_expiry.get(leg.expiry) or (None, None))[1],
             user_target_move_pct=request.target_price / request.spot_price - 1,
             iv_rank=request.iv_rank,
             historical_volatility=request.historical_volatility,
-            iv_crush_vol_points=request.expected_iv_change_vol_points or -5.0,
+            iv_crush_vol_points=(
+                -5.0
+                if request.expected_iv_change_vol_points is None
+                else request.expected_iv_change_vol_points
+            ),
             event_risk=request.event_risk != "none",
             now=None,
         )
@@ -251,15 +356,17 @@ def _spread_candidates(
     request: BuySideStrategyRequest,
     strategy_type: BuySideStrategyType,
     market_regime: VixRegimeSnapshot | None,
+    atm_mids_by_expiry: dict[str, tuple[float, float]],
 ) -> list[BuySideStrategyCandidate]:
     if not request.allow_capped_upside:
         return []
     min_dte, max_dte = _dte_range(strategy_type, request)
+    min_delta, max_delta = _delta_range(strategy_type, request)
     frame = calls.loc[(calls["_dte"] >= min_dte) & (calls["_dte"] <= max_dte)].copy()
     candidates = []
     for expiry, group in frame.groupby("expiry"):
         del expiry
-        longs = group.loc[(group["delta"].abs() >= 0.45) & (group["delta"].abs() <= 0.70)]
+        longs = group.loc[(group["delta"].abs() >= min_delta) & (group["delta"].abs() <= max_delta)]
         shorts = group.loc[(group["delta"].abs() >= 0.20) & (group["delta"].abs() <= 0.40)]
         for long_row in longs.to_dict(orient="records"):
             for short_row in shorts.to_dict(orient="records"):
@@ -272,17 +379,23 @@ def _spread_candidates(
                 max_profit_per_share = width - net_debit
                 if net_debit <= 0 or max_profit_per_share <= 0:
                     continue
-                if net_debit >= width * 0.90:
+                if net_debit > width * 0.50:
                     continue
                 max_loss = net_debit * long_leg.contract_size
                 if request.max_loss_budget is not None and max_loss > request.max_loss_budget:
                     continue
                 metrics = score_buy_side_contract(
                     long_leg,
+                    atm_call_mid=(atm_mids_by_expiry.get(long_leg.expiry) or (None, None))[0],
+                    atm_put_mid=(atm_mids_by_expiry.get(long_leg.expiry) or (None, None))[1],
                     user_target_move_pct=request.target_price / request.spot_price - 1,
                     iv_rank=request.iv_rank,
                     historical_volatility=request.historical_volatility,
-                    iv_crush_vol_points=request.expected_iv_change_vol_points or -5.0,
+                    iv_crush_vol_points=(
+                        -5.0
+                        if request.expected_iv_change_vol_points is None
+                        else request.expected_iv_change_vol_points
+                    ),
                     event_risk=request.event_risk != "none",
                     now=None,
                 )
@@ -401,7 +514,6 @@ def _candidate_from_spread(
         max_loss=max_loss,
         max_gain=max_profit,
     )
-    gross += _volatility_structure_bonus(request, naked=False)
     adjusted, penalty = _apply_regime(gross, strategy_type, market_regime)
     warnings = _candidate_warnings(
         metrics=metrics,

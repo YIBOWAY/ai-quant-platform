@@ -83,8 +83,7 @@
     "run_submit_fields": [
       "input",
       "session_id",
-      "metadata",
-      "instructions"
+      "metadata"
     ],
     "platform_must_not_send": [
       "conversation_history",

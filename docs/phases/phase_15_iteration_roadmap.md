@@ -3,7 +3,7 @@
 > ⚠️ 迭代治理已移交 Hermes-quant-agent（D-18/D-24，2026-07-03）。
 > 本文不再是 `ai-quant-platform` 的独立 active roadmap，仅保留素材价值：
 > P0 安全边界永久保持；P1/P2/P3/P4/P5 由
-> `/Users/sunyibo/programs/Hermes-quant-agent/docs/design/2026-07-01-roadmap-phases-0b-4.md`
+> [docs/design/2026-07-01-roadmap-phases-0b-4.md](https://github.com/YIBOWAY/Hermes-quant-agent/blob/main/docs/design/2026-07-01-roadmap-phases-0b-4.md)
 > 按需求拉动，其中 P4/P5 由 Hermes 工作台承接。
 
 本文用于回答一个实际问题：当前平台已经有数据、因子、回测、实验、期权、

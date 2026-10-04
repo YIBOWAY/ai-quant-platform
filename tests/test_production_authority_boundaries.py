@@ -97,7 +97,6 @@ def test_default_workspace_does_not_project_process_local_authorities() -> None:
     )
 
     assert snapshot.approvals == ()
-    assert snapshot.gates == ()
     assert snapshot.tasks == ()
     assert snapshot.attempts == ()
     assert snapshot.runs == ()
@@ -106,9 +105,6 @@ def test_default_workspace_does_not_project_process_local_authorities() -> None:
     assert snapshot.public_cutovers == ()
     for name in (
         "command_approval",
-        "gate_1",
-        "gate_2",
-        "gate_3",
         "task",
         "attempt",
         "run",
@@ -143,15 +139,6 @@ def test_default_workspace_does_not_project_process_local_authorities() -> None:
             "task_ref": None,
             "attempt_ref": None,
             "platform_job_ref": None,
-        },
-        {
-            "schema_version": 1,
-            "kind": "gate1.formula_source.confirm",
-            "client_action_id": "act-production-gate",
-            "workspace": {"workspace_id": WORKSPACE_ID},
-            "task_ref": "task:factor.1",
-            "reviewed_source_sha256": DIGEST,
-            "confirmation_note": "production must refuse process-local Gate 1",
         },
         {
             "schema_version": 1,
@@ -201,12 +188,7 @@ def test_default_workspace_rejects_process_local_mutations(
     receipt = workspace.act(str(ROOT_USER_ID), action)
 
     assert receipt.status == "unavailable"
-    if action["kind"] == "gate1.formula_source.confirm":
-        # Paper Gates now have a production PostgreSQL authority + strict HQA
-        # port. With database disabled this is an honest durable-authority
-        # outage, not a fallback to the process-local test authority.
-        assert receipt.reason_code == "paper_gate_authority_unavailable"
-    elif action["kind"] == "public.cutover.open":
+    if action["kind"] == "public.cutover.open":
         # Production cutover mutation has one control plane: the PostgreSQL
         # ReleaseAuthority operator CLI, never this legacy browser action.
         assert receipt.reason_code == "release_operator_cli_required"

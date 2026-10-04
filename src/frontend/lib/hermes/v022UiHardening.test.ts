@@ -45,7 +45,8 @@ describe("v0.2.2 Hermes UI hardening", () => {
     expect(html).toMatch(
       /<a class="[^"]*app-touch-target[^"]*min-h-\[44px\][^"]*" href="\/en\/hermes\/results">View all →<\/a>/,
     );
-    expect(html).toContain("-my-[13px]");
+    // A negative vertical margin made the 44px link cover the result below it.
+    expect(html).not.toContain("-my-[13px]");
   });
 
   it("fails closed when an older persisted-session response omits fork_context", async () => {

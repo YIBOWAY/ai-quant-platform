@@ -185,15 +185,22 @@ def compute_fear_score(
         for key, weight in weights.items()
         if components[key] is not None
     ]
-    score = _weighted(available) if available else 0.0
+    score = _weighted(available) if available else None
+    missing = [key for key, value in components.items() if value is None]
     return {
         "success": True,
-        "fear_score": round(score, 4),
-        "tier": _fear_tier(score),
+        "fear_score": round(score, 4) if not missing else None,
+        "partial_score": round(score, 4) if score is not None else None,
+        "status": "complete" if not missing else "partial" if available else "unavailable",
+        "available_inputs": len(available),
+        "total_inputs": len(components),
+        "missing_inputs": missing,
+        "tier": _fear_tier(score) if not missing else "insufficient_inputs",
         "components": components,
-        "bull_put_spread_signal": score >= 60,
+        "bull_put_spread_signal": not missing and score >= 60,
         "assumptions": [
             "Fear score is computed from locally supplied inputs.",
+            "A partial score describes available inputs only, not the complete fear model.",
             "It is a research signal, not financial advice.",
         ],
     }
@@ -249,6 +256,8 @@ def compute_market_sentiment(
         "breadth": _component(advance_decline_ratio, low=1.5, high=0.5, inverse=True),
         "trend": _component(percent_above_200dma, low=70, high=25, inverse=True),
     }
+    if all(value is None for value in components.values()):
+        raise ValueError("insufficient_inputs")
     score = _weighted(
         [
             (components["vix"], 0.35),
@@ -257,13 +266,20 @@ def compute_market_sentiment(
             (components["trend"], 0.20),
         ]
     )
+    missing = [key for key, value in components.items() if value is None]
     return {
         "success": True,
-        "sentiment_score": round(score, 4),
-        "regime": _sentiment_regime(score),
+        "sentiment_score": round(score, 4) if not missing else None,
+        "partial_score": round(score, 4),
+        "status": "partial" if missing else "complete",
+        "available_inputs": len(components) - len(missing),
+        "total_inputs": len(components),
+        "missing_inputs": missing,
+        "regime": _sentiment_regime(score) if not missing else "insufficient_inputs",
         "components": components,
         "assumptions": [
             "Sentiment is a local composite of supplied breadth and volatility inputs.",
+            "A partial score describes available inputs only, not a market-wide regime.",
             "It is not an investment recommendation.",
         ],
     }
@@ -294,6 +310,8 @@ def estimate_earnings_iv_crush(
         "success": True,
         "ticker": ticker.upper().strip(),
         "sample_count": len(drops),
+        "status": "calculated_from_supplied_history" if drops else "unavailable",
+        "reason": None if drops else "event_aligned_iv_history_missing",
         "average_crush_pct": round(avg_crush * 100, 4) if avg_crush is not None else None,
         "expected_post_event_iv": (
             round(expected_post_iv, 6) if expected_post_iv is not None else None
@@ -302,6 +320,8 @@ def estimate_earnings_iv_crush(
         "strategy_tag": _earnings_strategy_tag(avg_crush, active_iv),
         "assumptions": [
             "Historical crush uses supplied pre/post IV observations.",
+            "An ATM30 daily-IV cache without matched earnings events "
+            "is not pre/post earnings history.",
             "This workflow is read-only and approximate.",
         ],
     }
@@ -317,37 +337,87 @@ def build_hedge_advisor(
     contracts: list[dict[str, Any]],
 ) -> dict[str, Any]:
     del purpose
+    if not isinstance(shares, int) or isinstance(shares, bool) or shares <= 0:
+        raise ValueError("positive_integer_shares_required")
+    if (not isinstance(cost_basis, (int, float)) or isinstance(cost_basis, bool)
+            or not math.isfinite(cost_basis) or cost_basis <= 0
+            or not isinstance(spot, (int, float)) or isinstance(spot, bool)
+            or not math.isfinite(spot) or spot <= 0):
+        raise ValueError("positive_finite_hedge_prices_required")
     situation = _holding_situation(cost_basis=cost_basis, spot=spot)
     puts = _contracts_by_type(contracts, "PUT")
     calls = _contracts_by_type(contracts, "CALL")
     put = _nearest_strike(puts, spot * 0.90)
     call = _nearest_strike(calls, spot * 1.10)
+    rejected_legs: list[dict[str, Any]] = []
+    put, rejection = _validate_hedge_leg(put, role="protective_put")
+    if rejection is not None:
+        rejected_legs.append(rejection)
+    call, rejection = _validate_hedge_leg(call, role="covered_call")
+    if rejection is not None:
+        rejected_legs.append(rejection)
+    put_count = (shares + 99) // 100
+    call_count = shares // 100
+    debit = _mid(put) if put is not None else None
+    credit = _mid(call) if call is not None else None
+    debit = debit if debit is not None and debit >= 0 else None
+    credit = credit if credit is not None and credit >= 0 else None
     structures = []
     if put is not None:
         structures.append(
             {
                 "structure": "long_put",
-                "contracts_needed": max(math.ceil(shares / 100), 1),
+                "contracts_needed": put_count,
+                "put_contracts": put_count,
+                "put_coverage_shares": put_count * 100,
+                "excess_put_coverage_shares": put_count * 100 - shares,
                 "protective_leg": put,
-                "estimated_debit": _mid(put) * 100 if _mid(put) is not None else None,
-                "research_note": "Downside hedge candidate based on nearest 90% strike put.",
+                "estimated_debit_per_contract": (
+                    round(debit * 100, 2) if debit is not None else None
+                ),
+                "estimated_debit": round(debit * 100 * put_count, 2) if debit is not None else None,
+                "cost_scope": "total_structure_excluding_fees",
+                "research_note": (
+                    f"Buy {put_count} standard put contracts for {shares} shares; "
+                    f"put coverage exceeds holdings by {put_count * 100 - shares} shares. "
+                    "estimated_debit is the total, not the per-contract cost."
+                ),
             }
         )
-    if put is not None and call is not None:
-        debit = _mid(put)
-        credit = _mid(call)
+    if put is not None and call is not None and call_count > 0:
         structures.append(
             {
                 "structure": "collar",
-                "contracts_needed": max(math.ceil(shares / 100), 1),
+                "contracts_needed": call_count,
+                "put_contracts": put_count,
+                "call_contracts": call_count,
+                "paired_contracts": call_count,
+                "additional_put_contracts": put_count - call_count,
+                "put_coverage_shares": put_count * 100,
+                "excess_put_coverage_shares": put_count * 100 - shares,
+                "call_covered_shares": call_count * 100,
+                "uncapped_shares": shares - call_count * 100,
                 "protective_leg": put,
                 "offset_leg": call,
+                "estimated_debit_per_put": round(debit * 100, 2) if debit is not None else None,
+                "estimated_credit_per_call": round(credit * 100, 2) if credit is not None else None,
+                "estimated_net_debit_per_pair": (
+                    round((debit - credit) * 100, 2)
+                    if debit is not None and credit is not None else None
+                ),
                 "estimated_net_debit": (
-                    round((debit - credit) * 100, 4)
+                    round(debit * 100 * put_count - credit * 100 * call_count, 2)
                     if debit is not None and credit is not None
                     else None
                 ),
-                "research_note": "Collar candidate pairs downside put with upside call cap.",
+                "cost_scope": "total_structure_excluding_fees",
+                "research_note": (
+                    f"Buy {put_count} puts and sell {call_count} covered calls. "
+                    f"The puts cover {put_count * 100 - shares} shares beyond holdings; "
+                    f"{shares - call_count * 100} held shares have no call cap. "
+                    "contracts_needed counts paired sets; additional puts are listed separately. "
+                    "estimated_net_debit includes every leg, not just one pair."
+                ),
             }
         )
     return {
@@ -355,8 +425,16 @@ def build_hedge_advisor(
         "ticker": ticker.upper().strip(),
         "situation": situation,
         "structures": structures,
+        "rejected_legs": rejected_legs,
         "assumptions": [
             "Hedge advisor uses supplied holdings and option contracts only.",
+            "Only positive integer share holdings and standard 100-share contracts are supported. "
+            "An omitted or null contract size assumes a standard contract; "
+            "a leg with an unusable or explicit nonstandard size is dropped and reported "
+            "in rejected_legs instead of failing the whole request.",
+            "Put coverage rounds up; covered-call size rounds down and never exceeds held shares.",
+            "Estimates use supplied bid/ask midpoints, or a valid last quote when absent, "
+            "and exclude fees, slippage and exercise effects.",
             "The output is not an order ticket and cannot submit trades.",
         ],
     }
@@ -488,17 +566,21 @@ def research_health_check(
     active_today = date.fromisoformat(today) if today else date.today()
     stale = []
     missing_thesis = []
+    missing_updated_at = []
     for profile in profiles:
         ticker = str(profile.get("ticker", "")).upper().strip()
         raw_updated = profile.get("updated_at")
-        if ticker and not str(profile.get("thesis", "")).strip():
+        if ticker and not str(profile.get("thesis") or "").strip():
             missing_thesis.append(ticker)
-        if not ticker or raw_updated is None:
+        if not ticker:
             continue
         try:
-            updated = date.fromisoformat(str(raw_updated))
+            updated = date.fromisoformat(str(raw_updated)[:10])
         except ValueError:
-            stale.append(ticker)
+            missing_updated_at.append(ticker)
+            continue
+        if updated > active_today:
+            missing_updated_at.append(ticker)
             continue
         if (active_today - updated).days > stale_after_days:
             stale.append(ticker)
@@ -507,11 +589,18 @@ def research_health_check(
     health_score = _clip(100 - issue_count / total * 50, 0, 100)
     return {
         "success": True,
-        "health_score": round(health_score, 4),
+        "health_score": round(health_score, 4) if profiles and not missing_updated_at else None,
+        "status": (
+            "no_saved_profile" if not profiles
+            else "incomplete_metadata" if missing_updated_at else "checked"
+        ),
+        "profile_count": len(profiles),
         "stale_profiles": sorted(set(stale)),
         "missing_thesis": sorted(set(missing_thesis)),
+        "missing_updated_at": sorted(set(missing_updated_at)),
         "assumptions": [
-            "Health check only inspects supplied local profile metadata.",
+            "This is a profile completeness check, "
+            "not a company, strategy or investment quality score.",
             "It does not fetch news or account data.",
         ],
     }
@@ -525,7 +614,8 @@ def _score_contract(
 ) -> dict[str, Any]:
     mid = _mid(contract)
     spread_pct = _spread_pct(contract)
-    iv = _normalize_iv(_safe_float(contract.get("implied_volatility")))
+    raw_iv = _safe_float(contract.get("implied_volatility"))
+    iv = _normalize_iv(raw_iv)
     volume = _safe_float(contract.get("volume"))
     open_interest = _safe_float(contract.get("open_interest"))
     delta = _safe_float(contract.get("delta"))
@@ -533,6 +623,7 @@ def _score_contract(
         mid=mid,
         spread_pct=spread_pct,
         iv=iv,
+        iv_present=raw_iv is not None,
         volume=volume,
         open_interest=open_interest,
     )
@@ -655,6 +746,7 @@ def _contract_warnings(
     mid: float | None,
     spread_pct: float | None,
     iv: float | None,
+    iv_present: bool,
     volume: float | None,
     open_interest: float | None,
 ) -> list[str]:
@@ -664,7 +756,10 @@ def _contract_warnings(
     if spread_pct is not None and spread_pct > 0.25:
         warnings.append("wide_spread")
     if iv is None:
-        warnings.append("missing_iv")
+        # Distinguish "no IV field at all" from "an IV was supplied but is
+        # unusable" (zero, negative, non-finite) so a data-quality problem is
+        # not silently reported as mere absence.
+        warnings.append("invalid_iv" if iv_present else "missing_iv")
     if (volume or 0.0) <= 0:
         warnings.append("zero_volume")
     if (open_interest or 0.0) <= 0:
@@ -820,6 +915,54 @@ def _holding_situation(*, cost_basis: float, spot: float) -> str:
     return "normal"
 
 
+def _validate_hedge_leg(
+    contract: dict[str, Any] | None,
+    *,
+    role: str,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """Return (leg, rejection). A rejected leg is dropped, never raised."""
+    if contract is None:
+        return None, None
+    for field in ("contract_size", "multiplier"):
+        if field not in contract:
+            continue
+        value = contract[field]
+        if value is None:
+            # Missing/null size means a standard contract; a null contract_size
+            # arrives from Futu rows whose size field coerced to NaN and must
+            # not fail the whole request.
+            continue
+        parsed = _safe_float(value)
+        if (
+            isinstance(value, bool)
+            or parsed is None
+            or not math.isfinite(parsed)
+            or parsed <= 0
+        ):
+            reason = "invalid_contract_size"
+        elif parsed != 100:
+            reason = "nonstandard_option_contract_unsupported"
+        else:
+            continue
+        return None, {
+            "role": role,
+            "field": field,
+            "value": _serializable_reject_value(value),
+            "reason": reason,
+            "symbol": str(contract.get("symbol", "")),
+        }
+    return contract, None
+
+
+def _serializable_reject_value(value: Any) -> Any:
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    parsed = _safe_float(value)
+    if parsed is None or not math.isfinite(parsed):
+        return str(value)
+    return parsed
+
+
 def _contracts_by_type(contracts: list[dict[str, Any]], option_type: str) -> list[dict[str, Any]]:
     return [
         contract
@@ -875,9 +1018,13 @@ def _rating(score: float) -> str:
 
 def _normalize_iv(value: float | None) -> float | None:
     parsed = _safe_float(value)
-    if parsed is None:
+    if parsed is None or not math.isfinite(parsed) or parsed <= 0:
         return None
-    return parsed / 100.0 if parsed > 5 else parsed
+    # Local calculator inputs are ratios. The Futu boundary converts percent
+    # once before calling these helpers; magnitude cannot identify a unit.
+    # Zero, negative and non-finite values are rejected as unusable rather
+    # than scored as if they were a real (perfectly cheap) volatility.
+    return parsed
 
 
 def _average(values: list[float | None]) -> float:

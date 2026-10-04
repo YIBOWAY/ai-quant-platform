@@ -76,6 +76,7 @@ describe("buildHermesTodayModel", () => {
         kind: "backtest",
         resourceId: "backtest-wave3-001",
         displayTitle: "AAPL momentum backtest",
+        freshness: "fresh",
       }),
     ]);
   });
@@ -179,11 +180,11 @@ describe("buildHermesTodayModel", () => {
       results: emptyResults,
     });
     expect(model.state).toBe("normal");
-    expect(model.attention.map((item) => item.kind)).toEqual(["approval"]);
+    expect(model.attention).toEqual([]);
     expect(model.automation.exceptions).toEqual([]);
   });
 
-  it("promotes only failed/stale jobs and research approvals to attention", () => {
+  it("promotes only failed/stale jobs to attention", () => {
     const model = buildHermesTodayModel({
       artifacts: degradedArtifacts,
       candidates: {
@@ -206,10 +207,7 @@ describe("buildHermesTodayModel", () => {
       results: emptyResults,
     });
     expect(model.state).toBe("degraded");
-    expect(model.attention.map((item) => item.kind)).toEqual([
-      "approval",
-      "stale",
-    ]);
+    expect(model.attention.map((item) => item.kind)).toEqual(["stale"]);
     expect(model.automation.exceptions).toHaveLength(1);
   });
 

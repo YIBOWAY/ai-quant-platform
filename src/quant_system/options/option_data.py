@@ -6,6 +6,8 @@ from typing import Literal, cast
 import pandas as pd
 from pydantic import BaseModel, Field
 
+from quant_system.options.iv_units import to_ratio
+
 OptionSide = Literal["CALL", "PUT"]
 
 
@@ -166,9 +168,9 @@ def _mid_price(bid: float | None, ask: float | None) -> float | None:
 
 
 def _normalize_volatility(value: float | None) -> float | None:
-    if value is None:
-        return None
-    return value / 100 if value > 5 else value
+    # Provider quotes reach this normalizer already expressed as the canonical
+    # ratio; keep unusable values missing instead of guessing a unit.
+    return to_ratio(value)
 
 
 def _is_stale_quote(

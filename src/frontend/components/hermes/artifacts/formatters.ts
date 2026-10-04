@@ -73,6 +73,14 @@ export function humanizeReasonCode(code: string, locale: Locale) {
           historical_relationship_not_forecast: "历史关系并非预测",
           partial_series_gap: "序列存在缺口",
           degraded_feed: "降级 feed",
+          "no risk policy thresholds configured": "未配置风险阈值",
+          no_risk_policy_thresholds_configured: "未配置风险阈值",
+          "account base currency only no fx conversion": "仅按账户本位币统计，未做汇率换算",
+          account_base_currency_only_no_fx_conversion: "仅按账户本位币统计，未做汇率换算",
+          "price freshness age unavailable": "无法确认价格时效",
+          price_freshness_age_unavailable: "无法确认价格时效",
+          "current exposure uses single snapshot": "当前敞口基于单一快照",
+          current_exposure_uses_single_snapshot: "当前敞口基于单一快照",
         }
       : {
           never_run: "Never run",
@@ -85,7 +93,36 @@ export function humanizeReasonCode(code: string, locale: Locale) {
           degraded_feed: "Degraded feed",
         };
   if (code in labels) return labels[code as keyof typeof labels];
+  if (locale === "zh" && !/[\u3400-\u9fff]/u.test(code)) return "其他技术限制";
   return code.replaceAll("_", " ");
+}
+
+export function artifactStatusLabel(status: string, locale: Locale): string {
+  const labels: Record<string, string> =
+    locale === "zh"
+      ? {
+          available: "可用",
+          degraded: "已降级",
+          unavailable: "不可用",
+          approved: "已批准",
+          completed: "已完成",
+          fresh: "当前有效",
+          stale: "已过期",
+          failed: "失败",
+          pending: "待处理",
+        }
+      : {
+          available: "Available",
+          degraded: "Degraded",
+          unavailable: "Unavailable",
+          approved: "Approved",
+          completed: "Completed",
+          fresh: "Current",
+          stale: "Stale",
+          failed: "Failed",
+          pending: "Pending",
+        };
+  return labels[status] ?? (locale === "zh" ? "状态待确认" : status);
 }
 
 export function qualityTone(quality: string): Tone {

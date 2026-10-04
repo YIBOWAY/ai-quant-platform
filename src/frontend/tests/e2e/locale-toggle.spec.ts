@@ -15,13 +15,13 @@ test("locale toggle preserves query and hash on Hermes", async ({ page }) => {
   await expect(page).toHaveURL(
     /\/zh\/hermes\?source=bookmark&tag=a&tag=b#approval$/,
   );
-  await expect(page.getByRole("link", { name: "Hermes 工作台", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Hermes 助手", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "切换到英文" })).toBeVisible();
 });
 
 test("locale-prefixed settings route renders Chinese shell", async ({ page }) => {
   await page.goto("/zh/settings", { waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("link", { name: "Hermes 工作台", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Hermes 助手", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "设置", exact: true })).toBeVisible();
 });
 

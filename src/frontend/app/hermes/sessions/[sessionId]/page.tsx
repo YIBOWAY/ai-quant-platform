@@ -28,6 +28,16 @@ export default async function HermesSessionDetailPage({
     history.read_status === "available";
   const forkContext = detail.fork_context;
   const displayMessages = displayableTranscriptMessages(history.messages);
+  // Detail and messages endpoints can surface the identical warning (e.g.
+  // integration_disabled when the gateway is off); dedupe by code:message so
+  // the list shows each distinct warning once and keys stay unique.
+  const allWarnings = [...detail.warnings, ...history.warnings];
+  const uniqueWarnings = allWarnings.filter(
+    (warning, index) =>
+      allWarnings.findIndex(
+        (item) => item.code === warning.code && item.message === warning.message,
+      ) === index,
+  );
 
   return (
     <section
@@ -42,9 +52,9 @@ export default async function HermesSessionDetailPage({
       >
         <Link
           className="app-touch-target inline-flex items-center font-body-sm text-info underline-offset-2 hover:underline"
-          href={localizePath("/hermes/sessions", locale)}
+          href={localizePath("/hermes", locale)}
         >
-          {isZh ? "← 返回会话记录" : "← Back to sessions"}
+          {isZh ? "← 返回 Hermes 助手" : "← Back to Hermes Assistant"}
         </Link>
         <h1 className="font-headline-lg text-text-primary" id="hermes-session-detail-title">
           {detail.session?.title || detail.session?.preview || (isZh ? "Hermes 会话" : "Hermes session")}
@@ -57,7 +67,7 @@ export default async function HermesSessionDetailPage({
           <p className="font-body-sm font-semibold text-text-primary">
             {isZh ? "无法读取此会话" : "Unable to read this session"}
           </p>
-          {[...detail.warnings, ...history.warnings].map((warning) => (
+          {uniqueWarnings.map((warning) => (
             <p className="mt-2 font-data-mono text-xs text-warning" key={`${warning.code}:${warning.message}`}>
               {warning.code}
             </p>

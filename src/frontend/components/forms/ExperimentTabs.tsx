@@ -19,7 +19,7 @@ import { providerFromExperimentSource } from "@/lib/experimentRunPayload";
 import type { ExperimentStrategySummary } from "@/lib/experimentSummary";
 import { summarizeExperimentStrategy } from "@/lib/experimentSummary";
 import { useIsHydrated } from "@/lib/hydration";
-import type { Locale } from "@/lib/locale";
+import { localizePath, type Locale } from "@/lib/locale";
 
 const EMPTY_ROWS: PreviewRecord[] = [];
 
@@ -141,7 +141,7 @@ export function ExperimentTabs({ detail, experiment, locale = "en" }: Experiment
   );
   const dataSource = experimentDataSource(agentSummary);
   const dataProvider = providerFromExperimentSource(dataSource);
-  const backtestHref = buildBacktestHref(config, bestRun, dataSource);
+  const backtestHref = localizePath(buildBacktestHref(config, bestRun, dataSource), locale);
   const strategySummary = summarizeExperimentStrategy(config);
   const dataSourceBadgeClass =
     dataProvider === "sample"

@@ -1,14 +1,11 @@
-"""Transactional D-34 Artifact Registry and paper canary lifecycle."""
+"""Transactional dual-engine artifact registry."""
 
 from __future__ import annotations
 
 import re
 from dataclasses import asdict, dataclass
 from datetime import datetime
-from decimal import Decimal
 from typing import Protocol
-from uuid import uuid4
-from zoneinfo import ZoneInfo
 
 import psycopg
 from psycopg.types.json import Jsonb
@@ -22,7 +19,6 @@ _WORKSPACE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 _COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 _IMAGE_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
-_LOCAL_TIMEZONE = ZoneInfo("Asia/Shanghai")
 
 
 class RegistryAuthorityError(RuntimeError):
@@ -49,16 +45,14 @@ class D34ComparisonSummary:
             "reason_codes": list(self.reason_codes),
             "daily_return_correlation": self.daily_return_correlation,
             "terminal_nav_difference_bps": self.terminal_nav_difference_bps,
-            "max_symbol_weight_difference_bps": (
-                self.max_symbol_weight_difference_bps
-            ),
+            "max_symbol_weight_difference_bps": (self.max_symbol_weight_difference_bps),
         }
 
 
 @dataclass(frozen=True)
 class D34Artifact:
     artifact_id: str
-    mandate_id: str
+    resource_envelope_id: str
     workspace_id: str
     status: str
     qualification_scope: str
@@ -80,47 +74,18 @@ class D34Artifact:
 
     def to_public_dict(self) -> dict[str, object]:
         return {
-            "contract": "hqa.d34_artifact/v1",
+            "contract": "hqa.d34_artifact/v2",
             **self.__dict__,
             "comparison": (
-                self.comparison.to_public_dict()
-                if self.comparison is not None
-                else None
+                self.comparison.to_public_dict() if self.comparison is not None else None
             ),
-        }
-
-
-@dataclass(frozen=True)
-class D34Canary:
-    canary_id: str
-    artifact_id: str
-    mandate_id: str
-    workspace_id: str
-    sleeve_id: str
-    status: str
-    allocated_cash: Decimal
-    nav_fraction: Decimal
-    daily_pnl: Decimal
-    drawdown_fraction: Decimal
-    created_at: datetime
-    updated_at: datetime
-    version: int
-
-    def to_public_dict(self) -> dict[str, object]:
-        return {
-            "contract": "hqa.d34_canary/v1",
-            **self.__dict__,
-            "allocated_cash": f"{self.allocated_cash:.2f}",
-            "nav_fraction": f"{self.nav_fraction:.6f}",
-            "daily_pnl": f"{self.daily_pnl:.2f}",
-            "drawdown_fraction": f"{self.drawdown_fraction:.6f}",
         }
 
 
 @dataclass(frozen=True)
 class RegisterArtifactCommand:
     job_id: str
-    mandate_id: str
+    resource_envelope_id: str
     workspace_id: str
     qlib_receipt: EngineReceipt
     platform_receipt: EngineReceipt
@@ -139,60 +104,17 @@ class ArtifactEvaluation:
     artifact: D34Artifact | None
 
 
-@dataclass(frozen=True)
-class ProvisionCanaryCommand:
-    artifact_id: str
-    sleeve_id: str
-    nav: Decimal
-    allocated_cash: Decimal
-    workspace_id: str
-
-
 class RegistryAuthorityPort(Protocol):
-    def get_canary(self, canary_id: str) -> D34Canary | dict[str, object]: ...
-
     def list_artifacts(
         self, *, workspace_id: str, limit: int
     ) -> list[D34Artifact | dict[str, object]]: ...
 
-    def list_canaries(
-        self, *, workspace_id: str, limit: int
-    ) -> list[D34Canary | dict[str, object]]: ...
-
-    def provision_canary(
-        self, command: ProvisionCanaryCommand
-    ) -> D34Canary | dict[str, object]: ...
-
-    def record_canary_observation(
-        self,
-        *,
-        canary_id: str,
-        expected_version: int,
-        daily_pnl: Decimal,
-        drawdown_fraction: Decimal,
-        observation: dict[str, object],
-    ) -> D34Canary | dict[str, object]: ...
-
-    def transition_canary(
-        self,
-        *,
-        canary_id: str,
-        action: str,
-        expected_version: int,
-        reason: str,
-    ) -> D34Canary | dict[str, object]: ...
-
 
 _ARTIFACT_COLUMNS = """
-artifact_id, mandate_id, workspace_id, status, qualification_scope,
+artifact_id, resource_envelope_id, workspace_id, status, qualification_scope,
 policy_digest, snapshot_digest, candidate_code_digest, qlib_config_digest,
 rdagent_commit, qlib_commit, docker_image_digest, qlib_receipt_digest,
 platform_receipt_digest, comparison_digest, policy_decision_id,
-created_at, updated_at, version
-"""
-_CANARY_COLUMNS = """
-canary_id, artifact_id, mandate_id, workspace_id, sleeve_id, status,
-allocated_cash, nav_fraction, daily_pnl, drawdown_fraction,
 created_at, updated_at, version
 """
 
@@ -204,7 +126,7 @@ def _artifact(
 ) -> D34Artifact:
     return D34Artifact(
         artifact_id=str(row[0]),
-        mandate_id=str(row[1]),
+        resource_envelope_id=str(row[1]),
         workspace_id=str(row[2]),
         status=str(row[3]),
         qualification_scope=str(row[4]),
@@ -249,50 +171,9 @@ def _listed_comparison(row: tuple[object, ...]) -> D34ComparisonSummary:
     )
 
 
-def _canary(row: tuple[object, ...]) -> D34Canary:
-    return D34Canary(
-        canary_id=str(row[0]),
-        artifact_id=str(row[1]),
-        mandate_id=str(row[2]),
-        workspace_id=str(row[3]),
-        sleeve_id=str(row[4]),
-        status=str(row[5]),
-        allocated_cash=Decimal(str(row[6])),
-        nav_fraction=Decimal(str(row[7])),
-        daily_pnl=Decimal(str(row[8])),
-        drawdown_fraction=Decimal(str(row[9])),
-        created_at=row[10],  # type: ignore[arg-type]
-        updated_at=row[11],  # type: ignore[arg-type]
-        version=int(row[12]),
-    )
-
-
 class PostgresRegistryAuthority:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
-
-    def _list(self, *, table: str, columns: str, workspace_id: str, limit: int):
-        if _WORKSPACE_RE.fullmatch(workspace_id) is None or not 1 <= limit <= 100:
-            raise RegistryAuthorityError("d34_registry_validation", "registry query is invalid")
-        database = get_database(self._settings)
-        if database is None:
-            raise RegistryAuthorityError(
-                "d34_registry_unavailable", "D-34 Artifact Registry is unavailable"
-            )
-        try:
-            with database.connect() as conn:
-                return conn.execute(
-                    f"""
-                    SELECT {columns} FROM {SCHEMA}.{table}
-                    WHERE owner_user_id = %s AND workspace_id = %s
-                    ORDER BY created_at DESC LIMIT %s
-                    """,
-                    (ROOT_USER_ID, workspace_id, limit),
-                ).fetchall()
-        except (DatabaseUnavailable, psycopg.Error) as exc:
-            raise RegistryAuthorityError(
-                "d34_registry_unavailable", "D-34 Artifact Registry is unavailable"
-            ) from exc
 
     def list_artifacts(self, *, workspace_id: str, limit: int) -> list[D34Artifact]:
         if _WORKSPACE_RE.fullmatch(workspace_id) is None or not 1 <= limit <= 100:
@@ -315,6 +196,7 @@ class PostgresRegistryAuthority:
                     JOIN {SCHEMA}.d34_comparisons AS comparison
                       ON comparison.comparison_digest = artifact.comparison_digest
                     WHERE artifact.owner_user_id = %s AND artifact.workspace_id = %s
+                      AND artifact.resource_envelope_id IS NOT NULL
                     ORDER BY artifact.created_at DESC LIMIT %s
                     """,
                     (ROOT_USER_ID, workspace_id, limit),
@@ -323,36 +205,51 @@ class PostgresRegistryAuthority:
             raise RegistryAuthorityError(
                 "d34_registry_unavailable", "D-34 Artifact Registry is unavailable"
             ) from exc
-        return [
-            _artifact(row[:19], comparison=_listed_comparison(row)) for row in rows
-        ]
+        return [_artifact(row[:19], comparison=_listed_comparison(row)) for row in rows]
 
-    def list_canaries(self, *, workspace_id: str, limit: int) -> list[D34Canary]:
-        rows = self._list(
-            table="d34_canaries",
-            columns=_CANARY_COLUMNS,
-            workspace_id=workspace_id,
-            limit=limit,
+    def get_artifact_for_job(
+        self,
+        *,
+        workspace_id: str,
+        job_id: str,
+        artifact_id: str,
+    ) -> D34Artifact | None:
+        if (
+            _WORKSPACE_RE.fullmatch(workspace_id) is None
+            or not job_id.startswith("job-")
+            or not artifact_id.startswith("artifact-")
+        ):
+            raise RegistryAuthorityError("d34_registry_validation", "registry query is invalid")
+        columns = ", ".join(
+            f"artifact.{name.strip()}"
+            for name in _ARTIFACT_COLUMNS.replace("\n", " ").split(",")
+            if name.strip()
         )
-        return [_canary(row) for row in rows]
-
-    def get_canary(self, canary_id: str) -> D34Canary:
-        if not canary_id.startswith("canary-") or len(canary_id) > 256:
-            raise RegistryAuthorityError("d34_registry_validation", "canary id is invalid")
         try:
             with self._database().connect() as conn:
                 row = conn.execute(
-                    f"SELECT {_CANARY_COLUMNS} FROM {SCHEMA}.d34_canaries "
-                    "WHERE canary_id = %s AND owner_user_id = %s",
-                    (canary_id, ROOT_USER_ID),
+                    f"""
+                    SELECT {columns}, comparison.accepted,
+                           comparison.daily_return_correlation,
+                           comparison.terminal_nav_difference_bps,
+                           comparison.max_symbol_weight_difference_bps,
+                           comparison.comparison_document
+                    FROM {SCHEMA}.d34_artifacts AS artifact
+                    JOIN {SCHEMA}.d34_comparisons AS comparison
+                      ON comparison.comparison_digest = artifact.comparison_digest
+                    WHERE artifact.owner_user_id = %s
+                      AND artifact.workspace_id = %s
+                      AND artifact.job_id = %s
+                      AND artifact.artifact_id = %s
+                      AND artifact.resource_envelope_id IS NOT NULL
+                    """,
+                    (ROOT_USER_ID, workspace_id, job_id, artifact_id),
                 ).fetchone()
         except (DatabaseUnavailable, psycopg.Error) as exc:
             raise RegistryAuthorityError(
                 "d34_registry_unavailable", "D-34 Artifact Registry is unavailable"
             ) from exc
-        if row is None:
-            raise RegistryAuthorityError("d34_registry_not_found", "canary not found")
-        return _canary(row)
+        return None if row is None else _artifact(row[:19], comparison=_listed_comparison(row))
 
     def _database(self):
         database = get_database(self._settings)
@@ -371,7 +268,7 @@ class PostgresRegistryAuthority:
         )
         if (
             not command.job_id.startswith("job-")
-            or not command.mandate_id.startswith("mandate-")
+            or _WORKSPACE_RE.fullmatch(command.resource_envelope_id) is None
             or _WORKSPACE_RE.fullmatch(command.workspace_id) is None
             or qlib.engine != "qlib"
             or platform.engine != "platform"
@@ -420,7 +317,7 @@ class PostgresRegistryAuthority:
             with self._database().connect() as conn, conn.transaction():
                 job = conn.execute(
                     f"""
-                    SELECT mandate_id, owner_user_id, workspace_id, state
+                    SELECT resource_envelope_id, owner_user_id, workspace_id, state
                     FROM {SCHEMA}.d34_experiment_jobs
                     WHERE job_id = %s FOR UPDATE
                     """,
@@ -428,7 +325,7 @@ class PostgresRegistryAuthority:
                 ).fetchone()
                 if (
                     job is None
-                    or str(job[0]) != command.mandate_id
+                    or str(job[0]) != command.resource_envelope_id
                     or str(job[1]) != str(ROOT_USER_ID)
                     or str(job[2]) != command.workspace_id
                     or str(job[3]) != expected_job_state
@@ -440,16 +337,17 @@ class PostgresRegistryAuthority:
                     conn.execute(
                         f"""
                         INSERT INTO {SCHEMA}.d34_engine_receipts (
-                            receipt_id, job_id, mandate_id, owner_user_id, workspace_id,
+                            receipt_id, job_id, mandate_id, resource_envelope_id,
+                            owner_user_id, workspace_id,
                             engine, snapshot_digest, universe_digest, calendar_digest,
                             target_weights_digest, receipt_digest, receipt_document
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ) VALUES (%s, %s, NULL, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (receipt_id) DO NOTHING
                         """,
                         (
                             receipt_id,
                             command.job_id,
-                            command.mandate_id,
+                            command.resource_envelope_id,
                             ROOT_USER_ID,
                             command.workspace_id,
                             receipt.engine,
@@ -522,16 +420,17 @@ class PostgresRegistryAuthority:
                     f"""
                     INSERT INTO {SCHEMA}.d34_policy_decisions (
                         decision_id, owner_user_id, workspace_id, mandate_id,
+                        resource_envelope_id,
                         subject_kind, subject_id, policy_digest, outcome,
                         reason_codes, input_digest, decision_document
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ) VALUES (%s, %s, %s, NULL, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (decision_id) DO NOTHING
                     """,
                     (
                         decision_id,
                         ROOT_USER_ID,
                         command.workspace_id,
-                        command.mandate_id,
+                        command.resource_envelope_id,
                         "artifact" if comparison.accepted else "experiment",
                         artifact_id if comparison.accepted else command.job_id,
                         comparison.policy_digest,
@@ -559,9 +458,9 @@ class PostgresRegistryAuthority:
                         artifact=None,
                     )
                 artifact_document = {
-                    "contract": "hqa.d34_artifact/v1",
+                    "contract": "hqa.d34_artifact/v2",
                     "job_id": command.job_id,
-                    "mandate_id": command.mandate_id,
+                    "resource_envelope_id": command.resource_envelope_id,
                     "policy_digest": comparison.policy_digest,
                     "snapshot_digest": qlib.snapshot_digest,
                     "candidate_code_digest": command.candidate_code_digest,
@@ -578,14 +477,15 @@ class PostgresRegistryAuthority:
                 row = conn.execute(
                     f"""
                     INSERT INTO {SCHEMA}.d34_artifacts (
-                        artifact_id, job_id, mandate_id, owner_user_id, workspace_id,
+                        artifact_id, job_id, mandate_id, resource_envelope_id,
+                        owner_user_id, workspace_id,
                         status, qualification_scope, policy_digest, snapshot_digest,
                         candidate_code_digest, qlib_config_digest, rdagent_commit,
                         qlib_commit, docker_image_digest, qlib_receipt_digest,
                         platform_receipt_digest, comparison_digest, policy_decision_id,
                         artifact_document
                     ) VALUES (
-                        %s, %s, %s, %s, %s, 'qualified', 'paper_only', %s, %s,
+                        %s, %s, NULL, %s, %s, %s, 'qualified', 'paper_only', %s, %s,
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                     ) ON CONFLICT (artifact_id) DO NOTHING
                     RETURNING {_ARTIFACT_COLUMNS}
@@ -593,7 +493,7 @@ class PostgresRegistryAuthority:
                     (
                         artifact_id,
                         command.job_id,
-                        command.mandate_id,
+                        command.resource_envelope_id,
                         ROOT_USER_ID,
                         command.workspace_id,
                         comparison.policy_digest,
@@ -647,333 +547,11 @@ class PostgresRegistryAuthority:
             artifact=artifact,
         )
 
-    def provision_canary(self, command: ProvisionCanaryCommand) -> D34Canary:
-        if (
-            not command.artifact_id.startswith("artifact-")
-            or not command.sleeve_id.startswith("sleeve-")
-            or _WORKSPACE_RE.fullmatch(command.workspace_id) is None
-            or command.nav <= 0
-            or command.allocated_cash <= 0
-        ):
-            raise RegistryAuthorityError("d34_registry_validation", "canary request is invalid")
-        maximum = min(Decimal("10000"), command.nav * Decimal("0.01"))
-        if command.allocated_cash > maximum:
-            raise RegistryAuthorityError(
-                "d34_canary_limit", "single canary allocation exceeds policy"
-            )
-        canary_id = f"canary-{command.artifact_id.removeprefix('artifact-')}"
-        try:
-            with self._database().connect() as conn, conn.transaction():
-                artifact = conn.execute(
-                    f"""
-                    SELECT mandate_id, workspace_id, status
-                    FROM {SCHEMA}.d34_artifacts
-                    WHERE artifact_id = %s AND owner_user_id = %s FOR UPDATE
-                    """,
-                    (command.artifact_id, ROOT_USER_ID),
-                ).fetchone()
-                if (
-                    artifact is None
-                    or str(artifact[1]) != command.workspace_id
-                    or str(artifact[2]) not in {"qualified", "canary_active"}
-                ):
-                    raise RegistryAuthorityError(
-                        "d34_registry_conflict", "artifact is not canary eligible"
-                    )
-                mandate_id = str(artifact[0])
-                mandate = conn.execute(
-                    f"""
-                    SELECT status, paper_execution_allowed, expires_at > clock_timestamp()
-                    FROM {SCHEMA}.d34_mandates WHERE mandate_id = %s FOR UPDATE
-                    """,
-                    (mandate_id,),
-                ).fetchone()
-                if mandate is None or mandate != ("active", True, True):
-                    raise RegistryAuthorityError(
-                        "d34_registry_conflict", "mandate does not authorize paper execution"
-                    )
-                daily_count = conn.execute(
-                    f"""
-                    SELECT count(*) FROM {SCHEMA}.d34_canaries
-                    WHERE owner_user_id = %s AND workspace_id = %s
-                      AND created_at::date = clock_timestamp()::date
-                    """,
-                    (ROOT_USER_ID, command.workspace_id),
-                ).fetchone()
-                if daily_count and int(daily_count[0]) >= 1:
-                    existing = conn.execute(
-                        f"SELECT {_CANARY_COLUMNS} FROM {SCHEMA}.d34_canaries WHERE canary_id = %s",
-                        (canary_id,),
-                    ).fetchone()
-                    if existing is not None and str(existing[4]) == command.sleeve_id:
-                        return _canary(existing)
-                    raise RegistryAuthorityError(
-                        "d34_canary_limit", "daily canary quota is exhausted"
-                    )
-                total = conn.execute(
-                    f"""
-                    SELECT COALESCE(sum(allocated_cash), 0) FROM {SCHEMA}.d34_canaries
-                    WHERE owner_user_id = %s AND workspace_id = %s
-                      AND status IN ('provisioning', 'running', 'paused')
-                    """,
-                    (ROOT_USER_ID, command.workspace_id),
-                ).fetchone()
-                if Decimal(str(total[0] if total else 0)) + command.allocated_cash > (
-                    command.nav * Decimal("0.10")
-                ):
-                    raise RegistryAuthorityError(
-                        "d34_canary_limit", "aggregate canary allocation exceeds policy"
-                    )
-                document = {
-                    "contract": "hqa.d34_canary/v1",
-                    "artifact_id": command.artifact_id,
-                    "sleeve_id": command.sleeve_id,
-                    "allocated_cash": str(command.allocated_cash),
-                    "nav": str(command.nav),
-                }
-                row = conn.execute(
-                    f"""
-                    INSERT INTO {SCHEMA}.d34_canaries (
-                        canary_id, artifact_id, mandate_id, owner_user_id, workspace_id,
-                        sleeve_id, status, allocated_cash, nav_fraction, canary_document
-                    ) VALUES (%s, %s, %s, %s, %s, %s, 'running', %s, %s, %s)
-                    ON CONFLICT (canary_id) DO NOTHING RETURNING {_CANARY_COLUMNS}
-                    """,
-                    (
-                        canary_id,
-                        command.artifact_id,
-                        mandate_id,
-                        ROOT_USER_ID,
-                        command.workspace_id,
-                        command.sleeve_id,
-                        command.allocated_cash,
-                        command.allocated_cash / command.nav,
-                        Jsonb(document),
-                    ),
-                ).fetchone()
-                if row is None:
-                    row = conn.execute(
-                        f"SELECT {_CANARY_COLUMNS} FROM {SCHEMA}.d34_canaries WHERE canary_id = %s",
-                        (canary_id,),
-                    ).fetchone()
-                if row is None or str(row[4]) != command.sleeve_id:
-                    raise RegistryAuthorityError(
-                        "d34_registry_conflict", "canary identity collision"
-                    )
-                canary = _canary(row)
-                conn.execute(
-                    f"""
-                    UPDATE {SCHEMA}.d34_artifacts
-                    SET status = 'canary_active', updated_at = clock_timestamp(),
-                        version = version + 1
-                    WHERE artifact_id = %s AND status = 'qualified'
-                    """,
-                    (command.artifact_id,),
-                )
-                conn.execute(
-                    f"""
-                    INSERT INTO {SCHEMA}.d34_canary_events
-                    (event_id, canary_id, event_type, canary_version, event_data)
-                    VALUES (%s, %s, 'running', %s, %s)
-                    ON CONFLICT (event_id) DO NOTHING
-                    """,
-                    (
-                        f"canary-event-running-{canary_id}",
-                        canary_id,
-                        canary.version,
-                        Jsonb({"sleeve_id": command.sleeve_id}),
-                    ),
-                )
-        except RegistryAuthorityError:
-            raise
-        except (DatabaseUnavailable, psycopg.Error) as exc:
-            raise RegistryAuthorityError(
-                "d34_registry_unavailable", "D-34 Artifact Registry is unavailable"
-            ) from exc
-        return canary
-
-    def record_canary_observation(
-        self,
-        *,
-        canary_id: str,
-        expected_version: int,
-        daily_pnl: Decimal,
-        drawdown_fraction: Decimal,
-        observation: dict[str, object],
-    ) -> D34Canary:
-        try:
-            peak_equity = Decimal(str(observation.get("peak_equity")))
-            observed_at = datetime.fromisoformat(str(observation.get("observed_at")))
-            if observed_at.tzinfo is None or observed_at.utcoffset() is None:
-                raise ValueError("observed_at must include an offset")
-            observation_day = observed_at.astimezone(_LOCAL_TIMEZONE).date().isoformat()
-        except Exception as exc:  # noqa: BLE001 - Decimal validation boundary
-            raise RegistryAuthorityError(
-                "d34_registry_validation", "canary observation is invalid"
-            ) from exc
-        if (
-            not canary_id.startswith("canary-")
-            or expected_version < 1
-            or not daily_pnl.is_finite()
-            or not drawdown_fraction.is_finite()
-            or drawdown_fraction < 0
-            or not peak_equity.is_finite()
-            or peak_equity <= 0
-            or observation.get("contract") != "hqa.d34_canary_observation/v1"
-        ):
-            raise RegistryAuthorityError("d34_registry_validation", "canary observation is invalid")
-        try:
-            with self._database().connect() as conn, conn.transaction():
-                current = conn.execute(
-                    f"SELECT version, daily_pnl, drawdown_fraction, peak_equity "
-                    f"FROM {SCHEMA}.d34_canaries "
-                    "WHERE canary_id = %s AND owner_user_id = %s FOR UPDATE",
-                    (canary_id, ROOT_USER_ID),
-                ).fetchone()
-                if current is None or int(current[0]) != expected_version:
-                    raise RegistryAuthorityError(
-                        "d34_registry_conflict", "canary status or version changed"
-                    )
-                unchanged = (
-                    Decimal(str(current[1])) == daily_pnl
-                    and Decimal(str(current[2])) == drawdown_fraction
-                    and current[3] is not None
-                    and Decimal(str(current[3])) == peak_equity
-                )
-                if unchanged:
-                    row = conn.execute(
-                        f"SELECT {_CANARY_COLUMNS} FROM {SCHEMA}.d34_canaries WHERE canary_id = %s",
-                        (canary_id,),
-                    ).fetchone()
-                    if row is None:  # pragma: no cover - locked row cannot disappear
-                        raise RegistryAuthorityError("d34_registry_conflict", "canary disappeared")
-                else:
-                    row = conn.execute(
-                        f"""
-                        UPDATE {SCHEMA}.d34_canaries
-                        SET daily_pnl = %s, drawdown_fraction = %s, peak_equity = %s,
-                            updated_at = clock_timestamp(), version = version + 1
-                        WHERE canary_id = %s AND owner_user_id = %s AND version = %s
-                        RETURNING {_CANARY_COLUMNS}
-                        """,
-                        (
-                            daily_pnl,
-                            drawdown_fraction,
-                            peak_equity,
-                            canary_id,
-                            ROOT_USER_ID,
-                            expected_version,
-                        ),
-                    ).fetchone()
-                    if row is None:
-                        raise RegistryAuthorityError(
-                            "d34_registry_conflict", "canary status or version changed"
-                        )
-                canary = _canary(row)
-                conn.execute(
-                    f"""
-                    INSERT INTO {SCHEMA}.d34_canary_events
-                    (event_id, canary_id, event_type, canary_version, event_data)
-                    SELECT %s, %s, 'observed', %s, %s
-                    WHERE NOT EXISTS (
-                        SELECT 1 FROM {SCHEMA}.d34_canary_events existing
-                        WHERE existing.canary_id = %s
-                          AND existing.event_type = 'observed'
-                          AND ((
-                              existing.event_data->>'observed_at'
-                          )::timestamptz AT TIME ZONE 'Asia/Shanghai')::date = %s::date
-                    )
-                    ON CONFLICT (event_id) DO NOTHING
-                    """,
-                    (
-                        f"canary-event-observed-{canary_id}-{observation_day}",
-                        canary_id,
-                        canary.version,
-                        Jsonb(observation),
-                        canary_id,
-                        observation_day,
-                    ),
-                )
-        except RegistryAuthorityError:
-            raise
-        except (DatabaseUnavailable, psycopg.Error) as exc:
-            raise RegistryAuthorityError(
-                "d34_registry_unavailable", "D-34 Artifact Registry is unavailable"
-            ) from exc
-        return canary
-
-    def transition_canary(
-        self,
-        *,
-        canary_id: str,
-        action: str,
-        expected_version: int,
-        reason: str,
-    ) -> D34Canary:
-        targets = {"pause": "paused", "demote": "demoted", "rollback": "rolled_back"}
-        if (
-            action not in targets
-            or not canary_id.startswith("canary-")
-            or expected_version < 1
-            or not 1 <= len(reason.strip()) <= 1000
-        ):
-            raise RegistryAuthorityError("d34_registry_validation", "canary transition is invalid")
-        target = targets[action]
-        try:
-            with self._database().connect() as conn, conn.transaction():
-                row = conn.execute(
-                    f"""
-                    UPDATE {SCHEMA}.d34_canaries
-                    SET status = %s, updated_at = clock_timestamp(), version = version + 1
-                    WHERE canary_id = %s AND owner_user_id = %s AND version = %s
-                      AND status IN ('provisioning', 'running', 'paused')
-                    RETURNING {_CANARY_COLUMNS}
-                    """,
-                    (target, canary_id, ROOT_USER_ID, expected_version),
-                ).fetchone()
-                if row is None:
-                    raise RegistryAuthorityError(
-                        "d34_registry_conflict", "canary status or version changed"
-                    )
-                canary = _canary(row)
-                artifact_status = "paused" if target == "paused" else target
-                conn.execute(
-                    f"""
-                    UPDATE {SCHEMA}.d34_artifacts
-                    SET status = %s, updated_at = clock_timestamp(), version = version + 1
-                    WHERE artifact_id = %s
-                    """,
-                    (artifact_status, canary.artifact_id),
-                )
-                conn.execute(
-                    f"""
-                    INSERT INTO {SCHEMA}.d34_canary_events
-                    (event_id, canary_id, event_type, canary_version, event_data)
-                    VALUES (%s, %s, %s, %s, %s)
-                    """,
-                    (
-                        f"canary-event-{uuid4()}",
-                        canary_id,
-                        target,
-                        canary.version,
-                        Jsonb({"reason": reason.strip()}),
-                    ),
-                )
-        except RegistryAuthorityError:
-            raise
-        except (DatabaseUnavailable, psycopg.Error) as exc:
-            raise RegistryAuthorityError(
-                "d34_registry_unavailable", "D-34 Artifact Registry is unavailable"
-            ) from exc
-        return canary
-
 
 __all__ = [
     "D34Artifact",
-    "D34Canary",
     "ArtifactEvaluation",
     "PostgresRegistryAuthority",
-    "ProvisionCanaryCommand",
     "RegisterArtifactCommand",
     "RegistryAuthorityError",
     "RegistryAuthorityPort",

@@ -1,7 +1,7 @@
 import type { PaperAccountResponse } from "@/lib/api";
 
 /**
- * Fail-closed resolver for the paper account's available cash.
+ * Fail-closed resolver for manual cash that may fund a new strategy sleeve.
  *
  * `getPaperAccount()` returns a $1,000,000 FALLBACK_ACCOUNT when the API is
  * unreachable, tagging the envelope with `apiError`. Consumers must not treat
@@ -10,7 +10,10 @@ import type { PaperAccountResponse } from "@/lib/api";
  * render "--" / block cash-mode actions instead of trusting the fallback.
  */
 export function resolvePaperAccountAvailableCash(
-  account: Pick<PaperAccountResponse, "apiError" | "available_cash"> | null | undefined,
+  account: Pick<
+    PaperAccountResponse,
+    "apiError" | "available_cash" | "manual_available_cash"
+  > | null | undefined,
 ): number | null {
   if (account == null) {
     return null;
@@ -18,6 +21,6 @@ export function resolvePaperAccountAvailableCash(
   if (account.apiError) {
     return null;
   }
-  const cash = account.available_cash;
+  const cash = account.manual_available_cash;
   return typeof cash === "number" && Number.isFinite(cash) ? cash : null;
 }

@@ -232,7 +232,6 @@ describe("V7f typed results on spine", () => {
       expect(s.results[0].ticker).toBe("AAPL");
       expect(s.authorityHealth.result).toBe("ready");
       expect(s.approvals).toEqual([]);
-      expect(s.gates).toEqual([]);
       expect(s.tasks).toEqual([]);
     } finally {
       spine.stop();

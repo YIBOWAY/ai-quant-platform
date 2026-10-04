@@ -76,25 +76,6 @@ describe("workbenchA11y (L5c)", () => {
     expect(css).toContain("transition-duration: 0.01ms !important");
   });
 
-  it("local-chat boundary mounts workbench region landmark (no nested main)", () => {
-    const src = readFileSync(
-      path.join(
-        process.cwd(),
-        "components/hermes/shell/HermesLocalChatBoundary.tsx",
-      ),
-      "utf8",
-    );
-    expect(src).toContain("data-hermes-workbench-a11y={WORKBENCH_A11Y_MARKER}");
-    expect(src).toContain("workbenchContentPadClass");
-    expect(src).toContain("data-hermes-workbench-main");
-    expect(src).toContain('role="region"');
-    expect(src).toContain('aria-label={isZh ? "Hermes 工作台主区"');
-    // Root layout already owns document <main>; workbench must not nest another JSX main.
-    expect(src).not.toMatch(/<\s*main[\s>]/);
-    // Boundary stays free of decide/stop wiring (V7a lives in Approvals panel).
-    expect(src).not.toMatch(/decideHermesCommandApproval|stop_command/i);
-  });
-
   it("shell root carries a11y marker for open+closed chat; region not nested main", () => {
     const src = readFileSync(
       path.join(
@@ -105,15 +86,51 @@ describe("workbenchA11y (L5c)", () => {
     );
     expect(src).toContain("data-hermes-workbench-a11y={WORKBENCH_A11Y_MARKER}");
     expect(src).toContain("data-hermes-workbench-main");
-    expect(src).toContain("workbenchContentPadClass");
     expect(src).toContain('role="region"');
     expect(src).not.toMatch(/<main[\s>]/);
+    const dock = readFileSync(
+      path.join(
+        process.cwd(),
+        "components/hermes/shell/HermesWorkbenchDock.tsx",
+      ),
+      "utf8",
+    );
+    expect(dock).toContain("workbenchContentPadClass");
   });
 
-  it("activity/approvals/authority panels share collapse + long-id contracts", () => {
+  it("today keeps the only composer in the desk rail, not a second page dock", () => {
+    const shell = readFileSync(
+      path.join(
+        process.cwd(),
+        "components/hermes/shell/HermesWorkbenchShell.tsx",
+      ),
+      "utf8",
+    );
+    const dock = readFileSync(
+      path.join(
+        process.cwd(),
+        "components/hermes/shell/HermesWorkbenchDock.tsx",
+      ),
+      "utf8",
+    );
+    expect(shell).toContain("admission.chatOpen");
+    expect(shell).toContain("HermesWorkbenchDock");
+    expect(dock).toContain("onToday");
+    expect(dock).toContain("ComposerSubmitController");
+    expect(dock).toMatch(/<ComposerSubmitController[\s\S]*?\ballowSubmit\b/);
+    expect(dock).toMatch(/<ComposerSubmitController[\s\S]*?\bnetworkSubmit\b/);
+    expect(dock).not.toMatch(
+      /<ComposerSubmitController[\s\S]*?allowSubmit=\{false\}/,
+    );
+    expect(dock).not.toMatch(
+      /className="sr-only"[\s\S]*<(?:ComposerDock|ComposerSubmitController)/,
+    );
+    expect(dock).toContain("if (onToday) return null");
+  });
+
+  it("activity/authority panels share collapse + long-id contracts", () => {
     for (const rel of [
       "components/hermes/activity/WorkbenchCommandActivityPanel.tsx",
-      "components/hermes/approvals/WorkbenchCommandApprovalsPanel.tsx",
       "components/hermes/authority/WorkbenchAuthorityProjectionPanel.tsx",
     ]) {
       const src = readFileSync(path.join(process.cwd(), rel), "utf8");
@@ -141,20 +158,6 @@ describe("workbenchA11y (L5c)", () => {
     expect(authority).not.toMatch(
       /\bdecideHermesCommandApproval\b|\bdata-hermes-approval-allow-once\b/,
     );
-    // V7a: Approvals panel owns allow_once|deny only (marker present).
-    const approvals = readFileSync(
-      path.join(
-        process.cwd(),
-        "components/hermes/approvals/WorkbenchCommandApprovalsPanel.tsx",
-      ),
-      "utf8",
-    );
-    expect(approvals).toContain('data-hermes-approval-decide="v7a-m1"');
-    expect(approvals).toContain("decideHermesCommandApproval");
-    // Ban real always-allow decision wiring (not "no always-allow" copy).
-    expect(approvals).not.toMatch(/["']allow_permanently["']/i);
-    expect(approvals).not.toMatch(/["']allow_always["']/i);
-    expect(approvals).not.toMatch(/decision:\s*["']always/i);
   });
 
   it("composer and transcript copy chip keep focus-visible + 44px targets", () => {

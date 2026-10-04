@@ -13,10 +13,17 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from quant_system.config.settings import Settings
+from quant_system.d34.research_request import (
+    JOB_INPUT_CONTRACT,
+    LOCAL_RESEARCH_RESOURCE_ENVELOPE,
+    LOCAL_RESEARCH_RESOURCE_ENVELOPE_ID,
+    LOCAL_RESEARCH_RESOURCE_POLICY_DIGEST,
+    digest_document,
+)
 from quant_system.hermes.command_ledger import ROOT_USER_ID
 from quant_system.storage.database import SCHEMA, DatabaseUnavailable, get_database
 
-JOB_CONTRACT = "hqa.d34_experiment_job/v1"
+JOB_CONTRACT = "hqa.d34_experiment_job/v2"
 JOB_STATES = frozenset(
     {"queued", "leased", "running", "succeeded", "rejected", "outcome_unknown", "cancelled"}
 )
@@ -35,7 +42,7 @@ class JobAuthorityError(RuntimeError):
 @dataclass(frozen=True)
 class ExperimentJob:
     job_id: str
-    mandate_id: str
+    resource_envelope_id: str
     workspace_id: str
     job_key: str
     state: str
@@ -56,7 +63,7 @@ class ExperimentJob:
         return {
             "contract": JOB_CONTRACT,
             "job_id": self.job_id,
-            "mandate_id": self.mandate_id,
+            "resource_envelope_id": self.resource_envelope_id,
             "workspace_id": self.workspace_id,
             "job_key": self.job_key,
             "state": self.state,
@@ -77,7 +84,7 @@ class ExperimentJob:
 
 @dataclass(frozen=True)
 class EnqueueJobCommand:
-    mandate_id: str
+    resource_envelope_id: str
     workspace_id: str
     job_key: str
     input_digest: str
@@ -107,11 +114,9 @@ class JobAuthorityPort(Protocol):
 
     def enqueue(self, command: EnqueueJobCommand) -> ExperimentJob: ...
 
-    def cancel_queued(self, *, workspace_id: str, reason: str) -> int: ...
-
 
 _COLUMNS = """
-job_id, mandate_id, workspace_id, job_key, state, attempt_count, max_attempts,
+job_id, resource_envelope_id, workspace_id, job_key, state, attempt_count, max_attempts,
 input_digest, lease_owner, lease_expires_at, heartbeat_at, budget_reserved_usd,
 budget_spent_usd, created_at, updated_at, version, outcome_code
 """
@@ -120,7 +125,7 @@ budget_spent_usd, created_at, updated_at, version, outcome_code
 def _from_row(row: tuple[object, ...]) -> ExperimentJob:
     return ExperimentJob(
         job_id=str(row[0]),
-        mandate_id=str(row[1]),
+        resource_envelope_id=str(row[1]),
         workspace_id=str(row[2]),
         job_key=str(row[3]),
         state=str(row[4]),
@@ -179,71 +184,146 @@ class PostgresJobAuthority:
         return [_from_row(row) for row in rows]
 
     def enqueue(self, command: EnqueueJobCommand) -> ExperimentJob:
+        universe = command.input_document.get("universe")
         if (
-            not command.mandate_id.startswith("mandate-")
+            command.resource_envelope_id != LOCAL_RESEARCH_RESOURCE_ENVELOPE_ID
             or _WORKSPACE_RE.fullmatch(command.workspace_id) is None
             or not 1 <= len(command.job_key) <= 512
             or _DIGEST_RE.fullmatch(command.input_digest) is None
             or not isinstance(command.input_document, dict)
-            or not Decimal("0") <= command.budget_reserved_usd <= Decimal("100000")
-            or not 1 <= command.max_attempts <= 20
+            or command.input_digest != digest_document(command.input_document)
+            or command.input_document.get("contract") != JOB_INPUT_CONTRACT
+            or command.input_document.get("resource_envelope_id")
+            != LOCAL_RESEARCH_RESOURCE_ENVELOPE_ID
+            or command.input_document.get("resource_policy_digest")
+            != LOCAL_RESEARCH_RESOURCE_POLICY_DIGEST
+            or command.input_document.get("research_only") is not True
+            or command.input_document.get("paper_execution_allowed") is not False
+            or command.input_document.get("max_iterations") != 3
+            or command.input_document.get("experiments_per_iteration") != 3
+            or not isinstance(universe, list)
+            or not 1 <= len(universe) <= 64
+            or len({str(value) for value in universe}) != len(universe)
+            or command.budget_reserved_usd != Decimal("10")
+            or command.max_attempts != 1
         ):
             raise JobAuthorityError("d34_job_validation", "research job request is invalid")
         job_id = f"job-{uuid4()}"
         try:
             with self._database().connect() as conn, conn.transaction():
-                mandate = conn.execute(
+                existing = conn.execute(
                     f"""
-                    SELECT llm_budget_usd, llm_spent_usd, status,
-                           (expires_at > clock_timestamp()) AS unexpired
-                    FROM {SCHEMA}.d34_mandates
-                    WHERE mandate_id = %s AND owner_user_id = %s AND workspace_id = %s
-                    FOR UPDATE
+                    SELECT {_COLUMNS}, input_document
+                    FROM {SCHEMA}.d34_experiment_jobs
+                    WHERE owner_user_id = %s AND workspace_id = %s AND job_key = %s
                     """,
-                    (command.mandate_id, ROOT_USER_ID, command.workspace_id),
+                    (ROOT_USER_ID, command.workspace_id, command.job_key),
                 ).fetchone()
-                if mandate is None or mandate[2] != "active" or mandate[3] is not True:
-                    raise JobAuthorityError("d34_job_conflict", "mandate is not active")
-                emergency = conn.execute(
+                if existing is not None:
+                    if (
+                        str(existing[1]) != command.resource_envelope_id
+                        or str(existing[7]) != command.input_digest
+                        or existing[17] != command.input_document
+                    ):
+                        raise JobAuthorityError(
+                            "d34_job_conflict",
+                            "job key was reused with different inputs",
+                        )
+                    return _from_row(existing[:17])
+                # Serialize the fixed-resource admission check without taking a
+                # row lock on the immutable resource envelope.  A PostgreSQL
+                # row lock requires UPDATE privilege; the transaction-scoped
+                # advisory lock keeps the runtime role read-only on policy
+                # while the unique indexes remain the final consistency guard.
+                conn.execute(
+                    """
+                    SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))
+                    """,
+                    (
+                        f"{SCHEMA}:local-research-enqueue:"
+                        f"{command.resource_envelope_id}:{ROOT_USER_ID}:"
+                        f"{command.workspace_id}",
+                    ),
+                )
+                resource = conn.execute(
                     f"""
-                    SELECT enabled FROM {SCHEMA}.d34_execution_authority_events
+                    SELECT policy_digest, policy_document
+                    FROM {SCHEMA}.d34_research_resource_envelopes
+                    WHERE resource_envelope_id = %s AND owner_user_id = %s
+                      AND workspace_id = %s
+                    """,
+                    (
+                        command.resource_envelope_id,
+                        ROOT_USER_ID,
+                        command.workspace_id,
+                    ),
+                ).fetchone()
+                if resource is None or not isinstance(resource[1], dict):
+                    raise JobAuthorityError(
+                        "d34_research_resource_unavailable",
+                        "local research resource envelope is unavailable",
+                    )
+                policy = resource[1]
+                if (
+                    str(resource[0]) != str(command.input_document.get("resource_policy_digest"))
+                    or str(command.input_document.get("resource_envelope_id"))
+                    != command.resource_envelope_id
+                    or str(resource[0]) != LOCAL_RESEARCH_RESOURCE_POLICY_DIGEST
+                    or policy != LOCAL_RESEARCH_RESOURCE_ENVELOPE
+                ):
+                    raise JobAuthorityError(
+                        "d34_research_resource_invalid",
+                        "local research resource envelope does not match the job",
+                    )
+                existing = conn.execute(
+                    f"""
+                    SELECT {_COLUMNS}, input_document
+                    FROM {SCHEMA}.d34_experiment_jobs
+                    WHERE owner_user_id = %s AND workspace_id = %s AND job_key = %s
+                    """,
+                    (ROOT_USER_ID, command.workspace_id, command.job_key),
+                ).fetchone()
+                if existing is not None:
+                    if (
+                        str(existing[1]) != command.resource_envelope_id
+                        or str(existing[7]) != command.input_digest
+                        or existing[17] != command.input_document
+                    ):
+                        raise JobAuthorityError(
+                            "d34_job_conflict",
+                            "job key was reused with different inputs",
+                        )
+                    return _from_row(existing[:17])
+                active = conn.execute(
+                    f"""
+                    SELECT job_id
+                    FROM {SCHEMA}.d34_experiment_jobs
                     WHERE owner_user_id = %s AND workspace_id = %s
-                      AND event_type = 'emergency_stop'
-                    ORDER BY event_seq DESC LIMIT 1
+                      AND resource_envelope_id IS NOT NULL
+                      AND state IN ('queued', 'leased', 'running')
+                    FOR UPDATE
                     """,
                     (ROOT_USER_ID, command.workspace_id),
                 ).fetchone()
-                if emergency is not None and emergency[0] is True:
+                if active is not None:
                     raise JobAuthorityError(
-                        "d34_job_conflict", "emergency stop blocks new research jobs"
-                    )
-                reserved_row = conn.execute(
-                    f"""
-                    SELECT COALESCE(sum(budget_reserved_usd), 0)
-                    FROM {SCHEMA}.d34_experiment_jobs
-                    WHERE mandate_id = %s AND state IN ('queued', 'leased', 'running')
-                    """,
-                    (command.mandate_id,),
-                ).fetchone()
-                reserved = Decimal(str(reserved_row[0] if reserved_row else 0))
-                if Decimal(str(mandate[1])) + reserved + command.budget_reserved_usd > Decimal(
-                    str(mandate[0])
-                ):
-                    raise JobAuthorityError(
-                        "d34_budget_exhausted", "mandate LLM budget is exhausted"
+                        "d34_research_job_already_active",
+                        "one local research job is already active",
                     )
                 row = conn.execute(
                     f"""
                     INSERT INTO {SCHEMA}.d34_experiment_jobs (
-                        job_id, mandate_id, owner_user_id, workspace_id, job_key,
+                        job_id, mandate_id, resource_envelope_id, owner_user_id,
+                        workspace_id, job_key,
                         input_digest, input_document, max_attempts, budget_reserved_usd
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (mandate_id, job_key) DO NOTHING
+                    ) VALUES (%s, NULL, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (owner_user_id, workspace_id, job_key)
+                    WHERE resource_envelope_id IS NOT NULL DO NOTHING
                     RETURNING {_COLUMNS}
                     """,
                     (
                         job_id,
-                        command.mandate_id,
+                        command.resource_envelope_id,
                         ROOT_USER_ID,
                         command.workspace_id,
                         command.job_key,
@@ -258,12 +338,13 @@ class PostgresJobAuthority:
                         f"""
                         SELECT {_COLUMNS}, input_document
                         FROM {SCHEMA}.d34_experiment_jobs
-                        WHERE mandate_id = %s AND job_key = %s
+                        WHERE owner_user_id = %s AND workspace_id = %s AND job_key = %s
                         """,
-                        (command.mandate_id, command.job_key),
+                        (ROOT_USER_ID, command.workspace_id, command.job_key),
                     ).fetchone()
                     if (
                         existing is None
+                        or str(existing[1]) != command.resource_envelope_id
                         or str(existing[7]) != command.input_digest
                         or existing[17] != command.input_document
                     ):
@@ -282,18 +363,23 @@ class PostgresJobAuthority:
                 conn.execute(
                     f"""
                     INSERT INTO {SCHEMA}.d34_budget_events
-                    (event_id, mandate_id, job_id, event_type, amount_usd)
-                    VALUES (%s, %s, %s, 'reserved', %s)
+                    (event_id, mandate_id, resource_envelope_id, job_id, event_type, amount_usd)
+                    VALUES (%s, NULL, %s, %s, 'reserved', %s)
                     """,
                     (
                         f"budget-event-{uuid4()}",
-                        command.mandate_id,
+                        command.resource_envelope_id,
                         job_id,
                         command.budget_reserved_usd,
                     ),
                 )
         except JobAuthorityError:
             raise
+        except psycopg.errors.UniqueViolation as exc:
+            raise JobAuthorityError(
+                "d34_research_job_already_active",
+                "one local research job is already active",
+            ) from exc
         except (DatabaseUnavailable, psycopg.Error) as exc:
             raise JobAuthorityError(
                 "d34_job_unavailable", "D-34 job authority is unavailable"
@@ -312,45 +398,27 @@ class PostgresJobAuthority:
         lease_id, attempt_id = f"lease-{uuid4()}", f"attempt-{uuid4()}"
         try:
             with self._database().connect() as conn, conn.transaction():
-                mandate = conn.execute(
-                    f"""
-                    SELECT mandate_id, max_concurrent_jobs
-                    FROM {SCHEMA}.d34_mandates
-                    WHERE owner_user_id = %s AND workspace_id = %s
-                      AND status = 'active' AND expires_at > clock_timestamp()
-                    ORDER BY created_at DESC LIMIT 1
-                    FOR UPDATE
-                    """,
-                    (ROOT_USER_ID, workspace_id),
-                ).fetchone()
-                if mandate is None:
-                    return None
                 active = conn.execute(
                     f"""
                     SELECT count(*) FROM {SCHEMA}.d34_experiment_jobs
-                    WHERE mandate_id = %s AND state IN ('leased', 'running')
+                    WHERE owner_user_id = %s AND workspace_id = %s
+                      AND resource_envelope_id IS NOT NULL
+                      AND state IN ('leased', 'running')
                     """,
-                    (mandate[0],),
+                    (ROOT_USER_ID, workspace_id),
                 ).fetchone()
-                if active is None or int(active[0]) >= int(mandate[1]):
+                if active is None or int(active[0]) >= 1:
                     return None
                 candidate = conn.execute(
                     f"""
                     SELECT job_id FROM {SCHEMA}.d34_experiment_jobs AS job
                     WHERE job.owner_user_id = %s AND job.workspace_id = %s
-                      AND job.mandate_id = %s
                       AND job.state = 'queued' AND job.attempt_count < job.max_attempts
-                      AND NOT COALESCE((
-                          SELECT enabled
-                          FROM {SCHEMA}.d34_execution_authority_events AS authority
-                          WHERE authority.owner_user_id = job.owner_user_id
-                            AND authority.workspace_id = job.workspace_id
-                            AND authority.event_type = 'emergency_stop'
-                          ORDER BY authority.event_seq DESC LIMIT 1
-                      ), FALSE)
+                      AND job.resource_envelope_id IS NOT NULL
+                      AND job.input_document->>'research_only' = 'true'
                     ORDER BY job.created_at FOR UPDATE SKIP LOCKED LIMIT 1
                     """,
-                    (ROOT_USER_ID, workspace_id, mandate[0]),
+                    (ROOT_USER_ID, workspace_id),
                 ).fetchone()
                 if candidate is None:
                     return None
@@ -391,79 +459,6 @@ class PostgresJobAuthority:
                 "d34_job_unavailable", "D-34 job authority is unavailable"
             ) from exc
         return JobLease(job=job, attempt_id=attempt_id, lease_id=lease_id)
-
-    def cancel_queued(self, *, workspace_id: str, reason: str) -> int:
-        if (
-            _WORKSPACE_RE.fullmatch(workspace_id) is None
-            or not 1 <= len(reason.strip()) <= 1000
-        ):
-            raise JobAuthorityError("d34_job_validation", "job cancellation is invalid")
-        cancelled = 0
-        try:
-            with self._database().connect() as conn, conn.transaction():
-                rows = conn.execute(
-                    f"""
-                    SELECT job_id, mandate_id, budget_reserved_usd
-                    FROM {SCHEMA}.d34_experiment_jobs
-                    WHERE owner_user_id = %s AND workspace_id = %s
-                      AND state = 'queued'
-                    ORDER BY created_at
-                    FOR UPDATE
-                    """,
-                    (ROOT_USER_ID, workspace_id),
-                ).fetchall()
-                for job_id, mandate_id, reserved_raw in rows:
-                    row = conn.execute(
-                        f"""
-                        UPDATE {SCHEMA}.d34_experiment_jobs
-                        SET state = 'cancelled', outcome_code = 'd34_rollback',
-                            outcome_document = %s, finished_at = clock_timestamp(),
-                            updated_at = clock_timestamp(), version = version + 1
-                        WHERE job_id = %s AND state = 'queued'
-                        RETURNING {_COLUMNS}
-                        """,
-                        (
-                            Jsonb(
-                                {
-                                    "reason": reason.strip(),
-                                    "recovery": "create_a_new_job_after_mandate_resume",
-                                }
-                            ),
-                            job_id,
-                        ),
-                    ).fetchone()
-                    if row is None:
-                        continue
-                    job = _from_row(row)
-                    conn.execute(
-                        f"""
-                        INSERT INTO {SCHEMA}.d34_budget_events
-                        (event_id, mandate_id, job_id, event_type, amount_usd, event_data)
-                        VALUES (%s, %s, %s, 'released', %s, %s)
-                        """,
-                        (
-                            f"budget-event-{uuid4()}",
-                            mandate_id,
-                            job_id,
-                            Decimal(str(reserved_raw)),
-                            Jsonb({"reason": reason.strip()}),
-                        ),
-                    )
-                    self._event(
-                        conn,
-                        job=job,
-                        attempt_id=None,
-                        event_type="cancelled",
-                        data={"reason": reason.strip()},
-                    )
-                    cancelled += 1
-        except JobAuthorityError:
-            raise
-        except (DatabaseUnavailable, psycopg.Error) as exc:
-            raise JobAuthorityError(
-                "d34_job_unavailable", "D-34 job authority is unavailable"
-            ) from exc
-        return cancelled
 
     def mark_running(
         self, *, job_id: str, lease_id: str, container_id: str | None
@@ -594,16 +589,17 @@ class PostgresJobAuthority:
             with self._database().connect() as conn, conn.transaction():
                 current = conn.execute(
                     f"""
-                    SELECT mandate_id, budget_reserved_usd
+                    SELECT resource_envelope_id, budget_reserved_usd
                     FROM {SCHEMA}.d34_experiment_jobs
                     WHERE job_id = %s AND lease_id = %s
-                      AND state IN ('leased', 'running') FOR UPDATE
+                      AND state IN ('leased', 'running')
+                      AND resource_envelope_id IS NOT NULL FOR UPDATE
                     """,
                     (job_id, lease_id),
                 ).fetchone()
                 if current is None:
                     raise JobAuthorityError("d34_job_conflict", "job lease is stale")
-                mandate_id, reserved_raw = current
+                resource_envelope_id, reserved_raw = current
                 reserved = Decimal(str(reserved_raw))
                 charged = reserved if state == "outcome_unknown" else budget_spent_usd
                 if charged > reserved:
@@ -634,23 +630,14 @@ class PostgresJobAuthority:
                 ).fetchone()
                 conn.execute(
                     f"""
-                    UPDATE {SCHEMA}.d34_mandates
-                    SET llm_spent_usd = llm_spent_usd + %s,
-                        updated_at = clock_timestamp(), version = version + 1
-                    WHERE mandate_id = %s
-                    """,
-                    (charged, mandate_id),
-                )
-                conn.execute(
-                    f"""
                     INSERT INTO {SCHEMA}.d34_budget_events
-                    (event_id, mandate_id, job_id, attempt_id, event_type, amount_usd,
-                     provider_receipt_digest, event_data)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    (event_id, mandate_id, resource_envelope_id, job_id, attempt_id,
+                     event_type, amount_usd, provider_receipt_digest, event_data)
+                    VALUES (%s, NULL, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         f"budget-event-{uuid4()}",
-                        mandate_id,
+                        resource_envelope_id,
                         job_id,
                         attempt[0] if attempt else None,
                         "outcome_unknown" if state == "outcome_unknown" else "consumed",
@@ -686,6 +673,7 @@ class PostgresJobAuthority:
                         f"""
                         SELECT job_id, lease_id FROM {SCHEMA}.d34_experiment_jobs
                         WHERE owner_user_id = %s AND workspace_id = %s
+                          AND resource_envelope_id IS NOT NULL
                           AND state IN ('leased', 'running')
                           AND lease_expires_at <= clock_timestamp()
                         ORDER BY lease_expires_at LIMIT 1

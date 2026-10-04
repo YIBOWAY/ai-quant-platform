@@ -1,0 +1,30 @@
+diff --git a/rdagent/oai/llm_conf.py b/rdagent/oai/llm_conf.py
+--- a/rdagent/oai/llm_conf.py
++++ b/rdagent/oai/llm_conf.py
+@@ -18,2 +18,2 @@
+-    reasoning_effort: Literal["low", "medium", "high"] | None = None
++    reasoning_effort: Literal["low", "medium", "high", "xhigh"] | None = None
+     enable_response_schema: bool = True
+diff --git a/rdagent/oai/backend/litellm.py b/rdagent/oai/backend/litellm.py
+--- a/rdagent/oai/backend/litellm.py
++++ b/rdagent/oai/backend/litellm.py
+@@ -91,4 +91,4 @@
+         max_tokens: int | None
+-        reasoning_effort: Literal["low", "medium", "high"] | None
++        reasoning_effort: Literal["low", "medium", "high", "xhigh"] | None
+
+     def get_complete_kwargs(self) -> CompleteKwargs:
+@@ -113,4 +113,4 @@
+                     if "reasoning_effort" in mc:
+-                        if mc["reasoning_effort"] in ["low", "medium", "high"]:
+-                            reasoning_effort = cast(Literal["low", "medium", "high"], mc["reasoning_effort"])
++                        if mc["reasoning_effort"] in ["low", "medium", "high", "xhigh"]:
++                            reasoning_effort = cast(Literal["low", "medium", "high", "xhigh"], mc["reasoning_effort"])
+                         else:
+@@ -151,4 +151,6 @@
+         complete_kwargs = self.get_complete_kwargs()
+         model = complete_kwargs["model"]
++        if model.startswith("openai/grok-") and complete_kwargs["reasoning_effort"] is not None:
++            kwargs["allowed_openai_params"] = ["reasoning_effort"]
+
+         response = completion(

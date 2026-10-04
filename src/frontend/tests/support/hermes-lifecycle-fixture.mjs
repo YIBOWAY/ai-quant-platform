@@ -407,6 +407,27 @@ export function createHermesLifecycleFixture() {
         finish(200, followPage(state, rawAfter === null ? null : Number(rawAfter)));
         return true;
       }
+      const activityMatch = pathname.match(
+        new RegExp(`^/api/workspace/${WORKSPACE_ID}/commands/([^/]+)/activity$`),
+      );
+      if (method === "GET" && activityMatch) {
+        const commandId = decodeURIComponent(activityMatch[1]);
+        const command = state.commands.find((row) => row.command_id === commandId);
+        if (!command) {
+          finish(404, { detail: { code: "command_not_found" } });
+          return true;
+        }
+        const terminal = ["succeeded", "failed", "stopped"].includes(command.state);
+        finish(200, {
+          command_id: commandId,
+          stage: terminal ? command.state : "answering",
+          terminal,
+          last_activity_at: Date.parse(FIXED_AT) / 1_000,
+          tool_state: terminal ? null : "completed",
+          tool_duration_seconds: terminal ? null : 0.1,
+        });
+        return true;
+      }
       if (
         method === "GET" &&
         pathname === `/api/workspace/${WORKSPACE_ID}/follow/stream`
@@ -440,6 +461,52 @@ export function createHermesLifecycleFixture() {
       }
       if (method === "GET" && pathname === "/api/hermes/sessions") {
         finish(200, sessionsResponse(state));
+        return true;
+      }
+      if (method === "GET" && pathname === "/api/assistant/remote/book") {
+        finish(200, {
+          contract: "hqa.assistant_remote_book/v1",
+          candidates: [],
+          requests: [],
+          verified_count: 0,
+          hung_count: 0,
+          fossil_count: 0,
+          fossils: [],
+        });
+        return true;
+      }
+      if (
+        method === "GET" &&
+        pathname === "/api/paper/strategy-sleeves/observation-calendar"
+      ) {
+        finish(200, {
+          yesterday: {
+            date: "2026-07-28",
+            status: "not_scheduled",
+            label_zh: "昨日无排程",
+            counts_as_observation_day: false,
+            is_no_signal: false,
+            reason: null,
+          },
+          observation_day_count: 0,
+        });
+        return true;
+      }
+      if (method === "GET" && pathname === "/api/market-data/history") {
+        const ticker = url.searchParams.get("ticker") ?? "SPY";
+        finish(200, {
+          symbol: ticker,
+          ticker,
+          source: "futu",
+          frequency: "1d",
+          row_count: 0,
+          rows: [],
+          metadata: {
+            provider: "futu",
+            requested_provider: "futu",
+            fetched_at: FIXED_AT,
+          },
+        });
         return true;
       }
 

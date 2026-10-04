@@ -23,6 +23,7 @@ export type TodayAutomationProps = {
   /** Latest automation_status artifact for job rows. */
   artifact: Extract<HermesArtifact, { kind: "automation_status" }> | null;
   locale: Locale;
+  stale?: boolean;
 };
 
 function latestSuccessAt(
@@ -46,10 +47,14 @@ function latestSuccessAt(
  * contract has no such field). Exception rows keep the V-series detail
  * disclosure open.
  */
-export function TodayAutomation({ summary, artifact, locale }: TodayAutomationProps) {
+export function TodayAutomation({ summary, artifact, locale, stale = false }: TodayAutomationProps) {
   const text = artifactCopy(locale);
   const copy = hermesWorkbenchCopy(locale).today.automation;
-  const line = automationLineFromModel(summary, locale);
+  const line = stale
+    ? locale === "zh"
+      ? "历史快照 · 已过期"
+      : "Historical snapshot · expired"
+    : automationLineFromModel(summary, locale);
   const exceptionIds = new Set(summary.exceptions.map((entry) => entry.jobId));
   const jobs = (artifact?.data.jobs ?? [])
     .filter((job) => HERMES_KNOWN_JOB_IDS.includes(job.job_id))
@@ -60,7 +65,9 @@ export function TodayAutomation({ summary, artifact, locale }: TodayAutomationPr
     );
   const latestSuccess = latestSuccessAt(artifact);
   const summaryTone =
-    summary.status === "unavailable"
+    stale
+      ? "text-warning"
+      : summary.status === "unavailable"
       ? "text-danger"
       : summary.exceptions.length > 0
         ? "text-warning"
@@ -73,7 +80,7 @@ export function TodayAutomation({ summary, artifact, locale }: TodayAutomationPr
       id="hermes-today-automation"
     >
       <div className="flex flex-wrap items-baseline gap-2">
-        <h2 className="font-body-sm font-semibold text-text-primary" id="hermes-automation-title">
+        <h2 className="font-label-caps text-text-secondary" id="hermes-automation-title">
           {copy.title}
         </h2>
         <span
@@ -91,12 +98,20 @@ export function TodayAutomation({ summary, artifact, locale }: TodayAutomationPr
       ) : summary.exceptions.length === 0 ? (
         <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border-subtle py-2">
           <span className="font-data-mono text-xs text-text-secondary">
-            {HERMES_KNOWN_JOB_IDS.join(" · ")}
+            {HERMES_KNOWN_JOB_IDS.map((jobId) => automationJobLabel(jobId, locale)).join(" · ")}
           </span>
           <StatusPill
             label={text.status}
-            value={`${summary.healthy}/${summary.total} fresh`}
-            tone="success"
+            value={
+              stale
+                ? locale === "zh"
+                  ? "历史快照 · 已过期"
+                  : "Historical snapshot · expired"
+                : locale === "zh"
+                  ? `${summary.healthy}/${summary.total} 当前有效`
+                  : `${summary.healthy}/${summary.total} current`
+            }
+            tone={stale ? "warning" : "success"}
           />
           <span className="font-data-mono text-[11px] text-text-secondary">
             {copy.lastSuccessPrefix}{" "}

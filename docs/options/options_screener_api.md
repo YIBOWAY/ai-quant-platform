@@ -117,3 +117,32 @@ curl -X POST "http://127.0.0.1:8765/api/options/screener" `
 ## 安全性
 
 该 API 仅读取市场数据。它不暴露下单、券商、钱包、签名或实盘执行端点。
+
+## 2026-10-04 筛选与年化口径
+
+`min_apr` 使用整数百分数，例如 15 表示 15%，按中间价毛权利金年化计算。
+未达到该值、最低 IV、最低权利金或用户已启用的趋势条件时，不进入合格候选。
+`hard_gate_passed` 仍只表示报价、事件、流动性与物理 EV 等共同质量检查；
+`screen_passed` 表示本次个人筛选条件。合格需要两者均通过，且评级不为 `Avoid`。
+现有默认值与预设不会因零结果而自动放宽。
+
+新增字段均为兼容性扩展：
+
+| 字段 | 含义 |
+|---|---|
+| `scanned_contract_count` | 返回的整条期权链行数，尚未做 `top_n` 截断 |
+| `identity_rejected_count` | 合约身份不一致、直接排除的行数 |
+| `hard_gate_rejected_count` | 共同质量检查失败数，包含身份失败 |
+| `preference_rejected_count` | 已过共同质量检查，但个人条件或市场状态不符 |
+| `eligible_count` | 同时满足全部条件的总数，可能大于表格展示数 |
+| `watch_candidates` | 最多 10 条仅供观察的个人条件不符合约，不计入合格候选；硬条件失败不会进入这里 |
+| `apr_alternative_max_percent` | 只差 APR 条件时，这些合约中最高中间价权利金年化；只供用户判断，不修改配置 |
+| `bid_annualized_yield` | 按买一价计算的毛权利金年化，小数比例 |
+| `estimated_round_trip_fee_per_contract` | 用户估计的每张开仓与平仓总费用，美元；请求不填或 null 表示未知 |
+| `fee_adjusted_bid_annualized_yield` | 扣上述估计费用后的买一价权利金年化；费用未知则 null |
+
+互斥计数满足 `scanned_contract_count = hard_gate_rejected_count + preference_rejected_count + eligible_count`。
+`rejection_summary` 是可重叠的原因计数，不能相加。旧 `candidates` 与
+`include_rejected` 审计语义保留，前端必须按两个通过字段与评级区分合格行。
+权利金按标准每张 100 股计算。买一价不保证成交，扣费权利金也未计入买回价格、指派及持股盈亏，
+不能称为净策略收益。原有物理 EV 排序模型没有改成风险中性模型，也没有因新增费用字段而变成完整成本回测。

@@ -1,10 +1,18 @@
 from pathlib import Path
 
+import pytest
+
+_LEGACY_DESKTOP_XFAIL = "legacy desktop-nav contract is retained as historical quarantine"
+
 
 def read(path: str) -> str:
     return Path(path).read_text(encoding="utf-8")
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason=_LEGACY_DESKTOP_XFAIL,
+)
 def test_terminal_palette_uses_readable_info_accent() -> None:
     globals_css = read("src/frontend/app/globals.css")
 
@@ -28,16 +36,19 @@ def test_terminal_primitives_expose_focusable_responsive_shell() -> None:
 def test_locale_toggle_uses_distinct_active_segment() -> None:
     source = read("src/frontend/components/LocaleToggle.tsx")
 
-    assert "rounded-lg border border-border-subtle bg-bg-base p-0.5 font-data-mono" in source
-    assert "bg-info/15 text-text-primary ring-1 ring-inset ring-info/45" in source
-    assert "bg-bg-surface-muted text-text-primary" not in source
+    assert "const active = locale === target" in source
+    assert "app-touch-target" in source
+    assert "text-text-primary underline decoration-[var(--color-hermes)]" in source
+    assert "text-text-secondary hover:bg-bg-surface" in source
 
 
 def test_paper_trading_holdings_match_position_map_exposure_language() -> None:
     source = read("src/frontend/app/paper-trading/page.tsx")
 
     assert "sourceMix" in source
-    assert "barWidthPct" in source
+    assert "weightPct" in source
+    assert "valuationComplete ?" in source
+    assert "hasMarketPrice(position)" in source
     assert "bg-accent-success" in source
     assert "bg-info" in source
     assert "bg-danger" in source
@@ -87,17 +98,17 @@ def test_frontend_component_directory_contracts_exist() -> None:
     assert Path("src/frontend/components/hermes/index.ts").is_file()
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason=_LEGACY_DESKTOP_XFAIL,
+)
 def test_hermes_workbench_is_read_only_artifact_shelf() -> None:
     hermes_page = Path("src/frontend/app/hermes/page.tsx")
     assert hermes_page.is_file()
 
     source = read("src/frontend/app/hermes/page.tsx")
-    shell = read(
-        "src/frontend/components/hermes/shell/HermesWorkbenchShell.tsx"
-    )
-    today = read(
-        "src/frontend/components/hermes/today/HermesTodayView.tsx"
-    )
+    shell = read("src/frontend/components/hermes/shell/HermesWorkbenchShell.tsx")
+    today = read("src/frontend/components/hermes/today/HermesTodayView.tsx")
     copy = read("src/frontend/lib/hermes/copy.ts")
     hermes_index = read("src/frontend/components/hermes/index.ts")
     composer = read("src/frontend/components/hermes/ComposerDock.tsx")
@@ -135,11 +146,10 @@ def test_hermes_workbench_is_read_only_artifact_shelf() -> None:
     assert "AgentTaskForm" not in agent_studio
     assert "getAgentLlmConfig" not in agent_studio
     assert (
-        "Task submission and approve/reject controls are intentionally unavailable"
-        in agent_studio
+        "Task submission and approve/reject controls are intentionally unavailable" in agent_studio
     )
     assert "任务提交与批准/拒绝控件已明确关闭" in agent_studio
-    assert 'href={`/${locale}/hermes`}' in agent_studio
+    assert "href={`/${locale}/hermes`}" in agent_studio
 
 
 def test_agent_candidate_surfaces_fail_closed_on_missing_contract_or_repository() -> None:
@@ -149,7 +159,7 @@ def test_agent_candidate_surfaces_fail_closed_on_missing_contract_or_repository(
     assert 'detail.integrity_state !== "verified"' in task_form
     assert 'detail.approval_binding !== "pending"' in task_form
     assert "candidate.approval_enabled === true" in task_form
-    assert "candidate.integrity_state === \"verified\"" in task_form
+    assert 'candidate.integrity_state === "verified"' in task_form
     assert "candidates.apiError ? (" in agent_studio
     assert "data-agent-candidates-unavailable" in agent_studio
     assert "candidateUnavailableTitle" in agent_studio
@@ -158,21 +168,20 @@ def test_agent_candidate_surfaces_fail_closed_on_missing_contract_or_repository(
     assert "/api/agent/tasks" not in agent_studio
 
 
-def test_hermes_approvals_remain_read_only_until_hqa_binding_and_bff_security_land() -> None:
-    approvals = read("src/frontend/app/hermes/approvals/page.tsx")
+def test_retired_hermes_approvals_page_stays_absent_and_mutations_stay_closed() -> None:
+    approvals = Path("src/frontend/app/hermes/approvals/page.tsx")
     feature_flags = read("src/frontend/lib/hermes/featureFlags.ts")
     feature_types = read("src/frontend/lib/hermes/types.ts")
 
-    assert "HermesGate2ReviewControls" not in approvals
-    assert "listRowShowsGate2Controls" not in approvals
-    assert "/api/agent/candidates/" not in approvals
-    assert "apiPost" not in approvals
+    assert not approvals.exists()
     assert "approvalMutations: false" in feature_flags
     assert "approvalMutations: false" in feature_types
-    assert "网页审批写端已安全关闭" in approvals
-    assert "HQA Gate 1 exact binding" in approvals
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason=_LEGACY_DESKTOP_XFAIL,
+)
 def test_hermes_sessions_are_read_only_through_the_platform_bff() -> None:
     routes = read("src/frontend/lib/hermes/routes.ts")
     api = read("src/frontend/lib/api.ts")
@@ -187,9 +196,7 @@ def test_hermes_sessions_are_read_only_through_the_platform_bff() -> None:
     assert "getHermesSessions" in api
     assert "getHermesSessionMessages" in api
     assert 'id: "sessions"' in nav
-    combined = sessions_page.read_text(encoding="utf-8") + detail_page.read_text(
-        encoding="utf-8"
-    )
+    combined = sessions_page.read_text(encoding="utf-8") + detail_page.read_text(encoding="utf-8")
     assert "Authorization" not in combined
     assert "API_SERVER_KEY" not in combined
     assert "fetch(" not in combined

@@ -6,6 +6,7 @@ import type { HermesDeliveryState } from "@/lib/hermes/types";
 export type HermesCapabilityNoticeProps = {
   locale: Locale;
   deliveryState: HermesDeliveryState;
+  readState?: "available" | "loading" | "unavailable";
 };
 
 /**
@@ -17,13 +18,22 @@ export type HermesCapabilityNoticeProps = {
 export function HermesCapabilityNotice({
   locale,
   deliveryState,
+  readState,
 }: HermesCapabilityNoticeProps) {
-  const copy = hermesCapabilityCopy(locale, deliveryState);
+  const blocked = deliveryState === "blocked_in_this_slice";
+  const copy = blocked && readState === "available" ? {
+    title: locale === "zh" ? "当前为只读模式" : "Read-only mode",
+    body: locale === "zh" ? "可查看已保存会话和研究记录；暂不能发送新消息。" : "Saved conversations and research remain readable; new messages cannot be sent.",
+  } : blocked && readState === "loading" ? {
+    title: locale === "zh" ? "正在读取连接状态" : "Reading connection status",
+    body: locale === "zh" ? "确认前暂不开放发送。" : "Sending stays disabled until the connection is checked.",
+  } : hermesCapabilityCopy(locale, deliveryState);
 
   return (
     <section
       className="flex items-start gap-2"
       data-delivery-state={deliveryState}
+      data-read-state={readState}
       data-testid="hermes-capability-notice"
     >
       <Info

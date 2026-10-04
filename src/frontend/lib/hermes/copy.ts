@@ -90,7 +90,6 @@ export type HermesWorkbenchCopy = {
     };
     attention: {
       title: string;
-      gate2Tag: string;
       approvalOnceTag: string;
       review: string;
       viewAutomation: string;
@@ -133,7 +132,7 @@ export type HermesWorkbenchCopy = {
 
 const en: HermesWorkbenchCopy = {
   nav: {
-    landmark: "Hermes workbench",
+    landmark: "Hermes Assistant",
     today: "Today",
     sessions: "Sessions",
     tasks: "Tasks",
@@ -143,7 +142,7 @@ const en: HermesWorkbenchCopy = {
   capability: {
     blocked_in_this_slice: {
       title: "Hermes chat is currently unavailable",
-      body: "The composer is locked because this installation has not passed its current write admission. Read-only sessions and results remain available; the composer opens automatically when admission is ready.",
+      body: "The local connection is not ready. Check PostgreSQL, Hermes and the connector, then refresh this page. Saved sessions and results can still be viewed.",
     },
     local_mutation_authorized: {
       title: "Hermes chat is ready",
@@ -178,8 +177,8 @@ const en: HermesWorkbenchCopy = {
   composer: {
     label: "Talk with Hermes",
     placeholder: "Hermes chat is currently unavailable",
-    placeholderOpen: "Message Hermes… (16 KiB max)",
-    unavailable: "The composer cannot submit while write admission is closed",
+    placeholderOpen: "Ask anything. A hello is fine.",
+    unavailable: "Local write is closed, so this box cannot send.",
     sendDisabled: "Send (disabled)",
     sendEnabled: "Send",
     retrySame: "Retry same send",
@@ -221,7 +220,6 @@ const en: HermesWorkbenchCopy = {
     },
     attention: {
       title: "Needs your action",
-      gate2Tag: "Gate 2",
       approvalOnceTag: "Approval · one-shot",
       review: "Review",
       viewAutomation: "View automation",
@@ -258,16 +256,16 @@ const en: HermesWorkbenchCopy = {
     },
     deskStatus: {
       writeReady:
-        "Action-first research desk. Create a new managed conversation before sending.",
+        "Ledgers on the left, conversation on the right. Just talk.",
       writeBlocked:
-        "Read-only research desk prioritizing action, exceptions, and conclusions. Submit remains disabled.",
+        "Ledgers on the left. Local write is closed, so the conversation cannot send.",
     },
   },
 };
 
 const zh: HermesWorkbenchCopy = {
   nav: {
-    landmark: "Hermes 工作台",
+    landmark: "Hermes 助手",
     today: "今日",
     sessions: "会话记录",
     tasks: "任务",
@@ -277,7 +275,7 @@ const zh: HermesWorkbenchCopy = {
   capability: {
     blocked_in_this_slice: {
       title: "Hermes 对话当前不可用",
-      body: "当前安装尚未通过写入准入，因此撰写区保持锁定。只读会话和结果仍可使用；准入就绪后撰写区会自动开放。",
+      body: "本地连接尚未就绪。请检查数据库、Hermes 和连接服务，恢复后刷新页面。保存的会话和研究结果仍可查看。",
     },
     local_mutation_authorized: {
       title: "Hermes 对话已就绪",
@@ -311,8 +309,8 @@ const zh: HermesWorkbenchCopy = {
   composer: {
     label: "和 Hermes 对话",
     placeholder: "Hermes 对话当前不可用",
-    placeholderOpen: "给 Hermes 发消息…（上限 16 KiB）",
-    unavailable: "写入准入关闭时，撰写区不能提交研究任务",
+    placeholderOpen: "随便问。问候也可以。",
+    unavailable: "本机对话写入未开，这边发不出去。",
     sendDisabled: "发送（已禁用）",
     sendEnabled: "发送",
     retrySame: "重试同一次发送",
@@ -333,8 +331,8 @@ const zh: HermesWorkbenchCopy = {
       empty: "今天还没有研究活动",
     },
     status: {
-      hermesOnline: "Hermes 正在值班",
-      hermesDegraded: "Hermes 值班中（部分降级）",
+      hermesOnline: "Hermes 在线",
+      hermesDegraded: "Hermes 在线（部分降级）",
       hermesOffline: "Hermes 暂时离岗",
       sourcesLabel: "数据源",
       sourcesAll: "全部正常",
@@ -352,7 +350,6 @@ const zh: HermesWorkbenchCopy = {
     },
     attention: {
       title: "待我处理",
-      gate2Tag: "Gate 2",
       approvalOnceTag: "审批 · 单次",
       review: "去评审",
       viewAutomation: "查看自动化",
@@ -386,8 +383,8 @@ const zh: HermesWorkbenchCopy = {
       lastSuccessNever: "尚无成功运行",
     },
     deskStatus: {
-      writeReady: "以行动、异常与结论为先的研究工作台。发送前请先新建受管对话。",
-      writeBlocked: "以行动、异常与结论为先的只读研究工作台。提交仍保持禁用。",
+      writeReady: "左边三本账，右边对话。直接说就行。",
+      writeBlocked: "左边三本账。本机对话写入未开，右边发不出去。",
     },
   },
 };

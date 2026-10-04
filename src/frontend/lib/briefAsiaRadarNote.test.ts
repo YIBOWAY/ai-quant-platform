@@ -37,6 +37,8 @@ describe("buildAsiaRadarNote", () => {
     expect(note).toContain("EWY/EWT/THD");
     expect(note).toContain("EIDO/INDA/EPHE");
     expect(note).toContain("59.4%");
+    expect(note).toContain("涨幅前三名与后三名的平均收益差");
+    expect(note).not.toContain("篮子");
     expect(note).not.toContain("5937");
   });
 

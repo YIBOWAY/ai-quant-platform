@@ -10,6 +10,7 @@ import { formatPercent, getBacktestDetail } from "@/lib/api";
 import { normalizeEquity } from "@/lib/equity";
 import { localizePath } from "@/lib/locale";
 import { getServerLocale } from "@/lib/serverLocale";
+import { SaveStrategyButton } from "@/components/research/StrategyLibraryPanel";
 
 // Note: the English page title, "Metrics", and "Trade Blotter" strings are
 // asserted by e2e specs (run-detail-routes.spec.ts) — keep them verbatim.
@@ -147,6 +148,7 @@ export default async function BacktestRunDetailPage({ params }: BacktestRunDetai
       />
       <ErrorBanner messages={[detail.apiError]} />
       <SyntheticMetricsWarning source={source} locale={locale} />
+      {source === "futu" && !detail.apiError ? <div className="flex flex-wrap items-center gap-4"><SaveStrategyButton source={{ type: "backtest", runId }} locale={locale}/><p className="text-xs leading-6 text-text-secondary">{locale === "zh" ? "保存这次回测的公式与参数，保留原调仓频率；到“我的策略”完成验证后可启用模拟。" : "Save this run's formula, parameters and schedule. Validate the fixed version in My strategies before enabling paper simulation."}</p></div> : null}
       <div className="flex flex-wrap items-center gap-2">
         {source ? <DataSourceBadge source={source} /> : null}
         {benchmarkStart && benchmarkEnd ? (

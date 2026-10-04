@@ -6,14 +6,19 @@
 
 | 指南 | 界面路由 | 一句话 |
 |---|---|---|
+| [策略保存、组合与研究评价](strategy-library.md) | `/strategy-library`、`/research-evaluation` | 保存明确规则；查看逐期选股、相对基准表现和27项因子记分卡；验证与资金准入分别记录。 |
 | [因子实验室 Factor Lab](factor-lab.md) | `/factor-lab` | 因子诊断面板（IC、IC 衰减、分位收益、择时）+ 可保存的因子研究运行；数据源/股票池/择时标的/基准可在侧栏调整，并可把当前上下文发送至回测器预填表单。 |
-| [回测器 Backtester](backtester.md) | `/backtest` | 真正能跑的回测引擎：因子打分→选股→下单→撮合→绩效；六个界面里最名副其实。 |
+| [美股风险与市场对照](market-cross-section.md) | `/watch?pane=cross` | 估值、行情与波动的有来源观察评分；Grok解读另列；价格和板块对照可展开。 |
+| [亚洲泡沫与区域对照](asia-radar.md) | `/watch?pane=radar` | 亚洲市场ETF的估值、趋势、回撤与来源；AI解读不冒充已校准崩盘概率。 |
+| [回测器 Backtester](backtester.md) | `/backtest` | 因子打分、选股、历史成交与绩效计算；不直接给模拟运行资格。 |
+| [公司研究](company-research.md) | `/company-research` | 通过Longbridge读取公司财报、估值和事件资料；当前公司资料不冒充历史时点可用财报。 |
 | [策略目录 Strategy Catalog](strategy-catalog.md) | `/strategies` | 注册表驱动的策略启动器，按 schema 自动生成参数表单。 |
 | [实验管理 Experiments](experiments.md) | `/experiments` | 在 sample/futu/tiingo 数据源上做参数网格扫描，可显式开启滚动验证折，按 Sharpe 选最佳，并保持发送至回测的数据源一致。 |
 | [模拟交易 Paper Trading](paper-trading.md) | `/paper-trading` | 持久 100 万模拟账户：手动下单 + 策略一键再平衡；另含历史回放（研究）。 |
-| [持仓地图 Position Map](position-map.md) | `/position-map` | 模拟账户实时持仓地图（净值/暴露/来源归因），另含回测暴露对比块。 |
+| [持仓地图 Position Map](position-map.md) | `/paper-trading?view=map` | 模拟账户实时持仓地图；旧 `/position-map` 为 301 alias。 |
+| [期权推荐](options-recommendations.md) | `/options-radar` | 22:00 自动任务、立即更新、六态、物理 EV、IVR warming 与故障边界。 |
 | [AI 新闻研究流 AI News](ai-news.md) | `/ai-news` | AI HOT 只读新闻入口：精选/全部动态、分类/关键词/时间窗筛选、日报、原文链接；不触发策略、回测或模拟账户。 |
-| [Hermes 会话读取](hermes-sessions.md) | `/hermes/sessions` | official Hermes API 的本地持久会话观察面；说明 server-side key、loopback 边界、故障排查和下一阶段 durable bridge，当前不提交 chat。 |
+| [Hermes 助手与会话](hermes-sessions.md) | `/hermes` | managed local-trust composer、saved-session 深链、server-side key、034 与 public-off 边界；旧 `/hermes/sessions` 为 301 alias。 |
 
 ## 重设计
 

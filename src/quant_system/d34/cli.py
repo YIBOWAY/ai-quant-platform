@@ -3,553 +3,245 @@
 from __future__ import annotations
 
 import json
-import os
-import stat
-from datetime import UTC, datetime
-from pathlib import Path
-from typing import Annotated
-from zoneinfo import ZoneInfo
+from datetime import datetime
+from typing import Annotated, Any
 
 import typer
 
 from quant_system.config.settings import load_settings
-from quant_system.d34.docker_runtime import D34DockerConfig, D34DockerRuntime
-from quant_system.d34.final_acceptance import (
-    D34FinalAcceptanceAuditor,
-    verify_current_acceptance,
-    verify_final_acceptance_receipt,
+from quant_system.d34.paper_cycle import (
+    SHANGHAI,
+    PaperCycleDryPlanner,
+    plan_d34_paper_cycle,
+    run_d34_paper_cycle,
 )
-from quant_system.d34.paper_cycle import run_d34_paper_cycle
-from quant_system.d34.platform_replay import run_platform_replay
-from quant_system.d34.preflight import run_d34_preflight
-from quant_system.d34.research_routing import (
-    ROUTING_CONTRACT,
-    D34ResearchRoutingAuthority,
-    project_research_routing,
-)
-from quant_system.d34.research_request import enqueue_owner_research_request
-from quant_system.d34.worker import D34CycleWorker, D34WorkerConfig
-from quant_system.data.provider_factory import build_ohlcv_provider
 from quant_system.execution.account_repository_factory import (
     build_paper_account_repository,
 )
-from quant_system.execution.d34_canary_activation import (
-    D34CanaryActivationRequest,
-    activate_d34_paper_canary,
+from quant_system.execution.paper_observation_safety import (
+    observe_paper_emergency_stop,
 )
-from quant_system.execution.d34_canary_monitor import maintain_d34_canaries
 from quant_system.execution.paper_strategy_operations import PaperStrategyOperationsRunner
 from quant_system.execution.paper_strategy_sleeve_storage import (
     PaperStrategySleeveStorage,
 )
 from quant_system.execution.price_source import PaperPriceSource
-from quant_system.hermes.d34_job_authority import PostgresJobAuthority
-from quant_system.hermes.d34_mandate_authority import PostgresMandateAuthority
-from quant_system.hermes.d34_registry_authority import PostgresRegistryAuthority
-from quant_system.hermes.d34_safety_authority import D34SafetyAuthority
 
 d34_app = typer.Typer(help="Run D-34 autonomous paper-research operations.")
-_DEFAULT_PLATFORM_ROOT = Path(__file__).resolve().parents[3]
-_DEFAULT_HQA_ROOT = Path(
-    os.environ.get("QS_D34_HQA_ROOT", "/Users/sunyibo/programs/Hermes-quant-agent")
-)
 
 
-class D34EnvConfigError(RuntimeError):
-    """Stable owner-actionable blocker emitted at the D-34 CLI seam."""
-
-    def __init__(self, code: str) -> None:
-        self.code = code
-        super().__init__(code)
+@d34_app.callback()
+def d34() -> None:
+    """Keep the installed ``d34 paper-cycle`` command group stable."""
 
 
-def _routing_authority(settings) -> D34ResearchRoutingAuthority:
-    return D34ResearchRoutingAuthority(settings.data.data_dir / "d34" / "research-routing.json")
+def _receipt_scalar(value):
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    return str(value)
 
 
-def _routing_failure(exc: Exception) -> None:
-    typer.echo(
-        json.dumps(
-            {
-                "contract": ROUTING_CONTRACT,
-                "state": "failed",
-                "code": str(getattr(exc, "code", type(exc).__name__)),
-                "message": str(exc),
-            },
-            sort_keys=True,
-        )
-    )
-
-
-def _verified_final_acceptance(
-    settings,
+def _paper_cycle_signal_outcomes(
+    sleeve_storage: PaperStrategySleeveStorage,
     *,
-    expected_digest: str,
-    workspace_id: str,
-) -> dict[str, object]:
-    path = settings.data.data_dir / "d34" / "acceptance" / "latest.json"
-    try:
-        receipt = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        raise ValueError("d34_final_acceptance_receipt_invalid") from exc
-    if not isinstance(receipt, dict):
-        raise ValueError("d34_final_acceptance_receipt_invalid")
-    verify_final_acceptance_receipt(
-        receipt,
-        expected_digest=expected_digest,
-        workspace_id=workspace_id,
-    )
-    return receipt
-
-
-def _existing_env_file(repo: Path) -> Path:
-    configured = os.environ.get("QS_D34_ENV_FILE", "").strip()
-    candidate = Path(configured).expanduser() if configured else repo / "docker/d34/.env"
-    try:
-        metadata = candidate.lstat()
-    except FileNotFoundError as exc:
-        raise D34EnvConfigError("d34_env_file_required") from exc
-    if (
-        stat.S_ISLNK(metadata.st_mode)
-        or not stat.S_ISREG(metadata.st_mode)
-        or stat.S_IMODE(metadata.st_mode) != 0o600
-    ):
-        raise D34EnvConfigError("d34_env_file_must_be_owner_only")
-    try:
-        lines = candidate.read_text(encoding="utf-8").splitlines()
-    except (OSError, UnicodeError) as exc:
-        raise D34EnvConfigError("d34_env_file_unreadable") from exc
-    required_models = {"LITELLM_CHAT_MODEL"}
-    configured_models: set[str] = set()
-    configured_names: set[str] = set()
-    for line in lines:
-        if not line.strip() or line.lstrip().startswith("#") or "=" not in line:
+    signal_date: str,
+) -> dict[str, Any]:
+    counts: dict[str, Any] = {
+        "generated": 0,
+        "data_unavailable": 0,
+        "invalid": 0,
+        "read_failed": 0,
+        "provider_error_codes": [],
+    }
+    provider_codes: set[str] = set()
+    for sleeve in sleeve_storage.list_sleeves():
+        metadata = getattr(sleeve, "metadata", None) or {}
+        raw_sleeve_status = getattr(sleeve, "status", None)
+        sleeve_status = str(getattr(raw_sleeve_status, "value", raw_sleeve_status) or "").lower()
+        if (
+            metadata.get("automation_managed") is not True
+            or metadata.get("automation_source") != "d34"
+            or sleeve_status != "running"
+        ):
             continue
-        key, value = line.split("=", 1)
-        name = key.strip()
-        configured_names.add(name)
-        if name in required_models and value.strip():
-            configured_models.add(name)
-    if configured_models != required_models:
-        raise D34EnvConfigError("d34_env_models_required")
-    if any(
-        name.startswith("LITELLM_") and name.endswith(("_KEY", "_TOKEN", "_SECRET", "_PASSWORD"))
-        for name in configured_names
-    ):
-        raise D34EnvConfigError("d34_env_logged_secret_forbidden")
-    return candidate.resolve()
+        try:
+            signals = sleeve_storage.load_signals(sleeve.sleeve_id)
+        except Exception:  # noqa: BLE001 - failed sleeve must not hide healthy cycle receipts
+            counts["read_failed"] += 1
+            continue
+        for signal in signals:
+            if str(getattr(signal, "signal_date", "")) != signal_date:
+                continue
+            raw_status = getattr(signal, "status", None)
+            status = str(getattr(raw_status, "value", raw_status) or "").lower()
+            if status in ("generated", "data_unavailable", "invalid"):
+                counts[status] += 1
+            signal_metadata = getattr(signal, "metadata", None) or {}
+            provider_error = signal_metadata.get("provider_error")
+            if isinstance(provider_error, dict) and provider_error.get("code"):
+                provider_codes.add(str(provider_error["code"]))
+    counts["provider_error_codes"] = sorted(provider_codes)
+    return counts
 
 
-def build_local_worker(
-    *,
-    platform_root: Path,
-    hqa_root: Path,
-    workspace_root: Path,
-    cache_root: Path,
-    image_ref: str,
-    workspace_id: str,
-    worker_id: str,
-) -> D34CycleWorker:
-    settings = load_settings()
-    workspace_root.mkdir(parents=True, exist_ok=True)
-    cache_root.mkdir(parents=True, exist_ok=True)
-    config = D34WorkerConfig(
-        workspace_root=workspace_root.resolve(),
-        platform_root=platform_root.resolve(),
-        hqa_root=hqa_root.resolve(),
-        cache_root=cache_root.resolve(),
-        workspace_id=workspace_id,
-        worker_id=worker_id,
-    )
-    docker = D34DockerRuntime(
-        D34DockerConfig(
-            image_ref=image_ref,
-            workspace_root=config.workspace_root,
-            platform_root=config.platform_root,
-            hqa_root=config.hqa_root,
-            cache_root=config.cache_root,
-            env_file=_existing_env_file(config.platform_root),
-            timeout_seconds=7200,
+@d34_app.command("paper-cycle")
+def paper_cycle(
+    workspace_id: Annotated[str, typer.Option("--workspace-id")] = "default",
+    dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
+    as_of: Annotated[str | None, typer.Option("--as-of")] = None,
+) -> None:
+    """Run only the digest-gated paper observation cycle for hung sleeves.
+
+    This is the observation-day driver. It never enqueues research jobs,
+    activates canaries, consults a mandate, or touches docker/LLM; the
+    research factory switch stays separate. Sleeves must pass the hung
+    observation gate (digest-bound, running, non-fossil) to do anything.
+    """
+    if as_of is not None and dry_run is not True:
+        typer.echo(
+            json.dumps(
+                {
+                    "contract": "hqa.d34_paper_cycle/v1",
+                    "code": "as_of_requires_dry_run",
+                    "message": "--as-of is only allowed together with --dry-run",
+                },
+                sort_keys=True,
+            )
         )
-    )
-    futu, source = build_ohlcv_provider(settings, requested="futu")
-    if source != "futu" or getattr(futu, "provider_name", None) != "futu":
-        raise RuntimeError("d34_futu_provider_unavailable")
+        raise typer.Exit(code=2)
+    settings = load_settings()
+    # The observation gate is the platform safety contract plus emergency
+    # stop — deliberately NOT the research factory's mandate-coupled
+    # paper_execution_enabled. Per-sleeve fills still require the digest
+    # bound hung-observation gate inside the runner.
+    safety_cfg = getattr(settings, "safety", None)
+    emergency = observe_paper_emergency_stop(settings, workspace_id=workspace_id)
+    emergency_active = emergency.get("active") is True
+    gate = {
+        "contract": "hung_observation",
+        "paper_trading": getattr(safety_cfg, "paper_trading", False) is True,
+        "live_trading_enabled": getattr(safety_cfg, "live_trading_enabled", None),
+        "paper_observation_enabled": (
+            getattr(safety_cfg, "paper_observation_enabled", False) is True
+        ),
+        "emergency_stop_active": emergency_active,
+        "research_factory_gate": "ignored_by_design",
+    }
     api_runs_dir = settings.data.data_dir / "api_runs"
     account_storage = build_paper_account_repository(api_runs_dir, settings=settings)
     sleeve_storage = PaperStrategySleeveStorage(api_runs_dir)
-    registry = PostgresRegistryAuthority(settings)
-    price_source = PaperPriceSource(settings)
     paper_operations = PaperStrategyOperationsRunner(
         account_storage=account_storage,
         sleeve_storage=sleeve_storage,
         settings=settings,
-        price_source=price_source,
+        price_source=PaperPriceSource(settings),
     )
-
-    def replay(*, qlib_receipt, **kwargs):
-        _ = qlib_receipt
-        return run_platform_replay(**kwargs)
-
-    def activate_canary(*, artifact, factor_id, artifact_code_path, universe):
-        account = account_storage.load()
-        if account is None:
-            raise RuntimeError("paper_account_missing")
-        symbols = sorted(set(universe) | set(account.positions))
-        quotes = price_source.get_prices(symbols)
-        if set(quotes) != set(symbols) or any(quote.source != "futu" for quote in quotes.values()):
-            raise RuntimeError("d34_canary_requires_futu_prices")
-        prices = {symbol: quote.price for symbol, quote in quotes.items()}
-        _sleeve, canary = activate_d34_paper_canary(
-            D34CanaryActivationRequest(
-                artifact=artifact,
-                factor_id=factor_id,
-                artifact_code_path=artifact_code_path,
-                universe=tuple(universe),
-                provider="futu",
-                nav=account.equity(prices),
-                account_updated_at=account.updated_at,
-                prices=prices,
-                price_metadata={
-                    symbol: {
-                        "source": quote.source,
-                        "kind": quote.price_kind,
-                        "as_of": quote.as_of,
-                    }
-                    for symbol, quote in quotes.items()
-                },
-            ),
+    now = datetime.now().astimezone()
+    if as_of is not None:
+        try:
+            parsed = datetime.fromisoformat(as_of)
+        except ValueError as exc:
+            typer.echo(
+                json.dumps(
+                    {
+                        "contract": "hqa.d34_paper_cycle/v1",
+                        "code": "as_of_invalid",
+                        "message": str(exc),
+                    },
+                    sort_keys=True,
+                )
+            )
+            raise typer.Exit(code=2) from exc
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            typer.echo(
+                json.dumps(
+                    {
+                        "contract": "hqa.d34_paper_cycle/v1",
+                        "code": "as_of_timezone_required",
+                    },
+                    sort_keys=True,
+                )
+            )
+            raise typer.Exit(code=2)
+        now = parsed
+    if dry_run:
+        planner = PaperCycleDryPlanner(
             account_storage=account_storage,
             sleeve_storage=sleeve_storage,
-            registry=registry,
+            settings=settings,
         )
-        return canary
-
-    def operate_canaries(safety):
-        observed_at = datetime.now().astimezone()
-        observed = maintain_d34_canaries(
-            now=observed_at,
-            workspace_id=workspace_id,
-            registry=registry,
+        plan = plan_d34_paper_cycle(
+            now=now,
             sleeve_storage=sleeve_storage,
-            price_source=price_source,
+            runner=paper_operations,
+            dry_run=True,
+            planner=planner,
+            paper_costs=getattr(settings, "paper_account", None),
         )
-        if safety.get("paper_execution_enabled") is True:
-            trading = run_d34_paper_cycle(
-                now=observed_at,
-                sleeve_storage=sleeve_storage,
-                runner=paper_operations,
+        typer.echo(
+            json.dumps(
+                {
+                    "contract": "hqa.d34_paper_cycle/v1",
+                    "as_of": now.isoformat(),
+                    "status": "dry_run",
+                    "workspace_id": workspace_id,
+                    "gate": {key: _receipt_scalar(value) for key, value in gate.items()},
+                    "plan": plan,
+                },
+                sort_keys=True,
+                default=str,
             )
+        )
+        return
+    gate_open = (
+        gate["paper_trading"]
+        and gate["live_trading_enabled"] is not True
+        and gate["paper_observation_enabled"]
+        and not emergency_active
+    )
+    if gate_open:
+        trading = run_d34_paper_cycle(
+            now=now,
+            sleeve_storage=sleeve_storage,
+            runner=paper_operations,
+        )
+        signal_outcomes = _paper_cycle_signal_outcomes(
+            sleeve_storage,
+            signal_date=now.astimezone(SHANGHAI).date().isoformat(),
+        )
+        if trading.get("sleeves_failed", 0) or signal_outcomes["read_failed"]:
+            status = "partial_failed"
+        elif signal_outcomes["data_unavailable"] or signal_outcomes["invalid"]:
+            status = "data_unavailable"
         else:
-            trading = {
-                "sleeves_checked": 0,
-                "signals_generated": 0,
-                "executions_created": 0,
-                "executions_processed": 0,
-                "executions_filled": 0,
-                "executions_blocked": 0,
-            }
-        return {"monitor": observed, "trading": trading}
-
-    return D34CycleWorker(
-        config=config,
-        mandates=PostgresMandateAuthority(settings),
-        jobs=PostgresJobAuthority(settings),
-        registry=registry,
-        docker_runtime=docker,
-        futu_provider=futu,
-        platform_replay=replay,
-        canary_activator=activate_canary,
-        safety_observer=lambda: D34SafetyAuthority(settings).observe(workspace_id=workspace_id),
-        canary_operator=operate_canaries,
-    )
-
-
-@d34_app.command("research-routing")
-def research_routing(
-    workspace_id: Annotated[str, typer.Option("--workspace-id")] = "default",
-) -> None:
-    """Project the qualified D-34 entry and reversible D-33 intake fallback."""
-    try:
-        settings = load_settings()
-        safety = D34SafetyAuthority(settings).observe(workspace_id=workspace_id)
-        state = _routing_authority(settings).observe()
-        routing = project_research_routing(safety, state)
-    except Exception as exc:  # noqa: BLE001 - CLI boundary
-        _routing_failure(exc)
-        raise typer.Exit(code=1) from exc
-    typer.echo(json.dumps(routing, sort_keys=True))
-
-
-@d34_app.command("research-cutover")
-def research_cutover(
-    final_acceptance_digest: Annotated[
-        str,
-        typer.Option("--final-acceptance-digest"),
-    ],
-    reason: Annotated[str, typer.Option("--reason")],
-    workspace_id: Annotated[str, typer.Option("--workspace-id")] = "default",
-) -> None:
-    """Persist D-34 as default only after the final acceptance receipt exists."""
-    try:
-        settings = load_settings()
-        safety = D34SafetyAuthority(settings).observe(workspace_id=workspace_id)
-        candidate = {
-            "contract": "hqa.d34_research_routing_state/v1",
-            "requested_default": "d34",
-            "final_acceptance_digest": final_acceptance_digest,
-            "reason": reason,
-            "updated_at": datetime.now(UTC).isoformat(),
+            status = "ok"
+    else:
+        trading = {
+            "sleeves_checked": 0,
+            "signals_generated": 0,
+            "executions_created": 0,
+            "executions_processed": 0,
+            "executions_filled": 0,
+            "executions_blocked": 0,
+            "executions_missed_window": 0,
         }
-        if project_research_routing(safety, candidate)["default_research_entry"] != "d34":
-            raise ValueError("d34_research_cutover_not_qualified")
-        receipt = _verified_final_acceptance(
-            settings,
-            expected_digest=final_acceptance_digest,
-            workspace_id=workspace_id,
-        )
-        current = D34FinalAcceptanceAuditor(
-            settings,
-            now=lambda: datetime.now(UTC),
-        ).audit(workspace_id=workspace_id)
-        verify_current_acceptance(receipt, current)
-        authority = _routing_authority(settings)
-        state = authority.activate_d34(
-            safety=safety,
-            final_acceptance_digest=final_acceptance_digest,
-            reason=reason,
-        )
-        routing = project_research_routing(safety, state)
-    except Exception as exc:  # noqa: BLE001 - CLI boundary
-        _routing_failure(exc)
-        raise typer.Exit(code=1) from exc
-    typer.echo(json.dumps(routing, sort_keys=True))
-
-
-@d34_app.command("final-acceptance")
-def final_acceptance(
-    workspace_id: Annotated[str, typer.Option("--workspace-id")] = "default",
-) -> None:
-    """Write one digest-bound read-only acceptance receipt for the cutover."""
-    try:
-        auditor = D34FinalAcceptanceAuditor(
-            load_settings(),
-            now=lambda: datetime.now(UTC),
-        )
-        receipt = auditor.audit(workspace_id=workspace_id)
-        auditor.write(receipt)
-    except Exception as exc:  # noqa: BLE001 - CLI boundary
-        typer.echo(
-            json.dumps(
-                {
-                    "contract": "hqa.d34_final_acceptance/v1",
-                    "accepted": False,
-                    "blockers": [str(getattr(exc, "code", type(exc).__name__))],
-                    "message": str(exc),
-                },
-                sort_keys=True,
-            )
-        )
-        raise typer.Exit(code=1) from exc
-    typer.echo(json.dumps(receipt, sort_keys=True, default=str))
-    if receipt.get("accepted") is not True:
-        raise typer.Exit(code=1)
-
-
-@d34_app.command("preflight")
-def preflight(
-    platform_root: Annotated[
-        Path,
-        typer.Option("--platform-root", help="Platform source checkout mount."),
-    ] = _DEFAULT_PLATFORM_ROOT,
-    hqa_root: Annotated[
-        Path,
-        typer.Option("--hqa-root", help="HQA source checkout mount."),
-    ] = _DEFAULT_HQA_ROOT,
-    workspace_root: Annotated[
-        Path | None,
-        typer.Option("--workspace-root", help="Durable D-34 data and receipt root."),
-    ] = None,
-    cache_root: Annotated[
-        Path | None,
-        typer.Option("--cache-root", help="Durable RD-Agent/Qlib cache root."),
-    ] = None,
-    image_ref: Annotated[
-        str,
-        typer.Option("--image-ref", help="Pinned local D-34 image reference."),
-    ] = os.environ.get("D34_IMAGE_REF", "hqa-d34-rdagent-qlib:0.1.0"),
-    workspace_id: Annotated[str, typer.Option("--workspace-id")] = "default",
-) -> None:
-    """Prove schema, live isolation, LLM, Qlib, Futu and Docker readiness."""
-
-    settings = load_settings()
-    workspace = (workspace_root or settings.data.data_dir / "d34").resolve()
-    cache = (cache_root or workspace / "cache").resolve()
-    try:
-        runtime = D34DockerRuntime(
-            D34DockerConfig(
-                image_ref=image_ref,
-                workspace_root=workspace,
-                platform_root=platform_root.resolve(),
-                hqa_root=hqa_root.resolve(),
-                cache_root=cache,
-                env_file=_existing_env_file(platform_root.resolve()),
-                timeout_seconds=7200,
-            )
-        )
-        receipt = run_d34_preflight(
-            workspace_root=workspace,
-            docker_runtime=runtime,
-            safety_observer=lambda: D34SafetyAuthority(settings).observe(workspace_id=workspace_id),
-        )
-    except Exception as exc:  # noqa: BLE001 - CLI boundary
-        typer.echo(
-            json.dumps(
-                {
-                    "contract": "hqa.d34_preflight/v1",
-                    "ready": False,
-                    "code": str(getattr(exc, "code", type(exc).__name__)),
-                    "message": str(exc),
-                },
-                sort_keys=True,
-            )
-        )
-        raise typer.Exit(code=1) from exc
-    typer.echo(json.dumps(receipt.to_public_dict(), sort_keys=True))
-
-
-@d34_app.command("request-research")
-def request_research(
-    objective: Annotated[
-        str,
-        typer.Option("--objective", help="Owner research ask. Nothing is queued without this."),
-    ],
-    workspace_id: Annotated[str, typer.Option("--workspace-id")] = "default",
-    hang_if_pass: Annotated[
-        bool,
-        typer.Option(
-            "--hang-if-pass",
-            help="Only then hang a passing dual-engine artifact onto the daily book.",
-        ),
-    ] = False,
-) -> None:
-    settings = load_settings()
-    try:
-        mandate = PostgresMandateAuthority(settings).get_active(workspace_id=workspace_id)
-        if (
-            mandate is None
-            or mandate.status != "active"
-            or mandate.expires_at <= datetime.now(UTC)
-            or mandate.paper_execution_allowed is not True
-        ):
-            raise ValueError("no_active_mandate")
-        job_key = enqueue_owner_research_request(
-            jobs=PostgresJobAuthority(settings),
-            mandate=mandate,
-            workspace_id=workspace_id,
-            objective=objective,
-            cycle_date=datetime.now(ZoneInfo("Asia/Shanghai")).date(),
-            hang_if_pass=hang_if_pass,
-        )
-    except Exception as exc:  # noqa: BLE001 - CLI boundary
-        typer.echo(
-            json.dumps(
-                {
-                    "contract": "hqa.d34_worker_result/v1",
-                    "status": "failed",
-                    "code": str(getattr(exc, "code", type(exc).__name__)),
-                    "message": str(exc),
-                },
-                sort_keys=True,
-            )
-        )
-        raise typer.Exit(code=1) from exc
+        signal_outcomes = {"generated": 0, "data_unavailable": 0, "invalid": 0, "read_failed": 0, "provider_error_codes": []}
+        status = "blocked"
     typer.echo(
         json.dumps(
             {
-                "contract": "hqa.d34_worker_result/v1",
-                "status": "queued",
-                "code": "d34_research_requested",
-                "job_key": job_key,
+                "contract": "hqa.d34_paper_cycle/v1",
+                "as_of": now.isoformat(),
+                "status": status,
+                "calendar_ran": gate_open,
+                "signal_outcomes": signal_outcomes,
+                "workspace_id": workspace_id,
+                "gate": {key: _receipt_scalar(value) for key, value in gate.items()},
+                "trading": trading,
             },
-            default=str,
             sort_keys=True,
         )
     )
 
 
-@d34_app.command("worker-once")
-def worker_once(
-    platform_root: Annotated[
-        Path,
-        typer.Option("--platform-root", help="Read-only Platform source checkout mount."),
-    ] = _DEFAULT_PLATFORM_ROOT,
-    hqa_root: Annotated[
-        Path,
-        typer.Option("--hqa-root", help="Read-only HQA source checkout mount."),
-    ] = _DEFAULT_HQA_ROOT,
-    workspace_root: Annotated[
-        Path | None,
-        typer.Option("--workspace-root", help="Durable D-34 data and receipt root."),
-    ] = None,
-    cache_root: Annotated[
-        Path | None,
-        typer.Option("--cache-root", help="Durable RD-Agent/Qlib cache root."),
-    ] = None,
-    image_ref: Annotated[
-        str,
-        typer.Option("--image-ref", help="Pinned local D-34 image reference."),
-    ] = os.environ.get("D34_IMAGE_REF", "hqa-d34-rdagent-qlib:0.1.0"),
-    workspace_id: Annotated[str, typer.Option("--workspace-id")] = "default",
-    worker_id: Annotated[str, typer.Option("--worker-id")] = "hqa-d34-launchagent",
-) -> None:
-    settings = load_settings()
-    workspace = (workspace_root or settings.data.data_dir / "d34").resolve()
-    cache = (cache_root or workspace / "cache").resolve()
-    try:
-        worker = build_local_worker(
-            platform_root=platform_root,
-            hqa_root=hqa_root,
-            workspace_root=workspace,
-            cache_root=cache,
-            image_ref=image_ref,
-            workspace_id=workspace_id,
-            worker_id=worker_id,
-        )
-        result = worker.run_once()
-    except Exception as exc:  # noqa: BLE001 - CLI boundary
-        typer.echo(
-            json.dumps(
-                {
-                    "contract": "hqa.d34_worker_result/v1",
-                    "status": "failed",
-                    "code": str(getattr(exc, "code", type(exc).__name__)),
-                    "message": str(exc),
-                },
-                sort_keys=True,
-            )
-        )
-        raise typer.Exit(code=1) from exc
-    canary = result.canary
-    if hasattr(canary, "to_public_dict"):
-        canary = canary.to_public_dict()
-    typer.echo(
-        json.dumps(
-            {
-                "contract": "hqa.d34_worker_result/v1",
-                "status": result.status,
-                "code": result.code,
-                "job_id": result.job_id,
-                "artifact_id": result.artifact_id,
-                "canary": canary,
-                "paper_cycle": result.paper_cycle,
-            },
-            default=str,
-            sort_keys=True,
-        )
-    )
-    if result.status in {"failed", "needs_recovery"}:
-        raise typer.Exit(code=1)
-
-
-__all__ = ["build_local_worker", "d34_app"]
+__all__ = ["d34_app"]

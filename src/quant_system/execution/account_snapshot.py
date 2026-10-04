@@ -289,6 +289,7 @@ def materialize_account_view(
         "cash": account.cash,
         "reserved_cash": account.reserved_cash(),
         "available_cash": account.available_cash(),
+        "manual_available_cash": account.manual_available_cash(),
         "equity": equity,
         "realized_pnl": account.realized_pnl,
         "unrealized_pnl": account.unrealized_pnl(prices),
@@ -328,6 +329,14 @@ def materialize_account_view(
             warnings.append("paper_account_reconciliation_unavailable")
     if price_fallback_used:
         warnings.append("paper_account_price_unavailable")
+
+    # Keep legacy accounting fields for compatible clients, but never describe
+    # a cost-basis placeholder as a current market valuation.
+    unpriced = [row["symbol"] for row in positions if row["price_kind"] == "avg_cost_fallback"]
+    view["valuation_status"] = "incomplete" if unpriced else "complete"
+    view["unpriced_symbols"] = unpriced
+    view["market_equity"] = None if unpriced else equity
+    view["cost_basis_reference_equity"] = equity if unpriced else None
 
     view["storage_mode"] = settings.paper_account.db_mode
     view["stale"] = stale

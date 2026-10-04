@@ -1,39 +1,7 @@
-import re
 from pathlib import Path
-
-from pydantic import BaseModel
-
-from quant_system.api.schemas import options_radar
 
 API_TYPES = Path("src/frontend/lib/api.ts")
 RADAR_VIEW = Path("src/frontend/components/forms/OptionsRadarView.tsx")
-
-
-def _frontend_type_fields(type_name: str) -> set[str]:
-    api_types = API_TYPES.read_text(encoding="utf-8")
-    match = re.search(
-        rf"export type {re.escape(type_name)} = (?:ApiEnvelope & )?\{{(?P<body>.*?)\n\}};",
-        api_types,
-        flags=re.DOTALL,
-    )
-    assert match is not None, f"{type_name} is not exported from {API_TYPES}"
-    return set(
-        re.findall(
-            r"^\s*([A-Za-z_][A-Za-z0-9_]*)\??:",
-            match.group("body"),
-            re.MULTILINE,
-        )
-    )
-
-
-def _response_models(module: object) -> list[type[BaseModel]]:
-    return [
-        item
-        for item in vars(module).values()
-        if isinstance(item, type)
-        and issubclass(item, BaseModel)
-        and item.__name__.endswith("Response")
-    ]
 
 
 def test_options_radar_uses_backend_daily_scan_response_type_names() -> None:
@@ -44,7 +12,6 @@ def test_options_radar_uses_backend_daily_scan_response_type_names() -> None:
         "OptionsDailyScanDatesResponse",
         "OptionsDailyScanStatusResponse",
         "OptionsDailyScanResponse",
-        "OptionsDailyScanRunResponse",
         "OptionsDailyScanSymbolResponse",
         "OptionsRadarCandidateResponse",
     ]:
@@ -56,26 +23,32 @@ def test_options_radar_uses_backend_daily_scan_response_type_names() -> None:
         "OptionsDailyScanStatusResponse;"
     ) in api_types
     assert "export type OptionsRadarResponse = OptionsDailyScanResponse;" in api_types
-    assert "export type OptionsRadarRunResponse = OptionsDailyScanRunResponse;" in api_types
     assert "export type OptionsRadarSymbolResponse = OptionsDailyScanSymbolResponse;" in api_types
     assert "export type OptionsRadarCandidate = OptionsRadarCandidateResponse;" in api_types
     assert "OptionsDailyScanStatusResponse" in view
     assert "OptionsDailyScanResponse" in view
-    assert "OptionsDailyScanRunResponse" in view
     assert "apiRequest<OptionsDailyScanResponse>" in view
-    assert "apiPost<OptionsDailyScanRunResponse>" in view
+    assert "OptionsDailyScanRunResponse" in view
+    assert 'apiPost<OptionsDailyScanRunResponse>("/api/options/daily-scan/run", {})' in view
+    assert "Run Today's Scan" not in view
 
 
 def test_shared_options_daily_scan_types_match_backend_required_fields() -> None:
-    api_types = API_TYPES.read_text(encoding="utf-8")
+    generated = Path("src/frontend/lib/api.generated.ts").read_text(encoding="utf-8")
 
     for field in [
-        "is_stale: boolean;",
-        "snapshot_age_days: number;",
-        "expired_candidate_count: number;",
-        'provider: "sample" | "futu";',
+        "is_stale: boolean",
+        "snapshot_age_days: number",
+        "expired_candidate_count: number",
+        "shortfall_reasons:",
     ]:
-        assert field in api_types
+        assert field in generated
+    candidate_schema = generated.split(
+        'OptionsRadarCandidateResponse: {', 1
+    )[1].split("};", 1)[0]
+    assert "global_score: number" in candidate_schema
+    assert "rating:" not in candidate_schema
+    assert "notes:" not in candidate_schema
 
 
 def test_options_radar_symbol_detail_uses_backend_daily_scan_type_name() -> None:
@@ -91,8 +64,13 @@ def test_options_radar_symbol_detail_uses_backend_daily_scan_type_name() -> None
 
 
 def test_options_radar_frontend_response_types_include_backend_fields() -> None:
-    for response_model in _response_models(options_radar):
-        backend_fields = set(response_model.model_fields)
-        frontend_fields = _frontend_type_fields(response_model.__name__)
+    api_types = API_TYPES.read_text(encoding="utf-8")
 
-        assert backend_fields <= frontend_fields, response_model.__name__
+    for model_name in (
+        "OptionsRadarCandidateResponse",
+        "OptionsDailyScanResponse",
+        "OptionsDailyScanSymbolResponse",
+    ):
+        assert (
+            f'GeneratedApiComponents["schemas"]["{model_name}"]' in api_types
+        )

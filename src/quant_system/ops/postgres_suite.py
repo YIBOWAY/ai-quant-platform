@@ -30,6 +30,7 @@ from quant_system.ops.postgres_container import (
     DisposablePostgresContainer,
     owned_process_environment,
 )
+from quant_system.ops.postgres_population import PG_POPULATION_CONTRACT, REQUIRED_PG_MARKED_NODES
 from quant_system.storage.database import Database, run_migrations
 
 DISPATCH_NODES = (
@@ -39,7 +40,7 @@ DISPATCH_NODES = (
     "tests/test_hermes_connector_dispatch.py::test_pg_accept_drop_ack_then_recover_same_run_identity",
     "tests/test_hermes_connector_dispatch.py::test_pg_empty_queue_zero_provider_and_hermes",
 )
-MINIMUM_PG_MARKED_TESTS = 245
+MINIMUM_PG_MARKED_TESTS = len(REQUIRED_PG_MARKED_NODES)
 COVERAGE = {
     "migration": (
         "tests/test_database.py",
@@ -116,6 +117,19 @@ def _safe_test_environment(
             "QS_TEST_FUTU_OPEND": "0",
         }
     )
+    # The physical cross-repository CLI test cannot infer a sibling HQA checkout
+    # from an arbitrary Platform worktree. Forward only an explicitly selected
+    # source directory, never additional provider/runtime credentials.
+    configured_hqa = os.environ.get("QS_TEST_HQA_ROOT")
+    if configured_hqa is not None:
+        hqa_root = Path(configured_hqa)
+        if (
+            not hqa_root.is_absolute()
+            or not (hqa_root / "hqa" / "chat_research_cli.py").is_file()
+            or not (hqa_root / "scripts" / "install.sh").is_file()
+        ):
+            raise ReleaseOperationError("HQA test checkout is invalid")
+        env["QS_TEST_HQA_ROOT"] = str(hqa_root.resolve())
     return env
 
 
@@ -127,13 +141,23 @@ def _run_pytest(
     arguments: tuple[str, ...],
     log_path: Path,
     minimum_tests: int,
+    required_nodes: tuple[str, ...],
 ) -> dict[str, object]:
+    if not required_nodes or len(required_nodes) != len(set(required_nodes)):
+        raise ReleaseOperationError("PostgreSQL required node manifest is empty or duplicated")
     basetemp = Path(env["TMPDIR"]) / log_path.stem
     cache_dir = Path(env["XDG_CACHE_HOME"]) / "pytest" / log_path.stem
     junit_path = log_path.with_suffix(".junit.xml")
     node_manifest_path = log_path.with_suffix(".nodes.json")
-    if junit_path.exists() or node_manifest_path.exists():
+    required_manifest_path = log_path.with_suffix(".required.json")
+    if any(path.exists() for path in (junit_path, node_manifest_path, required_manifest_path)):
         raise ReleaseOperationError("PostgreSQL pytest population artifact already exists")
+    required_document = {
+        "contract": PG_POPULATION_CONTRACT,
+        "required_node_ids": sorted(required_nodes),
+        "minimum_tests": len(required_nodes),
+    }
+    write_immutable(required_manifest_path, canonical_json_bytes(required_document))
     argv = (
         str(python),
         "-m",
@@ -160,22 +184,23 @@ def _run_pytest(
     payload = completed.stdout + completed.stderr
     write_immutable(log_path, payload)
     if not junit_path.is_file():
-        raise ReleaseOperationError(
-            f"disposable PostgreSQL pytest omitted JUnit: {log_path.name}"
-        )
+        raise ReleaseOperationError(f"disposable PostgreSQL pytest omitted JUnit: {log_path.name}")
     junit_path.chmod(0o600)
     population = parse_pytest_junit(junit_path)
     write_immutable(node_manifest_path, canonical_json_bytes(population))
     if completed.returncode != 0:
         raise ReleaseOperationError(f"disposable PostgreSQL pytest failed: {log_path.name}")
+    observed_nodes = {row["node_id"] for row in population["node_ids"]}
+    missing_nodes = sorted(set(required_nodes) - observed_nodes)
+    if missing_nodes:
+        raise ReleaseOperationError(
+            "PostgreSQL required test nodes missing: " + "; ".join(missing_nodes[:8])
+        )
     if population["tests"] < minimum_tests:
         raise ReleaseOperationError(
             f"disposable PostgreSQL pytest population shrank: {population['tests']}"
         )
-    unexpected = sum(
-        population[field]
-        for field in ("failed", "errors", "skipped", "xfailed")
-    )
+    unexpected = sum(population[field] for field in ("failed", "errors", "skipped", "xfailed"))
     if unexpected:
         raise ReleaseOperationError(
             f"disposable PostgreSQL pytest has unexpected outcomes: {unexpected}"
@@ -190,6 +215,14 @@ def _run_pytest(
         "junit_sha256": sha256_bytes(junit_path.read_bytes()),
         "node_manifest_path": str(node_manifest_path),
         "node_manifest_sha256": sha256_bytes(node_manifest_path.read_bytes()),
+        "required_manifest_path": str(required_manifest_path),
+        "required_manifest_sha256": sha256_bytes(required_manifest_path.read_bytes()),
+        "required_coverage": {
+            "contract": PG_POPULATION_CONTRACT,
+            "required_count": len(required_nodes),
+            "missing_nodes": [],
+            "extra_nodes": sorted(observed_nodes - set(required_nodes)),
+        },
         "population": population,
         "stdout_stderr_sha256": sha256_bytes(payload),
         "stdout_stderr_bytes": len(payload),
@@ -205,11 +238,7 @@ def parse_pytest_junit(path: Path) -> dict[str, object]:
         root = ET.fromstring(path.read_bytes())
     except (ET.ParseError, OSError) as exc:
         raise ReleaseOperationError(f"PostgreSQL pytest JUnit is invalid: {exc}") from exc
-    cases = [
-        element
-        for element in root.iter()
-        if element.tag.rsplit("}", 1)[-1] == "testcase"
-    ]
+    cases = [element for element in root.iter() if element.tag.rsplit("}", 1)[-1] == "testcase"]
     if not cases:
         raise ReleaseOperationError("PostgreSQL pytest JUnit has zero testcases")
     nodes: list[dict[str, str]] = []
@@ -306,6 +335,7 @@ def verify_postgres_suite(
                     arguments=("-m", "pg", *marked_files),
                     log_path=output_dir / "pytest-pg-marked.log",
                     minimum_tests=MINIMUM_PG_MARKED_TESTS,
+                    required_nodes=REQUIRED_PG_MARKED_NODES,
                 )
                 dispatch = _run_pytest(
                     python=executable,
@@ -314,6 +344,10 @@ def verify_postgres_suite(
                     arguments=DISPATCH_NODES,
                     log_path=output_dir / "pytest-pg-dispatch.log",
                     minimum_tests=len(DISPATCH_NODES),
+                    required_nodes=tuple(
+                        path.removesuffix(".py").replace("/", ".") + "::" + name
+                        for path, name in (node.split("::", 1) for node in DISPATCH_NODES)
+                    ),
                 )
                 run_migrations(Database(source_url, connect_timeout=1))
             finally:
@@ -373,6 +407,7 @@ def verify_postgres_suite(
         "admin_input_database_contacted": False,
         "canonical_database_contacted": False,
         "pytest_environment_policy": {
+            "explicit_hqa_test_checkout": env.get("QS_TEST_HQA_ROOT"),
             "inherited_names": [
                 "LANG",
                 "LC_ALL",

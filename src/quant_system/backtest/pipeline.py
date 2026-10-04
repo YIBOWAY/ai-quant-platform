@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import threading
+import uuid
 from pathlib import Path
 from time import perf_counter
 
@@ -30,6 +32,7 @@ from quant_system.factors.pipeline import (
 from quant_system.factors.registry import build_default_factor_registry
 from quant_system.strategies.registry import build_default_strategy_registry
 from quant_system.universe.registry import build_default_universe_registry
+from quant_system.universes.pit import UniverseSnapshot
 
 
 class BacktestRunResult(BaseModel):
@@ -59,8 +62,13 @@ class BacktestRunResult(BaseModel):
     max_drawdown: float
     attribution: list[dict[str, float | str]] = Field(default_factory=list)
     benchmark_source: str
+    universe_snapshot: UniverseSnapshot
+    universe_snapshot_digest: str
     benchmark_metrics: PerformanceMetrics
     timings_ms: dict[str, float] = Field(default_factory=dict)
+    input_prices_path: Path | None = None
+    input_prices_sha256: str | None = None
+    history_start: str | None = None
 
 
 class BacktestCancelledError(RuntimeError):
@@ -81,8 +89,8 @@ def run_backtest(
     lookback: int = 20,
     top_n: int = 3,
     initial_cash: float = 100_000.0,
-    commission_bps: float = 1.0,
-    slippage_bps: float = 5.0,
+    commission_bps: float | None = None,
+    slippage_bps: float | None = None,
     min_order_value: float = 0.0,
     whole_share_orders: bool = False,
     provider: str | None = None,
@@ -97,16 +105,24 @@ def run_backtest(
     sector_map: dict[str, str] | None = None,
     settings: Settings | None = None,
     cancel_event: threading.Event | None = None,
+    run_id: str | None = None,
 ) -> BacktestRunResult:
     total_start = perf_counter()
     active_settings = settings or load_settings()
+    paper = active_settings.paper_account
+    resolved_commission = paper.commission_bps if commission_bps is None else commission_bps
+    resolved_slippage = paper.slippage_bps if slippage_bps is None else slippage_bps
     _raise_if_cancelled(cancel_event)
-    resolved_symbols = _resolve_symbols(symbols=symbols, universe_id=universe_id)
+    universe_snapshot = _resolve_universe(
+        symbols=symbols,
+        universe_id=universe_id,
+        as_of=end,
+    )
+    resolved_symbols = [symbol.upper() for symbol in universe_snapshot.symbols]
     resolved_strategy_id = _resolve_strategy_id(strategy_id)
     resolved_factor_ids = _resolve_factor_ids(factor_ids)
     resolved_weights = {
-        factor_id: float((weights or {}).get(factor_id, 1.0))
-        for factor_id in resolved_factor_ids
+        factor_id: float((weights or {}).get(factor_id, 1.0)) for factor_id in resolved_factor_ids
     }
     ohlcv_provider, source = build_ohlcv_provider(active_settings, requested=provider)
     resolved_benchmark_symbol = benchmark_symbol.upper().strip() or "SPY"
@@ -138,8 +154,8 @@ def run_backtest(
     )
     config = BacktestConfig(
         initial_cash=initial_cash,
-        commission_bps=commission_bps,
-        slippage_bps=slippage_bps,
+        commission_bps=resolved_commission,
+        slippage_bps=resolved_slippage,
         min_order_value=min_order_value,
         whole_share_orders=whole_share_orders,
         rebalance_frequency=rebalance_frequency,
@@ -147,9 +163,7 @@ def run_backtest(
         sector_cap=sector_cap,
         sector_map=sector_map or {},
     )
-    strategy = _build_backtest_strategy(
-        resolved_strategy_id, signal_frame, top_n=top_n
-    )
+    strategy = _build_backtest_strategy(resolved_strategy_id, signal_frame, top_n=top_n)
     result = BacktestEngine(config).run(ohlcv, strategy)
     benchmark_curve = build_benchmark_curve(benchmark_ohlcv, symbol=resolved_benchmark_symbol)
     benchmark_metrics = calculate_benchmark_metrics(benchmark_curve)
@@ -203,6 +217,16 @@ def run_backtest(
         equity_rows=len(result.equity_curve),
     )
     report_path = storage.save_report(report)
+    # Keep the actual indicator initialization history for reusable strategy versions.
+    benchmark_only = benchmark_ohlcv.loc[~benchmark_ohlcv.symbol.isin(ohlcv.symbol.unique())]
+    input_prices = pd.concat([ohlcv, benchmark_only], ignore_index=True).sort_values(
+        ["timestamp", "symbol"]
+    )
+    input_prices_path = storage.save_frame(
+        input_prices, filename="input_prices.parquet", table_name="backtest_input_prices"
+    )
+    input_prices_sha256 = hashlib.sha256(input_prices_path.read_bytes()).hexdigest()
+    history_start = pd.to_datetime(input_prices.timestamp, utc=True).min().date().isoformat()
     persist_ms = _elapsed_ms(persist_start)
     timings_ms = {
         "data_fetch": data_fetch_ms,
@@ -210,7 +234,39 @@ def run_backtest(
         "persist": persist_ms,
         "total": _elapsed_ms(total_start),
     }
+    # R6: pin the exact resolved snapshot identity before the trial cites it.
+    universe_snapshot_digest = universe_snapshot.digest()
+
+    # R1: every completed backtest is one immutable trial for DSR admission.
+    from quant_system.research.trials import ResearchTrial, TrialsLedger
+
+    trial_run_id = run_id or f"backtest-{uuid.uuid4().hex}"
+    TrialsLedger(Path(active_settings.data.data_dir) / "trials").append(
+        ResearchTrial.record(
+            kind="platform_backtest",
+            subject=resolved_strategy_id,
+            universe=resolved_symbols,
+            daily_returns=result.equity_curve.sort_values("timestamp")["equity"]
+            .astype(float)
+            .pct_change(fill_method=None)
+            .dropna()
+            .tolist(),
+            window_start=start,
+            window_end=end,
+            source=source,
+            metadata={
+                "run_id": trial_run_id,
+                "factor_ids": resolved_factor_ids,
+                "universe_snapshot": universe_snapshot.model_dump(mode="json"),
+                "universe_snapshot_digest": universe_snapshot_digest,
+            },
+        )
+    )
+
     return BacktestRunResult(
+        input_prices_path=input_prices_path,
+        input_prices_sha256=input_prices_sha256,
+        history_start=history_start,
         source=source,
         strategy_id=resolved_strategy_id,
         universe_id=universe_id,
@@ -218,6 +274,8 @@ def run_backtest(
         factor_ids=resolved_factor_ids,
         weights=resolved_weights,
         benchmark_symbol=resolved_benchmark_symbol,
+        universe_snapshot=universe_snapshot,
+        universe_snapshot_digest=universe_snapshot_digest,
         trade_count=len(result.trade_blotter),
         order_count=len(result.orders),
         warnings=_build_backtest_warnings(
@@ -270,13 +328,41 @@ def run_sample_backtest(
     )
 
 
-def _resolve_symbols(*, symbols: list[str], universe_id: str | None) -> list[str]:
+def _resolve_universe(
+    *, symbols: list[str], universe_id: str | None, as_of: str
+) -> UniverseSnapshot:
     normalized = [symbol.upper().strip() for symbol in symbols if symbol.strip()]
     if normalized:
-        return normalized
+        return UniverseSnapshot(
+            universe_id="adhoc",
+            as_of=as_of,
+            symbols=normalized,
+            membership_mode="adhoc",
+            note="caller-supplied symbols; membership history not applicable",
+        )
     if universe_id:
-        return build_default_universe_registry().get(universe_id).normalized_symbols()
-    return ["SPY", "QQQ"]
+        # The dated PIT seed store is the point-in-time truth; the static
+        # registry stays as the fallback for undated legacy ids.
+        from quant_system.universes import pit
+
+        snapshot = pit.PitUniverseStore(pit.seed_store_path()).universe_at(universe_id, as_of)
+        if snapshot is not None:
+            return snapshot
+        registry_symbols = build_default_universe_registry().get(universe_id).normalized_symbols()
+        return UniverseSnapshot(
+            universe_id=universe_id,
+            as_of=as_of,
+            symbols=registry_symbols,
+            membership_mode="static_snapshot",
+            note="static registry: membership churn not tracked",
+        )
+    return UniverseSnapshot(
+        universe_id="adhoc",
+        as_of=as_of,
+        symbols=["SPY", "QQQ"],
+        membership_mode="adhoc",
+        note="default symbols; membership history not applicable",
+    )
 
 
 def _elapsed_ms(start: float) -> float:
@@ -328,10 +414,7 @@ def _resolve_factor_ids(factor_ids: list[str] | None) -> list[str]:
 
 def _create_factors(factor_ids: list[str], *, lookback: int):
     registry = build_default_factor_registry()
-    return [
-        registry.create(factor_id, lookback=lookback)
-        for factor_id in factor_ids
-    ]
+    return [registry.create(factor_id, lookback=lookback) for factor_id in factor_ids]
 
 
 def _build_factor_blend_config(
@@ -339,10 +422,7 @@ def _build_factor_blend_config(
     factor_ids: list[str],
     weights: dict[str, float],
 ) -> FactorBlendConfig:
-    metadata = {
-        item.factor_id: item
-        for item in build_default_factor_registry().list_metadata()
-    }
+    metadata = {item.factor_id: item for item in build_default_factor_registry().list_metadata()}
     return FactorBlendConfig(
         factors=[
             FactorWeight(
@@ -378,9 +458,7 @@ def _build_backtest_warnings(
             "GOOGL, QQQ, and SPY for a useful strategy replay."
         )
     if signal_frame.empty:
-        warnings.append(
-            "No signal rows were produced, so the backtest had nothing to trade."
-        )
+        warnings.append("No signal rows were produced, so the backtest had nothing to trade.")
     elif "score" in signal_frame.columns and (
         pd.to_numeric(signal_frame["score"], errors="coerce").fillna(0.0).abs().max() == 0
     ):

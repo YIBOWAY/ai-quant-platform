@@ -19,8 +19,11 @@ describe("HermesParityBanner", () => {
     );
 
     expect(html).toContain('data-testid="hermes-parity-banner"');
-    expect(html).toContain("Hermes 工作台是默认研究入口");
+    expect(html).toContain("Hermes 助手是默认研究入口");
+    expect(html).toContain("合并与重定向尚未完成");
     expect(html).toContain("不代表本页已退役");
+    // zh copy must not leak English words.
+    expect(html).not.toContain("redirect");
     expect(html).toContain('href="/zh/hermes"');
     expect(html).toContain("border-info");
     expect(html).toContain("text-info");

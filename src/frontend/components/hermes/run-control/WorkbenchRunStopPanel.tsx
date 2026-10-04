@@ -91,8 +91,8 @@ export function WorkbenchRunStopPanel({
       ...notice,
       phase: "success",
       message: isZh
-        ? `共享 follow spine 已观察到终态：${observedTerminalState}。`
-        : `Shared follow spine observed terminal state: ${observedTerminalState}.`,
+        ? `已从运行记录确认结束状态：${observedTerminalState}。`
+        : `Confirmed final state from run records: ${observedTerminalState}.`,
       retryable: false,
     };
   }, [isZh, notice, observedTerminalState]);
@@ -126,8 +126,8 @@ export function WorkbenchRunStopPanel({
             runId: nextAttempt.runId,
             clientActionId: nextAttempt.clientActionId,
             message: isZh
-              ? "停止已确认；正在通过共享 follow spine 刷新终态。"
-              : "Stop confirmed; refreshing terminal state through the shared follow spine.",
+              ? "停止已确认，正在更新运行记录。"
+              : "Stop confirmed; refreshing run records.",
             retryable: false,
           });
         } else if (receipt.status === "reconciling") {
@@ -229,8 +229,8 @@ export function WorkbenchRunStopPanel({
       <div className="min-w-0 space-y-2" id="hermes-run-stop-body">
         <p className="font-body-sm text-text-secondary break-words">
           {isZh
-            ? "仅对共享 follow spine 中 exact hermes_run_id 且状态为 delivered / outcome_unknown 的非终态运行显示停止按钮。只提交 run_ref；不会伪造 Task / Attempt / job 引用。"
-            : "Stop appears only for a nonterminal delivered / outcome_unknown command with an exact hermes_run_id on the shared follow spine. Only run_ref is authoritative; Task, Attempt, and job refs are never invented."}
+            ? "可停止下方仍在处理的具体运行。停止请求与最后的执行状态分别记录，不会改动已保存的研究结果。"
+            : "Stop a specific active run below. Requests and final states are recorded separately; saved research results are unchanged."}
         </p>
 
         {visibleNotice ? (
@@ -272,7 +272,7 @@ export function WorkbenchRunStopPanel({
 
         {!spineReady ? (
           <p className="font-body-sm text-text-secondary">
-            {isZh ? "follow spine 尚未就绪…" : "Follow spine not ready yet…"}
+            {isZh ? "正在读取运行记录…" : "Loading run records…"}
           </p>
         ) : null}
 

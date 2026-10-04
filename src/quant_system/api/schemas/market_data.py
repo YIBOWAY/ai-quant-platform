@@ -27,3 +27,20 @@ class MarketDataHistoryResponse(BaseModel):
     row_count: int
     rows: list[dict[str, Any]]
     metadata: MarketDataHistoryMetadata
+
+
+class DailyBackupResponse(BaseModel):
+    """The historical-price snapshot plus its explicit provider fallback trail."""
+
+    schema_version: Literal["1.0"]
+    provider: str
+    source: str
+    interval: str
+    adjustment: str
+    start: str
+    end: str
+    fetched_at: str
+    symbols: list[str]
+    series: list[dict[str, Any]]
+    served_by: str
+    fallbacks: list[dict[str, str]]

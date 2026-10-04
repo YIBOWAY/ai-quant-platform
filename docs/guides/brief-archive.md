@@ -34,14 +34,22 @@ database is down the route answers 503 and the sidebar renders an honest
 ```
 
 The command collects today's facts from the running local backend (paper
-account, equity curve, 3m performance, SPY/QQQ/SOXX/IGV daily bars, Asia
-Radar summary, AI news digest, recent runs, options scan status), builds a
+account, equity curve, 3m performance, official hung-sleeve effect,
+SPY/QQQ/SOXX/IGV daily bars, Asia Radar summary, AI news digest, recent runs,
+options scan status), builds a
 `brief_snapshot_v1` payload server-side, and upserts it through
 `BriefService` keyed by `(owner, issue_date, locale)` — re-running on the
 same day keeps one issue and appends a new snapshot version (idempotent).
 Verified against the production Postgres upsert path and mirrored by an
 in-memory repository contract test (`tests/test_brief_service.py`); the
 frontend export contract test pins the archive response aliases.
+
+The hung section never sums `StrategySleeve.cash`. Both server auto-archive and
+the live `/brief` page consume `/api/paper/strategy-sleeves/hung-effect`, so the
+printed sleeve mark is the same committed-journal cash+lots NAV shown on the
+Hermes paper tab. A true zero-day effect prints `not booked` / `尚未入账`;
+provider errors, count mismatches, tampered state, or missing prices print
+`effect unavailable` / `效果暂不可用`.
 
 Fail-closed: if the paper account, equity curve, or performance master cannot
 be read, or the archive database is down, nothing is written and the command

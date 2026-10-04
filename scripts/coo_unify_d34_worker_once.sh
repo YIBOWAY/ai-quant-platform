@@ -59,7 +59,7 @@ PY
 fi
 
 cd "$ROOT"
-exec "$PYTHON" -m quant_system.cli d34 worker-once \
+exec "$PYTHON" -m quant_system.d34.research_cli \
   --platform-root "$ROOT" \
   --hqa-root "$HQA_ROOT" \
   --workspace-root "$DATA_DIR/d34" \

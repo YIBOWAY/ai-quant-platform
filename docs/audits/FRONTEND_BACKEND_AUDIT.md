@@ -16,12 +16,12 @@
 
 ## 1. 既有文档总结
 
-[docs/](../docs/) 已存在的相关文档：
+[docs/](../) 已存在的相关文档：
 
-- [docs/architecture/phase_9_api_architecture.md](architecture/phase_9_api_architecture.md) — API 层设计
-- [docs/delivery/phase_9_api_delivery.md](delivery/phase_9_api_delivery.md) — API 交付清单
-- [docs/delivery/phase_9_frontend_api_integration.md](delivery/phase_9_frontend_api_integration.md) — 联调启动指南
-- [docs/frontend/design_brief.md](frontend/design_brief.md) — 给设计 agent 的视觉/交互合同
+- [docs/architecture/phase_9_api_architecture.md](../architecture/phase_9_api_architecture.md) — API 层设计
+- [docs/delivery/phase_9_api_delivery.md](../delivery/phase_9_api_delivery.md) — API 交付清单
+- [docs/delivery/phase_9_frontend_api_integration.md](../delivery/phase_9_frontend_api_integration.md) — 联调启动指南
+- [docs/frontend/design_brief.md](../frontend/design_brief.md) — 当时给设计 agent 的视觉/交互合同
 
 ## 2. 文档与代码不一致点
 
@@ -78,10 +78,10 @@
 | 文件 | 问题 |
 | --- | --- |
 | [app/page.tsx](../../src/frontend/app/page.tsx) | System Log 三条时间戳硬编码、Experiment 卡 progress 45% 硬编码、CPU 42% / RAM 65% 硬编码 |
-| [app/data-explorer/page.tsx](../../src/frontend/app/data-explorer/page.tsx) | 主 chart 5 根硬编码 `<div>` bar、Y 轴刻度硬编码、Data Quality 三卡硬编码、"Live Sync" 假动画 |
+| `src/frontend/app/data-explorer/page.tsx`（历史路径，已退役） | 主 chart 5 根硬编码 `<div>` bar、Y 轴刻度硬编码、Data Quality 三卡硬编码、"Live Sync" 假动画 |
 | [app/agent-studio/page.tsx](../../src/frontend/app/agent-studio/page.tsx) | 代码 preview 是固定 momentum 模板（不是 candidate 真实源码）、"PASS" 标签恒亮、左侧 RL_Agent_v1 / Sentiment_LLM 是假文件 |
 | [app/paper-trading/page.tsx](../../src/frontend/app/paper-trading/page.tsx) | 多处比例条硬编码 |
-| [app/backtest/page.tsx](../../src/frontend/app/backtest/page.tsx) / [factor-lab](../../src/frontend/app/factor-lab/page.tsx) / [experiments](../../src/frontend/app/experiments/page.tsx) / [order-book](../../src/frontend/app/order-book/page.tsx) / [position-map](../../src/frontend/app/position-map/page.tsx) | 待逐文件清查（结构同上：server component + 装饰元素混杂真实 API 字段）|
+| [app/backtest/page.tsx](../../src/frontend/app/backtest/page.tsx) / [factor-lab](../../src/frontend/app/factor-lab/page.tsx) / [experiments](../../src/frontend/app/experiments/page.tsx) / `src/frontend/app/order-book/page.tsx`（历史路径，已退役）/ `src/frontend/app/position-map/page.tsx`（历史路径，已退役） | 当时待逐文件清查（结构同上：server component + 装饰元素混杂真实 API 字段）|
 
 ## 7. 重启项目（验证修复时用）
 

@@ -4,9 +4,8 @@ import path from "node:path";
 import { expect, test } from "@playwright/test";
 
 const repoRoot = findRepoRoot(process.cwd());
-const e2eDataRoot = path.join(repoRoot, "src", "frontend", ".tmp", "e2e-data");
 const experimentId = "experiment-e2e-page";
-const experimentDir = path.join(e2eDataRoot, "experiments", experimentId);
+let experimentDir = "";
 
 function findRepoRoot(start: string) {
   let current = path.resolve(start);
@@ -76,7 +75,12 @@ pd.DataFrame([
 test.describe("experiments workbench", () => {
   test.skip(process.env.PW_E2E !== "1", "Set PW_E2E=1 to run local full-stack smoke.");
 
-  test.beforeAll(() => {
+  test.beforeAll(({}, testInfo) => {
+    const run = testInfo.config.metadata.e2eRun as { dataRoot?: unknown } | undefined;
+    if (!run || typeof run.dataRoot !== "string" || !run.dataRoot.trim()) {
+      throw new Error("Experiments E2E requires the isolated run data root.");
+    }
+    experimentDir = path.join(run.dataRoot, "experiments", experimentId);
     fs.rmSync(experimentDir, { force: true, recursive: true });
     writeJson(path.join(experimentDir, "experiment_config.json"), {
       experiment_name: "experiment-e2e",
@@ -114,7 +118,7 @@ test.describe("experiments workbench", () => {
   });
 
   test.afterAll(() => {
-    fs.rmSync(experimentDir, { force: true, recursive: true });
+    if (experimentDir) fs.rmSync(experimentDir, { force: true, recursive: true });
   });
 
   test("renders experiment charts and can send best run parameters to backtest", async ({ page }) => {

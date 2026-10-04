@@ -63,6 +63,10 @@ class HermesResultItem(_HermesResultReadModel):
     # identity and authoritative payload remain the source of truth.
     display_title: str = Field(min_length=1, max_length=256)
     summary: str | None = Field(default=None, min_length=1, max_length=1000)
+    display_title_zh: str | None = Field(default=None, min_length=1, max_length=256)
+    summary_zh: str | None = Field(default=None, min_length=1, max_length=1000)
+    data_provider: str | None = Field(default=None, max_length=160)
+    data_mode: Literal["sample", "market", "unknown"] | None = None
     status: str = Field(min_length=1, max_length=128)
     occurred_at: str = Field(min_length=1, max_length=64)
     source: HermesResultSource

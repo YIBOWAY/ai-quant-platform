@@ -1,9 +1,15 @@
-# Paper Strategy Sleeves macOS LaunchAgent Runbook
+# Legacy/Optional Paper Strategy Sleeves macOS LaunchAgents
 
-This runbook is for a local Mac setup where the app should start with the user
-session and stop when the Mac shuts down. Use LaunchAgent, not LaunchDaemon.
-The files live under `~/Library/LaunchAgents`, run as the current user, and
-require no sudo.
+> **Historical compatibility runbook (2026-08-26):** these generic one-shot
+> templates are not the current formal observation scheduler. Daily services
+> are managed by `scripts/local_mac_stack.sh`; already-hung digest-bound sleeves
+> are observed only by `com.aiquant.d34-paper-cycle` (06:15 signal slot and
+> 22:25 execution slot). Do not install this bundle to duplicate or replace that
+> schedule.
+
+This runbook records the older optional Mac bundle for explicitly managed
+generic paper-sleeve jobs. It uses LaunchAgent, not LaunchDaemon. The files live
+under `~/Library/LaunchAgents`, run as the current user, and require no sudo.
 
 Safety boundary: this remains paper-only. The LaunchAgent files do not enable
 live trading, do not import Futu trade contexts, and do not place broker orders.
@@ -37,7 +43,7 @@ npm --prefix src/frontend run build
 
 The frontend LaunchAgent uses production start, not `npm run dev`.
 
-## Install
+## Optional legacy install
 
 ```bash
 chmod +x scripts/run_quant_backend.sh \
@@ -96,13 +102,13 @@ scripts/run_paper_strategy_sleeves.sh execute-due --target-date 2026-06-29
 These are one-shot paper commands. File locks and execution journals protect
 the account and sleeve files if the API or another CLI command is running.
 
-## Time Windows
+## Legacy placeholder time windows
 
-The template defaults are conservative local-time placeholders:
+The template defaults are historical local-time placeholders:
 
 - signal generation: weekday `06:10`
 - next-open processing: weekday `21:35`
 
-They are not a full market-calendar engine and are not DST-aware. Adjust the
-rendered plist times if your Mac timezone or US market open window requires a
-different trigger.
+They are not a full market-calendar engine, are not DST-aware, and are not the
+formal D34 observation calendar. Do not enable them alongside the current
+paper-cycle for the same sleeves.

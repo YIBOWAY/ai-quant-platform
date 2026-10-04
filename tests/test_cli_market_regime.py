@@ -27,7 +27,7 @@ def test_load_market_regime_uses_csv(tmp_path: Path) -> None:
     settings = Settings(
         options_radar=OptionsRadarSettings(vix_history_path=target),
     )
-    snapshot = _load_market_regime(settings, run_date=None)
+    snapshot = _load_market_regime(settings, run_date=str(idx[-1].date()))
     assert snapshot is not None
     assert snapshot.volatility_regime in {"Normal", "Elevated", "Panic"}
 

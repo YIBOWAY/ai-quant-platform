@@ -10,6 +10,7 @@ import type { NextConfig } from "next";
 const LOCALE_PREFIXES = ["", "/en", "/zh"] as const;
 
 type RouteRename = { from: string; to: string };
+type ConsolidatedRoute = { from: string; to: string };
 
 const RENAMED_ROUTES: RouteRename[] = [
   { from: "/replications/:runId", to: "/strategies/:runId" },
@@ -17,11 +18,27 @@ const RENAMED_ROUTES: RouteRename[] = [
   { from: "/order-book", to: "/polymarket" },
 ];
 
+const CONSOLIDATED_ROUTES: ConsolidatedRoute[] = [
+  { from: "/data-explorer", to: "/watch?pane=quotes" },
+  { from: "/market-cross-section", to: "/watch?pane=cross" },
+  { from: "/asia-radar", to: "/watch?pane=radar" },
+  { from: "/position-map", to: "/paper-trading?view=map" },
+  { from: "/hermes/sessions", to: "/hermes" },
+];
+
 const routeRedirects = RENAMED_ROUTES.flatMap(({ from, to }) =>
   LOCALE_PREFIXES.map((prefix) => ({
     source: `${prefix}${from}`,
     destination: `${prefix}${to}`,
     permanent: true,
+  })),
+);
+
+const consolidatedRedirects = CONSOLIDATED_ROUTES.flatMap(({ from, to }) =>
+  LOCALE_PREFIXES.map((prefix) => ({
+    source: `${prefix}${from}`,
+    destination: `${prefix}${to}`,
+    statusCode: 301 as const,
   })),
 );
 
@@ -54,7 +71,7 @@ const nextConfig: NextConfig = {
   },
   transpilePackages: ["motion"],
   async redirects() {
-    return routeRedirects;
+    return [{ source: "/favicon.ico", destination: "/icon.svg", permanent: true }, ...routeRedirects, ...consolidatedRedirects];
   },
   async rewrites() {
     return [

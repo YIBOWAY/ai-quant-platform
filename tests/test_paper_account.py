@@ -13,7 +13,7 @@ from pydantic import SecretStr
 import quant_system.execution.account_storage as account_storage_module
 from quant_system.config.settings import ApiKeySettings, DataSettings, FutuSettings, Settings
 from quant_system.data.providers.futu import FutuMarketDataProvider
-from quant_system.execution.account import PaperAccount
+from quant_system.execution.account import AccountPosition, PaperAccount
 from quant_system.execution.account_service import (
     AccountFrozenError,
     PaperAccountService,
@@ -182,7 +182,30 @@ def test_stale_manual_sleeve_cash_is_recomputed_on_load() -> None:
     assert restored.sleeve_cash["sleeve-abc"] == pytest.approx(25_000.0)
 
 
-def test_manual_order_via_service_updates_account() -> None:
+
+@pytest.fixture
+def paper_zero_costs(monkeypatch):
+    """Zero paper costs with the lru_cache'd settings view actually refreshed."""
+    from quant_system.config.settings import load_settings
+
+    monkeypatch.setenv("QS_PAPER_ACCOUNT_COMMISSION_BPS", "0")
+    monkeypatch.setenv("QS_PAPER_ACCOUNT_SLIPPAGE_BPS", "0")
+    load_settings.cache_clear()
+    yield
+    load_settings.cache_clear()
+
+
+@pytest.fixture
+def paper_default_costs():
+    """Refresh the cached settings view around tests that pin default costs."""
+    from quant_system.config.settings import load_settings
+
+    load_settings.cache_clear()
+    yield
+    load_settings.cache_clear()
+
+
+def test_manual_order_via_service_updates_account(paper_default_costs) -> None:
     account = PaperAccount.open_new(initial_cash=1_000_000.0)
     service = PaperAccountService(price_source=_StubPriceSource({"AAPL": 200.0}))
 
@@ -192,7 +215,8 @@ def test_manual_order_via_service_updates_account() -> None:
     assert outcome.filled_quantity == pytest.approx(10)
     assert outcome.price_kind == "futu_snapshot"
     assert account.position_quantity("AAPL") == pytest.approx(10)
-    assert account.cash == pytest.approx(1_000_000.0 - 2_000.0)
+    # R3 parity: 10 shares slipped 200 -> 200.10 plus 1bp commission
+    assert account.cash == pytest.approx(1_000_000.0 - 10.0 * 200.10 * (1 + 1.0 / 10_000))
 
 
 def test_manual_order_notional_is_converted_to_quantity() -> None:
@@ -224,7 +248,7 @@ def test_unfavorable_limit_order_is_queued() -> None:
     assert account.pending_orders[0].symbol == "AAPL"
 
 
-def test_pending_buy_limit_order_reserves_cash() -> None:
+def test_pending_buy_limit_order_reserves_cash(paper_zero_costs) -> None:
     account = PaperAccount.open_new(initial_cash=1_000.0)
     service = PaperAccountService(price_source=_StubPriceSource({"AAPL": 200.0, "MSFT": 500.0}))
 
@@ -254,7 +278,37 @@ def test_pending_buy_limit_order_reserves_cash() -> None:
     assert account.cash == pytest.approx(80.0)
 
 
-def test_pending_buy_limit_order_uses_historical_range_backfill() -> None:
+def test_manual_orders_cannot_spend_strategy_cash_or_pending_reservations(
+    paper_zero_costs,
+) -> None:
+    account = PaperAccount.open_new(initial_cash=1_000.0)
+    account.sleeve_cash = {"manual": 200.0, "sleeve-strategy": 800.0}
+    service = PaperAccountService(
+        price_source=_StubPriceSource({"AAPL": 200.0, "MSFT": 100.0})
+    )
+
+    pending = service.place_manual_order(
+        account,
+        symbol="AAPL",
+        side="buy",
+        quantity=1,
+        limit_price=100.0,
+    )
+    market = service.place_manual_order(
+        account,
+        symbol="MSFT",
+        side="buy",
+        quantity=5,
+    )
+
+    assert pending.status == "pending"
+    assert market.status == "partially_filled"
+    assert market.filled_quantity == pytest.approx(1.0)
+    assert account.sleeve_cash == {"manual": 100.0, "sleeve-strategy": 800.0}
+    assert account.cash == pytest.approx(900.0)
+
+
+def test_pending_buy_limit_order_uses_historical_range_backfill(paper_zero_costs) -> None:
     account = PaperAccount.open_new(initial_cash=1_000.0)
     price_source = _HistoricalRangePriceSource({"AAPL": 200.0}, low=140.0, high=210.0)
     service = PaperAccountService(price_source=price_source)
@@ -282,7 +336,7 @@ def test_pending_buy_limit_order_uses_historical_range_backfill() -> None:
     assert price_source.requests[0][1] == "2024-01-03"
 
 
-def test_historical_range_window_uses_complete_days_only() -> None:
+def test_historical_range_window_uses_complete_days_only(paper_zero_costs) -> None:
     account = PaperAccount.open_new(initial_cash=1_000.0)
     service = PaperAccountService(price_source=_StubPriceSource({"AAPL": 100.0}))
     service.place_manual_order(
@@ -304,7 +358,7 @@ def test_historical_range_window_uses_complete_days_only() -> None:
     assert window == ("2024-01-03", "2024-01-04")
 
 
-def test_pending_sell_limit_order_reserves_position_quantity() -> None:
+def test_pending_sell_limit_order_reserves_position_quantity(paper_zero_costs) -> None:
     account = PaperAccount.open_new(initial_cash=1_000.0)
     service = PaperAccountService(price_source=_StubPriceSource({"AAPL": 100.0}))
     service.place_manual_order(account, symbol="AAPL", side="buy", quantity=1)
@@ -347,6 +401,33 @@ def test_manual_sell_over_position_reports_partial_fill() -> None:
     assert outcome.filled_quantity == pytest.approx(1)
     assert "filled 1.0000 of 2.0000" in outcome.rejected_reason
     assert account.position_quantity("AAPL") == 0
+
+
+def test_manual_sell_only_consumes_manual_lots(paper_zero_costs) -> None:
+    account = PaperAccount.open_new(initial_cash=1_000.0)
+    account.cash = 0.0
+    account.sleeve_cash = {"manual": 0.0, "sleeve-strategy": 0.0}
+    account.positions["AAPL"] = AccountPosition(
+        symbol="AAPL",
+        quantity=8.0,
+        avg_cost=80.0,
+        source_quantity={"manual": 3.0, "strategy:sleeve-strategy": 5.0},
+    )
+    service = PaperAccountService(price_source=_StubPriceSource({"AAPL": 100.0}))
+
+    outcome = service.place_manual_order(
+        account,
+        symbol="AAPL",
+        side="sell",
+        quantity=5.0,
+    )
+
+    assert outcome.status == "partially_filled"
+    assert outcome.filled_quantity == pytest.approx(3.0)
+    position = account.positions["AAPL"]
+    assert position.quantity == pytest.approx(5.0)
+    assert position.source_quantity == {"strategy:sleeve-strategy": 5.0}
+    assert account.sleeve_cash["manual"] == pytest.approx(300.0)
 
 
 def test_price_source_never_uses_synthetic_sample_for_account_orders(tmp_path) -> None:

@@ -3,7 +3,7 @@
 前端内置全站级的英文 / 中文语言切换。顶部栏的单个开关即可翻转整个 UI，
 且所选语言会在多次访问之间被记住。
 
-> 更新于 2026-06-04。本文取代了此前仅依赖 cookie 的切换方案以及基于
+> 更新于 2026-08-26。本文取代了此前仅依赖 cookie 的切换方案以及基于
 > 查询参数的原型。所有主页面均已双语化，可通过 `/en/...` 或 `/zh/...`
 > 路径打开。
 
@@ -46,10 +46,23 @@
 
 ## 覆盖范围
 
-共享框架 (侧边栏、顶部栏、安全提示条) 以及所有主页面及其表单均已翻译，
-包括：仪表盘、数据浏览器、期权筛选器、期权雷达、期权工具、买方期权、
-因子实验室、回测器、复现、实验、模拟交易、智能体工作室、订单簿、
-持仓地图，以及设置。
+共享框架（侧边栏、顶部栏、安全提示条）以及当前 `src/frontend/app` 中的产品页均
+支持 locale，包括 Hermes、晨报、盯盘三个 pane、策略与因子集合、候选库、因子实验室、
+回测、策略目录、实验、模拟交易/持仓地图、期权筛选/推荐/工具/买方助手、AI News、
+Polymarket、Agent Studio 和设置。动态运行/会话/晨报详情沿用同一 locale 前缀。
+
+现役页面路由以 `src/frontend/app` 为准。旧页面名由 `next.config.ts` 统一 301 到
+canonical route，且 `/en`、`/zh` 版本同步生成：
+
+| 旧路径 | 现役目的地 |
+|---|---|
+| `/data-explorer` | `/watch?pane=quotes` |
+| `/market-cross-section` | `/watch?pane=cross` |
+| `/asia-radar` | `/watch?pane=radar` |
+| `/position-map` | `/paper-trading?view=map` |
+| `/hermes/sessions` | `/hermes` |
+| `/replications` / `/replications/[runId]` | `/strategies` / `/strategies/[runId]` |
+| `/order-book` | `/polymarket` |
 
 少量底层表单校验消息和数据提供方枚举值 (例如 `futu` / `sample` /
 `tiingo`) 按设计保留英文。
@@ -82,7 +95,7 @@ http://127.0.0.1:3001
 - 在导航到其他页面以及重新加载后，所选语言仍然保持。
 - 直接访问 `/zh/options-radar` 和 `/en/options-radar` 渲染出
   预期的语言。
-- 从 `/zh/backtest`、`/zh/paper-trading` 和 `/zh/position-map` 进入时，运行详情
+- 从 `/zh/backtest`、`/zh/paper-trading` 和 `/zh/paper-trading?view=map` 进入时，运行详情
   链接保留 `/zh/...` 前缀，且详情页的返回链接回到本地化的列表页。
 - 在 `/zh/polymarket` 上提交控件后，浏览器仍停留在
   `/zh/polymarket?...`。

@@ -38,6 +38,7 @@ class BacktestConfig(BaseModel):
     commission_bps: float = Field(default=1.0, ge=0)
     slippage_bps: float = Field(default=5.0, ge=0)
     execution_price: Literal["next_open"] = "next_open"
+    terminal_valuation: Literal["close", "open"] = "close"
     min_order_value: float = Field(default=0.0, ge=0)
     whole_share_orders: bool = False
     annualization_factor: int = Field(default=252, gt=0)

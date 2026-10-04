@@ -5,7 +5,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-UniverseSource = Literal["sp500", "nasdaq100", "both"]
+UniverseSource = Literal[
+    "sp500",
+    "nasdaq100",
+    "both",
+    "core_etf",
+    "m7",
+    "sector_etf",
+    "sector_leader",
+]
 
 
 @dataclass(frozen=True)
@@ -19,7 +27,15 @@ class UniverseEntry:
 
 class OptionsUniverse:
     required_columns = {"ticker", "name", "sector", "exchange", "source"}
-    allowed_sources = {"sp500", "nasdaq100", "both"}
+    allowed_sources = {
+        "sp500",
+        "nasdaq100",
+        "both",
+        "core_etf",
+        "m7",
+        "sector_etf",
+        "sector_leader",
+    }
 
     @classmethod
     def load(cls, path: str | Path, *, top_n: int | None = None) -> list[UniverseEntry]:

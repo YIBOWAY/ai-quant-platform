@@ -717,7 +717,7 @@ def test_snapshot_projects_the_newest_200_managed_sessions(monkeypatch) -> None:
 
 def test_submit_action_document_path_and_unsupported_kind() -> None:
     settings = _postgres_settings()
-    _prepare(settings)
+    database = _prepare(settings)
     doc = action_to_document(_create_action("act-doc-path"))
     receipt = submit_action(settings, doc, mutation_enabled=True)
     assert receipt.status == "accepted"
@@ -732,25 +732,30 @@ def test_submit_action_document_path_and_unsupported_kind() -> None:
         "payload_digest": DIGEST_C,
         "initial_mode": "plan_only",
     }
-    # research.start is typed and digest-stable; browser/HQA prepare path stays
-    # dark in V4. Hermetic mutation=True still returns an explicit research
-    # submission blocker with zero PG writes beyond the earlier create.
-    blocked = submit_action(settings, research_doc, mutation_enabled=True)
-    assert blocked.status == "unavailable"
-    assert blocked.reason_code == "research_workflow_submission_unavailable"
+    # Retired research.start must not become a valid action again, even when
+    # mutations are enabled. Parsing is prior to the public mutation gate.
+    from quant_system.hermes.submission_saga import SubmissionSagaError
+
+    before = _count_rows(database)
+    for enabled in (True, False):
+        with pytest.raises(SubmissionSagaError, match="unknown UserActionV1 kind") as excinfo:
+            submit_action(settings, research_doc, mutation_enabled=enabled)
+        assert excinfo.value.code == "validation"
+    assert _count_rows(database) == before
 
     # Public mutation gate still wins when OFF.
-    public = submit_action(settings, research_doc, mutation_enabled=False)
+    public = submit_action(
+        settings, action_to_document(_create_action("act-public-disabled")), mutation_enabled=False
+    )
     assert public.status == "unavailable"
     assert public.reason_code == "authenticated_mutation_bff_unavailable"
 
-    # initial_mode must be plan_only (HQA contract).
-    from quant_system.hermes.submission_saga import SubmissionSagaError
-
-    bad_mode = dict(research_doc, initial_mode="plan", client_action_id="act-research-bad")
+    # Current typed actions still reject fields from retired action documents.
+    bad_mode = dict(doc, initial_mode="plan_only", client_action_id="act-extra-field")
     with pytest.raises(SubmissionSagaError) as excinfo:
         submit_action(settings, bad_mode, mutation_enabled=True)
     assert excinfo.value.code == "validation"
+    assert _count_rows(database) == before
 
     # Production does not admit process-local stop authorities. Reaching a
     # hermetic stop adapter requires an explicit test injection elsewhere.

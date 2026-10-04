@@ -9,6 +9,8 @@
 > [`../../runbooks/agent-v0-2-local-stack.md`](../../runbooks/agent-v0-2-local-stack.md).
 > Do not append current implementation progress to this historical timeline.
 
+The F0/F1 HTML and state JSON below are authored design fixtures with example conversations and values, not exports of an owner account or live Hermes transcript.
+
 Professional frontend design records for the Hermes unified research workbench
 (F0 high-fidelity directions → F1 clickable state prototype → F2 production shell).
 
@@ -212,7 +214,7 @@ Visible **prototype data** badge sits outside product chrome. Composer never sub
 ## How to open locally
 
 ```bash
-cd /Users/sunyibo/programs/ai-quant-platform
+cd $HOME/programs/ai-quant-platform
 python3 -m http.server 4173 --directory docs/design/hermes-workbench
 ```
 

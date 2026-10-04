@@ -19,6 +19,7 @@ from quant_system.api.safety.local_session import (
     LocalSessionForbidden,
     bootstrap_lock_path,
     bootstrap_token_path,
+    enforce_browser_request_gates,
     exchange_bootstrap_token,
     issue_bootstrap_token,
     local_session_security_ready,
@@ -81,6 +82,20 @@ def test_default_policy_accepts_frontend_port_3001() -> None:
     )
     assert policy.accepted_origin == "http://127.0.0.1:3001"
     assert policy.accepted_host == "127.0.0.1:3001"
+
+
+def test_same_origin_bff_accepts_an_isolated_loopback_backend_host() -> None:
+    policy = policy_from_settings(
+        accepted_origin="http://127.0.0.1:13031",
+    )
+
+    enforce_browser_request_gates(
+        policy=policy,
+        request_kind="api_read",
+        host_header="127.0.0.1:18785",
+        origin_header=None,
+        sec_fetch_site="same-origin",
+    )
 
 
 def test_bootstrap_issues_http_only_session_and_csrf(tmp_path: Path) -> None:
@@ -246,8 +261,7 @@ def test_concurrent_signing_key_initialization_never_invalidates_sessions(
 
     for item in issued:
         assert (
-            verify_session_cookie(tmp_path, item.session_cookie_value).owner_user_id
-            == ROOT_USER_ID
+            verify_session_cookie(tmp_path, item.session_cookie_value).owner_user_id == ROOT_USER_ID
         )
 
 
@@ -290,6 +304,7 @@ def test_cross_origin_and_sec_fetch_site_fail_closed(tmp_path: Path) -> None:
 def test_actual_client_peer_must_be_loopback() -> None:
     require_loopback_peer("127.0.0.1")
     require_loopback_peer("::1")
+    require_loopback_peer("::ffff:127.0.0.1")
     require_loopback_peer("testclient")
     with pytest.raises(LocalSessionForbidden):
         require_loopback_peer("192.0.2.25")
@@ -504,14 +519,9 @@ def test_trust_issued_session_fails_closed_when_trust_is_disabled(
         require_session_mode(session, local_trust_active=False)
 
     standard = mint_owner_session(tmp_path)
-    standard_session = verify_session_cookie(
-        tmp_path, standard.session_cookie_value
-    )
+    standard_session = verify_session_cookie(tmp_path, standard.session_cookie_value)
     assert standard_session.session_kind == "standard"
-    assert (
-        require_session_mode(standard_session, local_trust_active=False)
-        is standard_session
-    )
+    assert require_session_mode(standard_session, local_trust_active=False) is standard_session
 
 
 def _trust_client(tmp_path: Path) -> TestClient:
@@ -571,16 +581,12 @@ def test_disabling_trust_rejects_previously_issued_trust_cookie(
     tmp_path: Path,
 ) -> None:
     trust_client = _trust_client(tmp_path)
-    issued = trust_client.get(
-        "/api/auth/owner/session", headers=_browser_headers()
-    )
+    issued = trust_client.get("/api/auth/owner/session", headers=_browser_headers())
     assert issued.status_code == 200
     trust_cookie = trust_client.cookies.get(SESSION_COOKIE_NAME)
     assert trust_cookie
 
     standard_client = _client(tmp_path)
     standard_client.cookies.set(SESSION_COOKIE_NAME, trust_cookie)
-    rejected = standard_client.get(
-        "/api/auth/owner/session", headers=_browser_headers()
-    )
+    rejected = standard_client.get("/api/auth/owner/session", headers=_browser_headers())
     assert rejected.status_code == 401

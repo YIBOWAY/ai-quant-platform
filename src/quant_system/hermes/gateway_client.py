@@ -118,6 +118,18 @@ def _strip_internal_transport_prefix(text: str, *, role: str) -> str:
     return _DISCORD_TRIGGER_PREFIX.sub("", text, count=1).lstrip()
 
 
+def _session_summary_text(value: object) -> str | None:
+    text = _bounded_text(value, maximum=1000)
+    if text is None:
+        return None
+    cleaned = _strip_internal_transport_prefix(text.strip(), role="user")
+    if cleaned != text.strip():
+        return _redact_secrets(cleaned) or None
+    if re.match(r"\A\[Triggering message id:\s*`\d{1,32}`", text, re.IGNORECASE):
+        return None
+    return _redact_secrets(text)
+
+
 def _validated_loopback_origin(value: str) -> str:
     try:
         parsed = urlparse(str(value).strip())
@@ -418,6 +430,8 @@ class HermesApiReadClient:
                 )
             elif key in {"last_active", "ended_at"}:
                 summary[key] = _normalized_timestamp(value)
+            elif key in {"title", "preview"}:
+                summary[key] = _session_summary_text(value)
             else:
                 summary[key] = _bounded_text(value, maximum=1000)
         return summary
@@ -917,6 +931,9 @@ class OfficialHermesRunControlClient(HermesApiReadClient):
         return document
 
     def run_status(self, run_id: str) -> dict[str, object]:
+        if self.settings.api_contract == "official-http-v1":
+            from quant_system.hermes.native_control import status
+            return status(self, run_id)
         rid = _control_id(run_id, "run_id")
         try:
             raw = self._get_json(
@@ -960,6 +977,9 @@ class OfficialHermesRunControlClient(HermesApiReadClient):
 
     def run_events(self, run_id: str) -> tuple[dict[str, object], ...]:
         """Read the finite, bounded, gap-free durable event snapshot."""
+        if self.settings.api_contract == "official-http-v1":
+            from quant_system.hermes.native_control import activity
+            return activity(self, run_id)
         rid = _control_id(run_id, "run_id")
         self._require_control_ready(features=("run_events_snapshot",))
         return self._read_run_event_snapshot(rid).events
@@ -1043,6 +1063,9 @@ class OfficialHermesRunControlClient(HermesApiReadClient):
         self,
         run_ids: tuple[str, ...],
     ) -> tuple[dict[str, object], ...]:
+        if self.settings.api_contract == "official-http-v1":
+            from quant_system.hermes.native_control import pending
+            return pending(self, run_ids)
         if len(run_ids) > 64 or len(set(run_ids)) != len(run_ids):
             raise HermesRunControlError(
                 "run_control_validation",
@@ -1092,6 +1115,11 @@ class OfficialHermesRunControlClient(HermesApiReadClient):
         expected_status: str,
         expected_expires_at: str,
     ) -> ApprovalReleaseResult:
+        if self.settings.api_contract == "official-http-v1":
+            from quant_system.hermes.native_control import approve
+            return approve(self, run_id, choice=choice, challenge_id=challenge_id,
+                           action_digest=action_digest, expected_status=expected_status,
+                           expected_expires_at=expected_expires_at)
         rid = _control_id(run_id, "run_id")
         challenge = _control_id(challenge_id, "challenge_id")
         digest = _control_digest(action_digest, "action_digest")
@@ -1166,6 +1194,9 @@ class OfficialHermesRunControlClient(HermesApiReadClient):
         )
 
     def stop(self, run_id: str) -> StopResult:
+        if self.settings.api_contract == "official-http-v1":
+            from quant_system.hermes.native_control import stop
+            return stop(self, run_id)
         rid = _control_id(run_id, "run_id")
         self._require_control_ready(features=("run_stop",))
         raw = self._post_json(

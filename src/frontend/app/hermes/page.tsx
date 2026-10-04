@@ -1,9 +1,7 @@
 import { HermesSessionDeepLinkBinder } from "@/components/hermes/sessions/HermesSessionDeepLinkBinder";
-import { D34ResearchWorkbench } from "@/components/hermes/d34";
 import { HermesDeskToday } from "@/components/hermes/desk/HermesDeskToday";
+import { HermesDeskRunControls } from "@/components/hermes/desk/HermesDeskRunControls";
 import {
-  HermesTodayView,
-  RecentResults,
   TodayAutomation,
   TodayResults,
 } from "@/components/hermes/today";
@@ -15,7 +13,6 @@ import {
 } from "@/lib/api";
 import {
   buildHermesTodayOverviewModel,
-  buildHqaConclusions,
   buildUnifiedResultsPreview,
   pickLatestAutomation,
 } from "@/lib/hermes/viewModel";
@@ -42,9 +39,9 @@ export default async function HermesWorkbenchPage({
     artifacts,
     gateway,
   });
-  const hqaConclusions = buildHqaConclusions(artifacts);
   const unifiedResults = buildUnifiedResultsPreview(results);
   const latestAutomation = pickLatestAutomation(artifacts.items);
+  const automationStale = artifacts.warnings.some((warning) => warning.code === "feed_stale");
   const rawSessionId = searchParams.hermes_session_id;
   const requestedSessionId = Array.isArray(rawSessionId)
     ? rawSessionId[0]
@@ -61,25 +58,23 @@ export default async function HermesWorkbenchPage({
       <HermesDeskToday
         dutyExtra={
           <>
-            <HermesTodayView artifacts={artifacts} locale={locale} model={overview} />
+            <HermesDeskRunControls locale={locale} />
             <TodayResults
               hqaConclusions={[]}
               locale={locale}
               preview={unifiedResults}
             />
-            <RecentResults
-              artifacts={artifacts}
-              locale={locale}
-              results={hqaConclusions}
-            />
-            <TodayAutomation
-              artifact={latestAutomation}
-              locale={locale}
-              summary={overview.automation}
-            />
+            <details className="dp-diagnostics">
+              <summary>{locale === "zh" ? "运行记录与诊断" : "Automation & diagnostics"}{automationStale ? (locale === "zh" ? " · 有过期记录" : " · Stale records") : ""}</summary>
+              <TodayAutomation
+                artifact={latestAutomation}
+                locale={locale}
+                stale={automationStale}
+                summary={overview.automation}
+              />
+            </details>
           </>
         }
-        researchExtra={<D34ResearchWorkbench locale={locale} />}
       />
     </>
   );

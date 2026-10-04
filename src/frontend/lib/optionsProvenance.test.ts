@@ -24,21 +24,31 @@ describe("options provenance badge (V1.6b)", () => {
     expect(html).not.toContain("not real");
   });
 
-  it("OptionsScreenerForm wires DataSourceBadge to result.provider", () => {
+  it("OptionsScreenerResults wires DataSourceBadge to result.provider", () => {
     const src = readFileSync(
-      path.join(process.cwd(), "components/forms/OptionsScreenerForm.tsx"),
+      path.join(process.cwd(), "components/forms/OptionsScreenerResults.tsx"),
       "utf8",
     );
     expect(src).toContain('from "@/components/DataSourceBadge"');
     expect(src).toMatch(/<DataSourceBadge\s+source=\{result\.provider\}\s*\/>/);
   });
 
-  it("OptionsRadarView wires DataSourceBadge to status.provider", () => {
+  it("OptionsRadarView wires snapshot provenance to the scan response", () => {
     const src = readFileSync(
       path.join(process.cwd(), "components/forms/OptionsRadarView.tsx"),
       "utf8",
     );
     expect(src).toContain('from "@/components/DataSourceBadge"');
-    expect(src).toMatch(/<DataSourceBadge\s+source=\{status\.provider\}\s*\/>/);
+    expect(src).toMatch(/<DataSourceBadge\s+source=\{scanQuery\.data\.provider\}\s*\/>/);
+  });
+
+  it("labels the existing radar route as Options Recommendations in desktop and mobile navigation", () => {
+    for (const sourcePath of ["components/Sidebar.tsx", "components/TopBar.tsx"]) {
+      const src = readFileSync(path.join(process.cwd(), sourcePath), "utf8");
+      expect(src).toContain('optionsRadar: "Options Recommendations"');
+      expect(src).toContain('optionsRadar: "期权推荐"');
+      expect(src).not.toContain('optionsRadar: "Options Radar"');
+      expect(src).not.toContain('optionsRadar: "期权雷达"');
+    }
   });
 });

@@ -31,6 +31,7 @@ from quant_system.brief.models import (
     BriefSourceState,
     BriefSourceWatermark,
 )
+from quant_system.research.paper_evaluation import current_paper_summary
 
 BRIEF_TIME_ZONE = ZoneInfo("Asia/Shanghai")
 DEFAULT_BASE_URL = "http://127.0.0.1:8765"
@@ -40,16 +41,26 @@ Locale = Literal["en", "zh"]
 
 _COPY = {
     "en": {
-        "title": "Daily Morning Brief",
+        "title": "Daily Brief",
         "quote": (
             "Market data is incomplete; waiting for fresh SPY, QQQ, SOXX, and "
             "IGV daily bars before forming a full market read."
         ),
         "lede": (
-            "This morning, paper equity prints at {equity} with a {paper_return} "
-            "{range_label} paper return. Platform market note: {market_note} "
-            "{asia_radar_note} It has set {digest_count} AI intelligence items in type."
+            "{hung_count} simulated strategies are enabled. Latest available strategy "
+            "valuation {sleeve_equity} ({sleeve_observation}), not live account equity. "
+            "Account inventory (manual plus fossils, not official hung observation) "
+            "prints at {equity} with a {paper_return} {range_label} change. "
+            "Platform market note: {market_note} {asia_radar_note}{as_of_clause} "
+            "It has set {digest_count} AI intelligence items in type."
         ),
+        "lede_inventory": (
+            "Platform market note: {market_note} {asia_radar_note}{as_of_clause} "
+            "Account inventory (manual plus fossils, not official hung observation) "
+            "prints at {equity} with a {paper_return} {range_label} change. "
+            "It has set {digest_count} AI intelligence items in type."
+        ),
+        "as_of_clause": " Market bars through {market_as_of}.",
         "range_label": "7-day",
         "asia_unavailable": "Asia Radar is unavailable today.",
         "asia_coverage": "Asia Radar covers {count} markets as of {as_of}.",
@@ -76,22 +87,32 @@ _COPY = {
         "printed": "Morning brief printed · same-day facts",
     },
     "zh": {
-        "title": "每日晨报",
+        "title": "量化日报",
         "quote": (
             "市场涨跌数据暂不完整；待 SPY、QQQ、SOXX、IGV "
             "四组日线全部刷新后再形成完整判断。"
         ),
         "lede": (
-            "今晨，模拟盘权益报 {equity}，{range_label}收益 {paper_return}；"
-            "平台市场手记：{market_note} {asia_radar_note} "
-            "另整理 {digest_count} 条 AI 业内情报。"
+            "已启用 {hung_count} 条模拟策略。最近可用策略估值 {sleeve_equity}"
+            "（观察结果 {sleeve_observation}），不代表实时资产；"
+            "模拟账户总资产 {equity}（包含手工持仓和历史停用策略持仓），"
+            "{range_label}变动 {paper_return}。"
+            "市场方面，{market_note} {asia_radar_note}{as_of_clause}"
+            "另整理 {digest_count} 条 AI 新闻。"
         ),
+        "lede_inventory": (
+            "市场方面，{market_note} {asia_radar_note}{as_of_clause}"
+            "模拟账户总资产 {equity}（包含手工持仓和历史停用策略持仓），"
+            "{range_label}变动 {paper_return}。"
+            "另整理 {digest_count} 条 AI 新闻。"
+        ),
+        "as_of_clause": "行情截至 {market_as_of}。",
         "range_label": "近 7 日",
         "asia_unavailable": "亚洲雷达数据暂不可用。",
         "asia_coverage": "亚洲雷达覆盖 {count} 个市场（截至 {as_of}）。",
         "asia_full": (
-            "亚洲雷达（截至 {as_of}）：{winners} 领跑、{laggards} 落后，"
-            "YTD 前三后三篮子分化 {spread}。"
+            "亚洲市场截至 {as_of}，{winners} 年初至今涨幅靠前，{laggards} 涨幅靠后，"
+            "涨幅前三名与后三名的平均收益差为 {spread}。"
         ),
         "semis_inline": "；半导体（SOXX）与软件（IGV）涨跌接近",
         "semis_stronger": "；半导体（SOXX）相对软件（IGV）偏强 {diff}",
@@ -109,7 +130,7 @@ _COPY = {
         "run_replication_sample": "SAMPLE · 演示策略复现",
         "run_paper_sample": "SAMPLE · 演示模拟盘运行",
         "scan_entry": "期权每日扫描{status} · {strategies}",
-        "printed": "晨报已排印 · 当日事实",
+        "printed": "晨报已生成 · 当日数据",
     },
 }
 
@@ -164,6 +185,9 @@ def build_auto_archive_snapshot(
         news = _fetch(http, "/api/news/items?mode=selected&take=6&preference=auto")
         runs = _fetch(http, "/api/runs/recent?limit=8")
         options_status = _fetch(http, "/api/options/daily-scan/status")
+        book = _fetch(http, "/api/assistant/remote/book")
+        hung_effect = _fetch(http, "/api/paper/strategy-sleeves/hung-effect")
+        paper_evaluation = _fetch(http, "/api/paper-evaluation")
     finally:
         if owns_client:
             http.close()
@@ -216,14 +240,44 @@ def build_auto_archive_snapshot(
     )
 
     paper_return = _paper_period_return(performance.data)
-    lede = copy["lede"].format(
-        equity=_format_money(account_snapshot.equity),
+    market_as_of = _market_as_of(market_snapshots)
+    hung_count, book_available = _book_hung(book)
+    if book.error:
+        warnings.append(f"remote book: {book.error}")
+    if hung_effect.error:
+        warnings.append(f"hung sleeve effect: {hung_effect.error}")
+    sleeve_equity, sleeve_observation = _hung_sleeve_copy(
+        effect=hung_effect.data,
+        hung_count=hung_count,
+        locale=locale,
+    )
+    lede = compose_brief_lede(
+        copy=copy,
+        hung_count=hung_count,
+        book_available=book_available,
+        equity=(
+            _format_money(account_snapshot.equity)
+            if account_snapshot.valuation_status == "complete" else "--"
+        ),
         paper_return=_format_signed_return(paper_return),
         range_label=copy["range_label"],
         market_note=market_note,
         asia_radar_note=asia_radar_note,
         digest_count=len(news_items),
+        market_as_of=market_as_of,
+        sleeve_equity=sleeve_equity,
+        sleeve_observation=sleeve_observation,
     )
+    paper_summary, paper_evaluation_entry, evaluation_warning = _paper_evaluation_copy(
+        paper_evaluation,
+        hung_effect,
+        issue_date=issue_date,
+        locale=locale,
+    )
+    if paper_summary:
+        lede = f"{lede} {paper_summary}"
+    if evaluation_warning:
+        warnings.append(evaluation_warning)
 
     payload = BriefArchivePayload(
         schema_version="brief_snapshot_v1",
@@ -250,6 +304,7 @@ def build_auto_archive_snapshot(
             research_entry,
             news_entry,
             asia_entry,
+            paper_evaluation_entry,
             *market_entries,
         ],
     )
@@ -258,6 +313,46 @@ def build_auto_archive_snapshot(
         source_watermark=watermark,
         warnings=warnings,
     )
+
+
+def _paper_evaluation_copy(
+    result: _FetchResult,
+    effect: _FetchResult,
+    *,
+    issue_date: date,
+    locale: Locale,
+) -> tuple[str | None, BriefSourceState, str | None]:
+    entry = BriefSourceState(
+        name="paper_evaluation",
+        status="unavailable",
+        as_of=None,
+        detail="未加入未经本次成交观察核对的模型摘要。",
+        provider="grok-4.6",
+    )
+    if result.error or effect.error or not result.data or not effect.data:
+        return (
+            None,
+            entry,
+            ("paper evaluation: 模拟运行解读或当前成交观察暂不可用，日报未填入模型摘要。"),
+        )
+    try:
+        summary = current_paper_summary(result.data, effect.data, issue_date=issue_date)
+    except (ValueError, TypeError, KeyError, AttributeError):
+        return (
+            None,
+            entry,
+            ("paper evaluation: 尚无有效解读，或解读与本次成交观察不一致，日报未使用旧摘要。"),
+        )
+    as_of = result.data["as_of"]
+    entry.status = "available"
+    entry.as_of = datetime.fromisoformat(as_of).replace(tzinfo=BRIEF_TIME_ZONE)
+    entry.detail = f"Grok 4.6 / xhigh；对应成交观察事实 {result.data['input_digest']}"
+    prefix = (
+        f"Grok 模拟运行解读（估值截至 {as_of}）："
+        if locale == "zh"
+        else f"Grok paper review (Chinese; valuation through {as_of}): "
+    )
+    return f"{prefix}{summary}", entry, None
 
 
 def _fetch(client: httpx.Client, path: str) -> _FetchResult:
@@ -341,6 +436,19 @@ def _map_account(
         for position in data.get("positions") or []
         if str(position.get("symbol") or "").strip()
     ]
+    unpriced_symbols = sorted(set(data.get("unpriced_symbols") or []) | {
+        position.symbol for position in positions
+        if position.price_kind in {"avg_cost_fallback", "unavailable"} or position.last_price <= 0
+    })
+    # A present null is an explicit unknown, not permission to reuse legacy equity.
+    market_equity = data.get("market_equity", data.get("equity"))
+    complete = (
+        data.get("valuation_status") != "incomplete"
+        and not unpriced_symbols
+        and isinstance(market_equity, (int, float))
+        and not isinstance(market_equity, bool)
+        and math.isfinite(market_equity)
+    )
     snapshot = BriefAccountSnapshot(
         account_id=str(data.get("account_id") or "unavailable"),
         base_currency=str(data.get("base_currency") or "USD"),
@@ -354,10 +462,13 @@ def _map_account(
             as_of=_iso(price_source.get("as_of")),
         ),
         positions=positions,
+        valuation_status="complete" if complete else "incomplete",
+        market_equity=float(market_equity) if complete else None,
+        unpriced_symbols=unpriced_symbols,
     )
     entry = BriefSourceState(
         name="paper_account",
-        status=_source_status(None, bool(data.get("stale"))),
+        status=_source_status(None, bool(data.get("stale")) or not complete),
         as_of=_iso(price_source.get("as_of")),
         detail=str(price_source.get("kind") or "unavailable"),
     )
@@ -527,6 +638,144 @@ def _format_percent(value: float) -> str:
 
 def _format_money(value: float) -> str:
     return f"${value:,.2f}"
+
+
+def compose_brief_lede(
+    *,
+    copy: dict[str, str],
+    hung_count: int,
+    book_available: bool,
+    equity: str,
+    paper_return: str,
+    range_label: str,
+    market_note: str,
+    asia_radar_note: str,
+    digest_count: int,
+    market_as_of: str | None,
+    sleeve_equity: str | None = None,
+    sleeve_observation: str | None = None,
+) -> str:
+    """Build the morning lede from book-aware copy. Does not mutate archives."""
+    official = book_available and hung_count > 0
+    template = copy["lede"] if official else copy["lede_inventory"]
+    as_of_clause = (
+        copy["as_of_clause"].format(market_as_of=market_as_of) if market_as_of else ""
+    )
+    return template.format(
+        equity=equity,
+        paper_return=paper_return,
+        range_label=range_label,
+        market_note=market_note,
+        asia_radar_note=asia_radar_note,
+        digest_count=digest_count,
+        as_of_clause=as_of_clause,
+        hung_count=hung_count,
+        sleeve_equity=sleeve_equity
+        or (
+            "暂不可用"
+            if copy.get("range_label") == "近 7 日"
+            else "unavailable"
+        ),
+        sleeve_observation=sleeve_observation
+        or ("尚未入账" if copy.get("range_label") == "近 7 日" else "not booked"),
+    )
+
+
+def _hung_sleeve_copy(
+    *,
+    effect: dict[str, Any] | None,
+    hung_count: int,
+    locale: Locale,
+) -> tuple[str, str]:
+    missing = ("暂不可用", "尚无成交") if locale == "zh" else ("unavailable", "no fills yet")
+    unavailable = "效果暂不可用" if locale == "zh" else "effect unavailable"
+    if hung_count <= 0:
+        return missing
+    if not isinstance(effect, dict) or effect.get("hung_count") != hung_count:
+        return missing[0], unavailable
+    observation_count = effect.get("observation_day_count")
+    valid_count = (
+        not isinstance(observation_count, bool)
+        and isinstance(observation_count, int)
+        and observation_count > 0
+    )
+    day_label = (
+        "日"
+        if locale == "zh"
+        else ("day" if observation_count == 1 else "days")
+    )
+    unavailable_observation = (
+        f"{observation_count} {day_label} · {unavailable}"
+        if valid_count
+        else unavailable
+    )
+    if (
+        effect.get("empty") is True
+        and observation_count == 0
+        and effect.get("sleeve_equity_status") == "empty"
+    ):
+        return missing
+    equity = effect.get("sleeve_equity")
+    if (
+        effect.get("sleeve_equity_status") != "available"
+        or isinstance(equity, bool)
+        or not isinstance(equity, (int, float))
+        or not math.isfinite(float(equity))
+    ):
+        return missing[0], unavailable_observation
+    if (
+        isinstance(observation_count, bool)
+        or not isinstance(observation_count, int)
+        or observation_count < 0
+    ):
+        return _format_money(float(equity)), missing[1]
+    sleeve_return = effect.get("sleeve_return_pct")
+    observation = (
+        _format_signed_return(float(sleeve_return))
+        if isinstance(sleeve_return, (int, float))
+        and not isinstance(sleeve_return, bool)
+        and math.isfinite(float(sleeve_return))
+        else ("效果暂不可用" if locale == "zh" else "effect unavailable")
+    )
+    as_of = effect.get("as_of") or "unknown"
+    covered = effect.get("covered_sleeve_count")
+    covered = covered if isinstance(covered, int) else "unknown"
+    capital_return = effect.get("return_method") == "net_profit_over_allocated_capital"
+    detail = (
+        f"估值截至 {as_of} · 覆盖 {covered}/{hung_count} 条 · "
+        f"成交 {observation_count} {day_label} · "
+        f"{'累计盈亏 / 累计投入' if capital_return else '首个成交收盘起算'} {observation}"
+        if locale == "zh" else
+        f"Valued {as_of} · covers {covered}/{hung_count} strategies · fills on "
+        f"{observation_count} {day_label} · "
+        f"{'profit / allocated capital' if capital_return else 'since first fill close'} "
+        f"{observation}"
+    )
+    if observation_count == 0:
+        detail = (
+            f"估值截至 {as_of} · 覆盖 {covered}/{hung_count} 条 · 尚无成交；暂无交易收益样本"
+            if locale == "zh" else
+            f"Valued {as_of} · covers {covered}/{hung_count} · no fills or trading-return sample"
+        )
+    return _format_money(float(equity)), detail
+
+
+def _book_hung(result: _FetchResult) -> tuple[int, bool]:
+    data = result.data
+    if result.error or not isinstance(data, dict) or "hung_count" not in data:
+        return 0, False
+    raw = data.get("hung_count")
+    if not isinstance(raw, int) or raw < 0:
+        return 0, False
+    return raw, True
+
+
+def _market_as_of(snapshots: list[BriefMarketSnapshot]) -> str | None:
+    stamps = [item.as_of for item in snapshots if item.as_of is not None]
+    if not stamps:
+        return None
+    latest = max(stamps)
+    return latest.date().isoformat()
 
 
 def _format_signed_return(value: float | None) -> str:

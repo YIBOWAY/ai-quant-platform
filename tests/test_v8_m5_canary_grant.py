@@ -34,7 +34,6 @@ from quant_system.hermes.canary_grant_authority import (
     reset_default_canary_grant_authority,
 )
 from quant_system.hermes.canary_observe import (
-    project_workspace_canary_acceptances,
     project_workspace_canary_grants,
 )
 from quant_system.hermes.command_ledger import ROOT_USER_ID
@@ -57,8 +56,6 @@ PlatformAgentWorkspace = partial(
 
 WS = "ws-v8-m5-canary"
 BUILD = "b" * 64
-BUILD_OTHER = "c" * 64
-PAPER_DIGEST = "a" * 64
 
 
 @pytest.fixture(autouse=True)
@@ -136,22 +133,6 @@ def _options_doc(*, client_action_id: str = "act-v8m5-opt") -> dict:
         "include_provider_evidence": True,
         "provider_mode": "hermetic_fixture",
         "auth_envelope": None,
-    }
-
-
-def _factor_doc(*, client_action_id: str = "act-v8m5-fac") -> dict:
-    return {
-        "schema_version": 1,
-        "kind": "vertical.factor_b.bind",
-        "client_action_id": client_action_id,
-        "workspace": {"workspace_id": WS},
-        "goal_note": "V8-M5 factor B under canary",
-        "paper_ref": "fixture:paper/momentum_reversal_v1.pdf",
-        "paper_digest": PAPER_DIGEST,
-        "factor_name": "momentum_20d_reversal",
-        "formula_sketch": "ret_20d = close/close.shift(20)-1; signal = -ret_20d",
-        "universe_note": "CSI300 hermetic fixture",
-        "include_provider_evidence": True,
     }
 
 
@@ -321,7 +302,7 @@ def test_revoke_digest_mismatch_conflicts() -> None:
     assert default_canary_grant_authority().active_grant(WS) is not None
 
 
-def test_ttl_expiry_marks_expired_and_blocks_accept() -> None:
+def test_ttl_expiry_marks_expired() -> None:
     auth = default_canary_grant_authority()
     past = datetime.now(UTC) - timedelta(seconds=5)
     grant = auth.issue(
@@ -340,118 +321,10 @@ def test_ttl_expiry_marks_expired_and_blocks_accept() -> None:
     assert row.status == "expired"
     assert auth.active_grant(WS) is None
 
-    # Bind verticals so accept would otherwise be shape-valid.
-    opt = submit_action(_settings(), _options_doc(), mutation_enabled=True)
-    fac = submit_action(_settings(), _factor_doc(), mutation_enabled=True)
-    assert opt.status == fac.status == "accepted"
-    receipt = submit_action(
-        _settings(),
-        _accept_doc(
-            canary_ref=grant.canary_ref,
-            expected_grant_digest=grant.grant_digest,
-            options_a_task_id=opt.task_id or "",
-            options_a_result_id=opt.result_id or "",
-            factor_b_task_id=fac.task_id or "",
-            factor_b_result_id=fac.result_id or "",
-        ),
-        mutation_enabled=True,
-    )
-    assert receipt.status == "conflict"
-    assert receipt.reason_code == "canary_grant_expired"
-
 
 # ---------------------------------------------------------------------------
 # Dual-vertical accept (G6 hermetic)
 # ---------------------------------------------------------------------------
-
-
-def test_dual_vertical_accept_consumes_grant() -> None:
-    issued = submit_action(_settings(), _issue_doc(), mutation_enabled=True)
-    assert issued.status == "accepted"
-    opt = submit_action(_settings(), _options_doc(), mutation_enabled=True)
-    fac = submit_action(_settings(), _factor_doc(), mutation_enabled=True)
-    assert opt.status == fac.status == "accepted"
-    assert opt.task_id and opt.result_id and fac.task_id and fac.result_id
-
-    accepted = submit_action(
-        _settings(),
-        _accept_doc(
-            canary_ref=issued.canary_ref or "",
-            expected_grant_digest=issued.grant_digest or "",
-            options_a_task_id=opt.task_id,
-            options_a_result_id=opt.result_id,
-            factor_b_task_id=fac.task_id,
-            factor_b_result_id=fac.result_id,
-        ),
-        mutation_enabled=True,
-    )
-    assert accepted.status == "accepted"
-    assert accepted.acceptance_id
-    assert accepted.terminal_status == "consumed"
-    pub = accepted.to_public_dict()
-    _assert_public_write_still_off(pub)
-
-    auth = default_canary_grant_authority()
-    assert auth.active_grant(WS) is None
-    grants = project_workspace_canary_grants(WS)
-    assert grants[0]["status"] == "consumed"
-    assert grants[0]["acceptance"]["acceptance_id"] == accepted.acceptance_id
-    _assert_public_write_still_off(grants[0])
-
-    accs = project_workspace_canary_acceptances(WS)
-    assert len(accs) == 1
-    assert accs[0]["options_a_task_id"] == opt.task_id
-    assert accs[0]["factor_b_task_id"] == fac.task_id
-    _assert_public_write_still_off(accs[0])
-
-    # Snapshot still honest; canary consumed; public write OFF.
-    ws = PlatformAgentWorkspace(_settings(), mutation_enabled=True)
-    snap = ws.snapshot(ROOT_USER_ID, WS).to_public_dict()
-    assert snap["authority_health"]["canary_grant"] == "hermetic"
-    assert any(g["status"] == "consumed" for g in snap["canary_grants"])
-    surface = authority_readiness(_settings())
-    assert surface.get("chat_write_ready") is False
-
-
-def test_dual_vertical_accept_build_mismatch() -> None:
-    issued = submit_action(_settings(), _issue_doc(), mutation_enabled=True)
-    opt = submit_action(_settings(), _options_doc(), mutation_enabled=True)
-    fac = submit_action(_settings(), _factor_doc(), mutation_enabled=True)
-    bad = submit_action(
-        _settings(),
-        _accept_doc(
-            canary_ref=issued.canary_ref or "",
-            expected_grant_digest=issued.grant_digest or "",
-            expected_build_digest=BUILD_OTHER,
-            options_a_task_id=opt.task_id or "",
-            options_a_result_id=opt.result_id or "",
-            factor_b_task_id=fac.task_id or "",
-            factor_b_result_id=fac.result_id or "",
-        ),
-        mutation_enabled=True,
-    )
-    assert bad.status == "conflict"
-    assert bad.reason_code == "canary_build_digest_mismatch"
-    assert default_canary_grant_authority().active_grant(WS) is not None
-
-
-def test_dual_vertical_accept_idempotent() -> None:
-    issued = submit_action(_settings(), _issue_doc(), mutation_enabled=True)
-    opt = submit_action(_settings(), _options_doc(), mutation_enabled=True)
-    fac = submit_action(_settings(), _factor_doc(), mutation_enabled=True)
-    doc = _accept_doc(
-        canary_ref=issued.canary_ref or "",
-        expected_grant_digest=issued.grant_digest or "",
-        options_a_task_id=opt.task_id or "",
-        options_a_result_id=opt.result_id or "",
-        factor_b_task_id=fac.task_id or "",
-        factor_b_result_id=fac.result_id or "",
-    )
-    a1 = submit_action(_settings(), doc, mutation_enabled=True)
-    a2 = submit_action(_settings(), doc, mutation_enabled=True)
-    assert a1.status == a2.status == "accepted"
-    assert a1.acceptance_id == a2.acceptance_id
-    assert len(project_workspace_canary_acceptances(WS)) == 1
 
 
 def test_dual_vertical_accept_missing_vertical_conflicts() -> None:

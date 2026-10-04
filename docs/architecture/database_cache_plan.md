@@ -1,9 +1,10 @@
 # 数据库缓存方案
 
-> 当前覆盖说明（2026-08-10）：本文主体保留早期数据库演进历史。现行 startup 已固定
-> `QS_DATABASE_AUTO_MIGRATE=false`；migration 006–029 已在授权窗口逐步进入当前 live，
-> 029 经 backup/isolated restore 后仅 apply 一次，作为 append-only factor-automation
-> promote/demote/日配额权威，禁止重放。运维以 `../runbooks/agent-v0-2-local-stack.md` 为准。
+> **历史冻结（2026-08-26）：**本文主体保留早期数据库演进设计和当时运行快照，
+> 不是当前迁移计划。当前本机启动固定 `QS_DATABASE_AUTO_MIGRATE=false`，正式迁移已
+> 到 034，paper account 使用 PostgreSQL `canonical`；旧正文中的 `file` live、启动
+> 自动迁移或迁移数量断言不得用于现行操作。不要重放任何已应用 migration。当前运维
+> 以 [`agent-v0-2-local-stack.md`](../runbooks/agent-v0-2-local-stack.md) 为准。
 
 状态（2026-07-15 历史快照）：本地存储分为六类能力：
 
@@ -31,7 +32,7 @@ canonical”。截至本快照，live `quantplatform` 的五份 migration 共 19
 `brief_issues=2`、`brief_snapshots=3`、
 `brief_snapshot_sources=16`、`ai_news_items=240`、`ai_news_fetches=166`、
 `ai_news_daily_reports=4`（latest `2026-07-14`）、`paper_accounts=1`。其中
-`brf_20260714_kxsm9b` 已由真实浏览器更新为 v2，保存 payload 含 1 个账户权益点、4 个
+`<local-brief-id omitted>` 已由真实浏览器更新为 v2，保存 payload 含 1 个账户权益点、4 个
 市场、6 条 AI 新闻、8 条研究活动与 8 个独立来源水位；这些是验收时点证据，不是永久计数。
 
 Slice 9G 本身没有新增 SQL migration 或数据库表。HQA opportunity ledger 是 HQA

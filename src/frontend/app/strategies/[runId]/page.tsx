@@ -37,6 +37,7 @@ export default async function StrategyRunDetailPage({
         messages={[detail.apiError, strategies.apiError, universes.apiError, factors.apiError]}
       />
       <StrategyCatalogWorkbench
+        key={runId}
         factors={factors.factors}
         locale={locale}
         strategies={strategies.strategies}

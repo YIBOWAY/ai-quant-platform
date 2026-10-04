@@ -1,4 +1,3 @@
-import { ShieldAlert } from "lucide-react";
 import {
   getCachedEffectivePaperSafety,
   getCachedSettings,
@@ -22,6 +21,7 @@ const copy = {
     on: "on",
     off: "off",
     api: "api",
+    available: "available",
     unavailable: "unavailable",
     badge: "PAPER-ONLY",
     badgeUnsafe: "CHECK SAFETY",
@@ -43,6 +43,7 @@ const copy = {
     on: "开",
     off: "关",
     api: "接口",
+    available: "可用",
     unavailable: "不可用",
     badge: "仅模拟",
     badgeUnsafe: "安全待查",
@@ -95,16 +96,17 @@ export async function SafetyBadge() {
     paperSafety.current_paper_authority_epoch === null
       ? text.unavailable
       : String(paperSafety.current_paper_authority_epoch);
+  const apiStatus = health.status === "available" ? text.available : text.unavailable;
   const desktopStatus = `${paperOnly ? text.paperOnly : text.paperUnavailable} · ${
     liveStatus
   } · ${text.kill} ${killStatus} · ${text.paperObservation} ${paperObservationStatus} · ${
     text.accountFrozen
   } ${accountFrozenStatus} · ${text.paperAuthority} ${paperAuthorityStatus} (${
     text.epoch
-  } ${epochStatus}) · ${text.api} ${health.status}`;
+  } ${epochStatus}) · ${text.api} ${apiStatus}`;
   const mobileStatus = `${paperOnly ? text.paperOnly : text.paperUnavailable} · ${
     liveStatus
-  } · ${text.paperObservation} ${paperObservationStatus} · ${text.api} ${health.status}`;
+  } · ${text.paperObservation} ${paperObservationStatus} · ${text.api} ${apiStatus}`;
 
   // Live-safe posture: paper-only, live off, kill on.
   // Fill gate: paper_observation_enabled. Candidate admission is separate.
@@ -127,7 +129,7 @@ export async function SafetyBadge() {
       label: text.paperAuthority,
       value: `${paperAuthorityStatus} (${text.epoch} ${epochStatus})`,
     },
-    { label: text.api, value: health.status },
+    { label: text.api, value: apiStatus },
   ];
 
   return (
@@ -141,14 +143,13 @@ export async function SafetyBadge() {
       <details className="group">
         <summary
           aria-label={`${badgeLabel} — ${text.details}`}
-          className={`app-touch-target flex cursor-pointer list-none items-center gap-2 rounded-lg border px-2.5 font-mono text-[10px] font-bold uppercase tracking-widest marker:hidden ${
+          className={`app-touch-target flex cursor-pointer list-none items-center gap-1.5 rounded-md px-1.5 font-mono text-[10px] font-medium uppercase tracking-wide marker:hidden hover:bg-bg-surface ${
             allSafe
-              ? "border-accent-success/40 bg-accent-success/5 text-accent-success"
-              : "border-warning/40 bg-warning/5 text-warning"
+              ? "text-text-secondary"
+              : "text-warning"
           }`}
         >
           <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${dotClass}`} />
-          <ShieldAlert size={13} className="shrink-0" />
           <span>{badgeLabel}</span>
         </summary>
         <div

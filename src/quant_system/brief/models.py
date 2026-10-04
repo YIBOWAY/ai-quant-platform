@@ -44,6 +44,9 @@ class BriefAccountSnapshot(_StrictBriefModel):
     invested_pct: float
     price_source: BriefPriceSource
     positions: list[BriefAccountPosition]
+    valuation_status: Literal["complete", "incomplete"] | None = None
+    market_equity: float | None = None
+    unpriced_symbols: list[str] = Field(default_factory=list)
 
 
 class BriefEquityPoint(_StrictBriefModel):

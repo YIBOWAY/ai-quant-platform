@@ -32,27 +32,16 @@ from quant_system.config.settings import Settings
 from quant_system.hermes.agent_workspace_actions import (
     AcceptCanaryDualVertical,
     AgentWorkspaceActionError,
-    BindFactorVerticalB,
     BindOptionsVerticalA,
     ClosePublicCutover,
-    ConfirmFactorVerticalBGate1,
-    ConfirmFactorVerticalBPlan,
-    ConfirmFormulaSource,
-    ConfirmResearchPlan,
-    ContinueResearch,
     ConversationTurn,
     CreateManagedSession,
     DecideHermesCommandApproval,
     ForkIntoManagedSession,
     IssueCanaryGrant,
     OpenPublicCutover,
-    PreparePromotionReview,
     RequestStop,
-    ReviewCandidateCAS,
     RevokeCanaryGrant,
-    SeedFactorVerticalBGate1,
-    SeedFactorVerticalBGate2,
-    StartResearch,
     UnsupportedWorkspaceAction,
     UserActionV1,
     action_payload_ref_for_digest,
@@ -95,23 +84,9 @@ from quant_system.hermes.dark_identity_profile import (
     DarkIdentityProfileError,
     require_server_managed_session_policy,
 )
-from quant_system.hermes.gate_observe import note_gate_decided, note_gate_raised
-from quant_system.hermes.gate_surface_authority import (
-    GateSurfaceAuthorityError,
-    default_gate_surface_authority,
-)
 from quant_system.hermes.gateway_client import (
     HermesRunControlError,
     HermesRunControlPort,
-)
-from quant_system.hermes.paper_gate_authority import (
-    PaperGateAuthority,
-    PaperGateAuthorityConflict,
-    PaperGateAuthorityError,
-    PaperGateAuthorityUnavailable,
-    PaperGateAuthorityValidationError,
-    PaperGateExecutionPort,
-    PaperGateReceipt,
 )
 from quant_system.hermes.public_cutover_authority import (
     PublicCutoverAuthorityError,
@@ -168,15 +143,7 @@ ReceiptStatus = Literal[
 _PROCESS_LOCAL_AUTHORITY_ACTIONS = (
     DecideHermesCommandApproval,
     RequestStop,
-    ConfirmFormulaSource,
-    ReviewCandidateCAS,
-    PreparePromotionReview,
     BindOptionsVerticalA,
-    BindFactorVerticalB,
-    ConfirmFactorVerticalBPlan,
-    SeedFactorVerticalBGate1,
-    ConfirmFactorVerticalBGate1,
-    SeedFactorVerticalBGate2,
     IssueCanaryGrant,
     RevokeCanaryGrant,
     AcceptCanaryDualVertical,
@@ -228,11 +195,6 @@ class ActionReceipt:
     domain_request_status: str | None = None
     domain_admission_id: str | None = None
     domain_admission_digest: str | None = None
-    # V7g-B-M3: optional Gate1 id after vertical.factor_b.gate1_seed.
-    gate_id: str | None = None
-    # Durable paper-workflow continuation handles from the exact HQA receipt.
-    task_version: int | None = None
-    gate1_confirmation_id: str | None = None
     # V8-M5: optional canary grant identity (issue/revoke/accept).
     grant_id: str | None = None
     grant_digest: str | None = None
@@ -287,12 +249,6 @@ class ActionReceipt:
             payload["domain_request_ref"] = f"options-request:{self.domain_request_id}"
         if self.domain_request_status is not None:
             payload["domain_request_status"] = self.domain_request_status
-        if self.gate_id is not None:
-            payload["gate_id"] = self.gate_id
-        if self.task_version is not None:
-            payload["task_version"] = self.task_version
-        if self.gate1_confirmation_id is not None:
-            payload["gate1_confirmation_id"] = self.gate1_confirmation_id
         if self.grant_id is not None:
             payload["grant_id"] = self.grant_id
         if self.grant_digest is not None:
@@ -325,9 +281,8 @@ class ActionReceipt:
             or self.cutover_id is not None
             or self.cutover_ref is not None
         ):
-            # Rails honesty: release / Gate2 decide / V2 durable / kill_switch never flip.
+            # Public cutover never changes the live-trading rails.
             payload["release_authorized"] = False
-            payload["m6_gate2_decide_authorized"] = False
             payload["v2_durable_live"] = False
             payload["kill_switch_unchanged"] = True
             if self.public_flag_open is True:
@@ -402,9 +357,6 @@ def _receipt(
     domain_request_status: str | None = None,
     domain_admission_id: str | None = None,
     domain_admission_digest: str | None = None,
-    gate_id: str | None = None,
-    task_version: int | None = None,
-    gate1_confirmation_id: str | None = None,
     grant_id: str | None = None,
     grant_digest: str | None = None,
     canary_ref: str | None = None,
@@ -436,9 +388,6 @@ def _receipt(
         domain_request_status=domain_request_status,
         domain_admission_id=domain_admission_id,
         domain_admission_digest=domain_admission_digest,
-        gate_id=gate_id,
-        task_version=task_version,
-        gate1_confirmation_id=gate1_confirmation_id,
         grant_id=grant_id,
         grant_digest=grant_digest,
         canary_ref=canary_ref,
@@ -1135,7 +1084,7 @@ def _submit_production_approval(
                 target_run_id=run_id,
                 status="outcome_unknown",
                 reason_code="approval_signal_unknown",
-                external_status="committed",
+                external_status=result.decision_status,
                 external_idempotent_replay=result.idempotent_replay,
             )
         return _receipt(
@@ -1155,7 +1104,7 @@ def _submit_production_approval(
             target_run_id=run_id,
             status="succeeded",
             reason_code=None,
-            external_status="committed",
+            external_status=result.decision_status,
             external_idempotent_replay=result.idempotent_replay,
         )
     except RunControlOutcomeError:
@@ -1777,353 +1726,6 @@ def submit_stop_run_request(
     )
 
 
-def _submit_durable_paper_gate_action(
-    action: ConfirmFormulaSource | ReviewCandidateCAS | PreparePromotionReview,
-    *,
-    digest: str,
-    mutation_enabled: bool,
-    authority: PaperGateAuthority,
-    port: PaperGateExecutionPort,
-) -> ActionReceipt:
-    """Execute one pre-registered Gate without manufacturing workflow facts.
-
-    The durable authority owns claim/replay/finalization.  In particular, an
-    ``outcome_unknown`` receipt is terminal for this action identity: the BFF
-    exposes reconciliation rather than blindly invoking HQA again.
-    """
-
-    try:
-        receipt: PaperGateReceipt = authority.execute_action(
-            action,
-            action_digest=digest,
-            port=port,
-        )
-    except PaperGateAuthorityValidationError as exc:
-        raise SubmissionSagaError("validation", exc.message) from exc
-    except PaperGateAuthorityConflict as exc:
-        return _receipt(
-            status="conflict",
-            action=action,
-            digest=digest,
-            reason_code=exc.code,
-            mutation_enabled=mutation_enabled,
-        )
-    except PaperGateAuthorityUnavailable as exc:
-        if exc.code in {
-            "paper_gate_finalization_outcome_unknown",
-            "paper_gate_invalid_hqa_receipt",
-        }:
-            status: ReceiptStatus = "outcome_unknown"
-        elif exc.code == "paper_gate_action_in_progress":
-            status = "reconciling"
-        else:
-            status = "unavailable"
-        return _receipt(
-            status=status,
-            action=action,
-            digest=digest,
-            reason_code=exc.code,
-            mutation_enabled=mutation_enabled,
-        )
-    except PaperGateAuthorityError as exc:
-        return _receipt(
-            status="unavailable",
-            action=action,
-            digest=digest,
-            reason_code=exc.code,
-            mutation_enabled=mutation_enabled,
-        )
-
-    if receipt.status in {"confirmed", "reviewed", "prepared"}:
-        status = "accepted"
-    elif receipt.status == "outcome_unknown":
-        status = "outcome_unknown"
-    elif receipt.status == "rejected":
-        status = "conflict"
-    else:
-        status = "unavailable"
-    return _receipt(
-        status=status,
-        action=action,
-        digest=digest,
-        gate_id=receipt.gate_id,
-        task_version=receipt.task_version,
-        gate1_confirmation_id=receipt.gate1_confirmation_id,
-        platform_session_id=strip_session_ref(receipt.managed_session_ref),
-        reason_code=receipt.reason_code,
-        mutation_enabled=mutation_enabled,
-    )
-
-
-def submit_confirm_formula_source(
-    settings: Settings,
-    action: ConfirmFormulaSource,
-    *,
-    mutation_enabled: bool,
-    actor_owner_user_id: UUID | str = ROOT_USER_ID,
-    paper_gate_authority: PaperGateAuthority | None = None,
-    paper_gate_port: PaperGateExecutionPort | None = None,
-) -> ActionReceipt:
-    """Gate 1 formula-source confirm (durable production or explicit hermetic)."""
-    digest = canonical_action_digest(action)
-    if not mutation_enabled:
-        return _receipt(
-            status="unavailable",
-            action=action,
-            digest=digest,
-            reason_code="authenticated_mutation_bff_unavailable",
-            mutation_enabled=mutation_enabled,
-        )
-    _require_root_actor(actor_owner_user_id)
-    if paper_gate_authority is not None and paper_gate_port is not None:
-        return _submit_durable_paper_gate_action(
-            action,
-            digest=digest,
-            mutation_enabled=mutation_enabled,
-            authority=paper_gate_authority,
-            port=paper_gate_port,
-        )
-    authority = default_gate_surface_authority()
-    try:
-        decided = authority.confirm_formula_source(
-            workspace_id=action.workspace.workspace_id,
-            task_ref=action.task_ref,
-            reviewed_source_sha256=action.reviewed_source_sha256,
-            confirmation_note=action.confirmation_note,
-            client_action_id=action.client_action_id,
-            action_digest=digest,
-        )
-    except GateSurfaceAuthorityError as exc:
-        if exc.code == "validation":
-            raise SubmissionSagaError("validation", exc.message) from exc
-        if exc.code == "conflict":
-            return _receipt(
-                status="conflict",
-                action=action,
-                digest=digest,
-                reason_code=exc.message,
-                mutation_enabled=mutation_enabled,
-            )
-        return _receipt(
-            status="unavailable",
-            action=action,
-            digest=digest,
-            reason_code=exc.message or "gate_surface_authority_unavailable",
-            mutation_enabled=mutation_enabled,
-        )
-    with suppress(Exception):
-        note_gate_decided(
-            workspace_id=action.workspace.workspace_id,
-            gate=decided,
-        )
-    command_id: str | None = None
-    if _ensure_ready(settings):
-        control_session = control_plane_session_id(action.workspace.workspace_id)
-        try:
-            cmd = _create_idempotent_command(
-                settings,
-                platform_session_id=control_session,
-                client_request_id=action.client_action_id,
-                kind="gate1_formula_source_confirm",
-                action_digest=digest,
-                payload_ref=action_payload_ref_for_digest(digest),
-                provider_policy_digest=None,
-            )
-            command_id = str(cmd.command.command_id)
-        except SubmissionSagaError:
-            # CAS already committed; audit-rail problems must not look like Gate failure.
-            command_id = None
-        except Exception:
-            command_id = None
-    return _receipt(
-        status="accepted",
-        action=action,
-        digest=digest,
-        command_id=command_id,
-        mutation_enabled=mutation_enabled,
-    )
-
-
-def submit_review_candidate_cas(
-    settings: Settings,
-    action: ReviewCandidateCAS,
-    *,
-    mutation_enabled: bool,
-    actor_owner_user_id: UUID | str = ROOT_USER_ID,
-    paper_gate_authority: PaperGateAuthority | None = None,
-    paper_gate_port: PaperGateExecutionPort | None = None,
-) -> ActionReceipt:
-    """Gate 2 exact candidate review CAS (no-refetch/no-substitution)."""
-    digest = canonical_action_digest(action)
-    if not mutation_enabled:
-        return _receipt(
-            status="unavailable",
-            action=action,
-            digest=digest,
-            reason_code="authenticated_mutation_bff_unavailable",
-            mutation_enabled=mutation_enabled,
-        )
-    _require_root_actor(actor_owner_user_id)
-    if paper_gate_authority is not None and paper_gate_port is not None:
-        return _submit_durable_paper_gate_action(
-            action,
-            digest=digest,
-            mutation_enabled=mutation_enabled,
-            authority=paper_gate_authority,
-            port=paper_gate_port,
-        )
-    authority = default_gate_surface_authority()
-    try:
-        decided = authority.review_candidate(
-            workspace_id=action.workspace.workspace_id,
-            candidate_ref=action.candidate_ref,
-            expected_digest=action.expected_digest,
-            expected_status=action.expected_status,
-            note=action.note,
-            client_action_id=action.client_action_id,
-            action_digest=digest,
-        )
-    except GateSurfaceAuthorityError as exc:
-        if exc.code == "validation":
-            raise SubmissionSagaError("validation", exc.message) from exc
-        if exc.code == "conflict":
-            return _receipt(
-                status="conflict",
-                action=action,
-                digest=digest,
-                reason_code=exc.message,
-                mutation_enabled=mutation_enabled,
-            )
-        return _receipt(
-            status="unavailable",
-            action=action,
-            digest=digest,
-            reason_code=exc.message or "gate_surface_authority_unavailable",
-            mutation_enabled=mutation_enabled,
-        )
-    with suppress(Exception):
-        note_gate_decided(
-            workspace_id=action.workspace.workspace_id,
-            gate=decided,
-        )
-    command_id: str | None = None
-    if _ensure_ready(settings):
-        control_session = control_plane_session_id(action.workspace.workspace_id)
-        try:
-            cmd = _create_idempotent_command(
-                settings,
-                platform_session_id=control_session,
-                client_request_id=action.client_action_id,
-                kind="gate2_candidate_review",
-                action_digest=digest,
-                payload_ref=action_payload_ref_for_digest(digest),
-                provider_policy_digest=None,
-            )
-            command_id = str(cmd.command.command_id)
-        except SubmissionSagaError:
-            # CAS already committed; audit-rail problems must not look like Gate failure.
-            command_id = None
-        except Exception:
-            command_id = None
-    return _receipt(
-        status="accepted",
-        action=action,
-        digest=digest,
-        command_id=command_id,
-        mutation_enabled=mutation_enabled,
-    )
-
-
-def submit_prepare_promotion_review(
-    settings: Settings,
-    action: PreparePromotionReview,
-    *,
-    mutation_enabled: bool,
-    actor_owner_user_id: UUID | str = ROOT_USER_ID,
-    paper_gate_authority: PaperGateAuthority | None = None,
-    paper_gate_port: PaperGateExecutionPort | None = None,
-) -> ActionReceipt:
-    """Gate 3 promotion-review prepare only — never performs a Git commit."""
-    digest = canonical_action_digest(action)
-    if not mutation_enabled:
-        return _receipt(
-            status="unavailable",
-            action=action,
-            digest=digest,
-            reason_code="authenticated_mutation_bff_unavailable",
-            mutation_enabled=mutation_enabled,
-        )
-    _require_root_actor(actor_owner_user_id)
-    if paper_gate_authority is not None and paper_gate_port is not None:
-        return _submit_durable_paper_gate_action(
-            action,
-            digest=digest,
-            mutation_enabled=mutation_enabled,
-            authority=paper_gate_authority,
-            port=paper_gate_port,
-        )
-    authority = default_gate_surface_authority()
-    try:
-        decided = authority.prepare_promotion_review(
-            workspace_id=action.workspace.workspace_id,
-            candidate_ref=action.candidate_ref,
-            expected_digest=action.expected_digest,
-            final_backtest_receipt_ref=action.final_backtest_receipt_ref,
-            base_commit=action.base_commit,
-            client_action_id=action.client_action_id,
-            action_digest=digest,
-        )
-    except GateSurfaceAuthorityError as exc:
-        if exc.code == "validation":
-            raise SubmissionSagaError("validation", exc.message) from exc
-        if exc.code == "conflict":
-            return _receipt(
-                status="conflict",
-                action=action,
-                digest=digest,
-                reason_code=exc.message,
-                mutation_enabled=mutation_enabled,
-            )
-        return _receipt(
-            status="unavailable",
-            action=action,
-            digest=digest,
-            reason_code=exc.message or "gate_surface_authority_unavailable",
-            mutation_enabled=mutation_enabled,
-        )
-    with suppress(Exception):
-        note_gate_decided(
-            workspace_id=action.workspace.workspace_id,
-            gate=decided,
-        )
-    command_id: str | None = None
-    if _ensure_ready(settings):
-        control_session = control_plane_session_id(action.workspace.workspace_id)
-        try:
-            cmd = _create_idempotent_command(
-                settings,
-                platform_session_id=control_session,
-                client_request_id=action.client_action_id,
-                kind="gate3_promotion_review_prepare",
-                action_digest=digest,
-                payload_ref=action_payload_ref_for_digest(digest),
-                provider_policy_digest=None,
-            )
-            command_id = str(cmd.command.command_id)
-        except SubmissionSagaError:
-            # CAS already committed; audit-rail problems must not look like Gate failure.
-            command_id = None
-        except Exception:
-            command_id = None
-    return _receipt(
-        status="accepted",
-        action=action,
-        digest=digest,
-        command_id=command_id,
-        mutation_enabled=mutation_enabled,
-    )
-
-
 def submit_bind_options_vertical_a(
     settings: Settings,
     action: BindOptionsVerticalA,
@@ -2135,7 +1737,7 @@ def submit_bind_options_vertical_a(
     """V7g-A: Vertical A options research bind (hermetic + live Futu RO).
 
     Hermetic fixture or authorized live_futu_ro with auth envelope.
-    Zero orders/account mutation. Not StartResearch. Not public write.
+    Zero orders/account mutation. Not a research job or public write.
     """
     digest = canonical_action_digest(action)
     if not mutation_enabled:
@@ -2283,559 +1885,6 @@ def submit_bind_options_vertical_a(
         result_id=outcome.result.result_id,
         terminal_status=outcome.terminal,
         mutation_enabled=mutation_enabled,
-    )
-
-
-def submit_bind_factor_vertical_b(
-    settings: Settings,
-    action: BindFactorVerticalB,
-    *,
-    mutation_enabled: bool,
-    actor_owner_user_id: UUID | str = ROOT_USER_ID,
-) -> ActionReceipt:
-    """V7g-B-M1: Vertical B factor research bind (hermetic only).
-
-    Never StartResearch/Confirm/Gate/backtest/Git. Zero orders. Not public write.
-    """
-    digest = canonical_action_digest(action)
-    if not mutation_enabled:
-        return _receipt(
-            status="unavailable",
-            action=action,
-            digest=digest,
-            reason_code="authenticated_mutation_bff_unavailable",
-            mutation_enabled=mutation_enabled,
-        )
-    _require_root_actor(actor_owner_user_id)
-    authority = default_vertical_binding_authority()
-    try:
-        outcome = authority.bind_factor_vertical_b(
-            workspace_id=action.workspace.workspace_id,
-            client_action_id=action.client_action_id,
-            action_digest=digest,
-            goal_note=action.goal_note,
-            paper_ref=action.paper_ref,
-            paper_digest=action.paper_digest,
-            factor_name=action.factor_name,
-            formula_sketch=action.formula_sketch,
-            universe_note=action.universe_note,
-            include_provider_evidence=action.include_provider_evidence,
-        )
-    except VerticalBindingAuthorityError as exc:
-        if exc.code == "validation":
-            raise SubmissionSagaError("validation", exc.message) from exc
-        if exc.code == "conflict":
-            return _receipt(
-                status="conflict",
-                action=action,
-                digest=digest,
-                reason_code=exc.message,
-                mutation_enabled=mutation_enabled,
-            )
-        return _receipt(
-            status="unavailable",
-            action=action,
-            digest=digest,
-            reason_code=exc.message or "vertical_binding_authority_unavailable",
-            mutation_enabled=mutation_enabled,
-        )
-    with suppress(Exception):
-        note_result_raised(
-            workspace_id=action.workspace.workspace_id,
-            result=outcome.result,
-        )
-    command_id: str | None = None
-    if _ensure_ready(settings):
-        control_session = control_plane_session_id(action.workspace.workspace_id)
-        try:
-            cmd = _create_idempotent_command(
-                settings,
-                platform_session_id=control_session,
-                client_request_id=action.client_action_id,
-                kind="vertical_factor_b_bind",
-                action_digest=digest,
-                payload_ref=action_payload_ref_for_digest(digest),
-                provider_policy_digest=None,
-            )
-            command_id = str(cmd.command.command_id)
-        except SubmissionSagaError:
-            command_id = None
-        except Exception:
-            command_id = None
-    return _receipt(
-        status="accepted",
-        action=action,
-        digest=digest,
-        command_id=command_id,
-        run_id=outcome.run.run_id,
-        task_id=outcome.task.task_id,
-        attempt_id=outcome.attempt.attempt_id,
-        result_id=outcome.result.result_id,
-        terminal_status=outcome.terminal,
-        mutation_enabled=mutation_enabled,
-    )
-
-
-def submit_confirm_factor_vertical_b_plan(
-    settings: Settings,
-    action: ConfirmFactorVerticalBPlan,
-    *,
-    mutation_enabled: bool,
-    actor_owner_user_id: UUID | str = ROOT_USER_ID,
-) -> ActionReceipt:
-    """V7g-B-M2: hermetic factor_b plan-confirm cascade notch.
-
-    Never StartResearch / global ConfirmResearchPlan / Gate / backtest / Git.
-    Zero orders. Not public write. M1 bind acceptance is not standing auth.
-    """
-    digest = canonical_action_digest(action)
-    if not mutation_enabled:
-        return _receipt(
-            status="unavailable",
-            action=action,
-            digest=digest,
-            reason_code="authenticated_mutation_bff_unavailable",
-            mutation_enabled=mutation_enabled,
-        )
-    _require_root_actor(actor_owner_user_id)
-    authority = default_vertical_binding_authority()
-    try:
-        outcome = authority.confirm_factor_vertical_b_plan(
-            workspace_id=action.workspace.workspace_id,
-            client_action_id=action.client_action_id,
-            action_digest=digest,
-            task_ref=action.task_ref,
-            expected_bind_digest=action.expected_bind_digest,
-            plan_version=action.plan_version,
-            plan_digest=action.plan_digest,
-            confirmation_note=action.confirmation_note,
-        )
-    except VerticalBindingAuthorityError as exc:
-        if exc.code == "validation":
-            raise SubmissionSagaError("validation", exc.message) from exc
-        if exc.code in {
-            "factor_b_task_not_found",
-            "factor_b_task_wrong_vertical",
-            "factor_b_bind_digest_mismatch",
-            "factor_b_bind_not_confirmable",
-            "factor_b_plan_digest_mismatch",
-        }:
-            return _receipt(
-                status="unavailable",
-                action=action,
-                digest=digest,
-                reason_code=exc.code,
-                mutation_enabled=mutation_enabled,
-            )
-        if exc.code in {"conflict", "cascade_already_plan_confirmed"}:
-            return _receipt(
-                status="conflict",
-                action=action,
-                digest=digest,
-                reason_code=exc.code if exc.code != "conflict" else exc.message,
-                mutation_enabled=mutation_enabled,
-            )
-        return _receipt(
-            status="unavailable",
-            action=action,
-            digest=digest,
-            reason_code=exc.message or "vertical_binding_authority_unavailable",
-            mutation_enabled=mutation_enabled,
-        )
-    with suppress(Exception):
-        note_result_raised(
-            workspace_id=action.workspace.workspace_id,
-            result=outcome.result,
-        )
-    command_id: str | None = None
-    if _ensure_ready(settings):
-        control_session = control_plane_session_id(action.workspace.workspace_id)
-        try:
-            cmd = _create_idempotent_command(
-                settings,
-                platform_session_id=control_session,
-                client_request_id=action.client_action_id,
-                kind="vertical_factor_b_plan_confirm",
-                action_digest=digest,
-                payload_ref=action_payload_ref_for_digest(digest),
-                provider_policy_digest=None,
-            )
-            command_id = str(cmd.command.command_id)
-        except Exception:
-            command_id = None
-    return _receipt(
-        status="accepted",
-        action=action,
-        digest=digest,
-        command_id=command_id,
-        run_id=outcome.run.run_id,
-        task_id=outcome.task.task_id,
-        attempt_id=outcome.attempt.attempt_id,
-        result_id=outcome.result.result_id,
-        terminal_status=outcome.terminal,
-        mutation_enabled=mutation_enabled,
-    )
-
-
-def submit_seed_factor_vertical_b_gate1(
-    settings: Settings,
-    action: SeedFactorVerticalBGate1,
-    *,
-    mutation_enabled: bool,
-    actor_owner_user_id: UUID | str = ROOT_USER_ID,
-) -> ActionReceipt:
-    """V7g-B-M3: hermetic factor_b Gate1 seed cascade notch.
-
-    Never decides Gate1 / lifts gate_cascade_locked / StartResearch /
-    global ConfirmResearchPlan / Gate2-3 / backtest / Git. Zero orders.
-    M2 plan_confirm acceptance is not standing auth for M3.
-    """
-    digest = canonical_action_digest(action)
-    if not mutation_enabled:
-        return _receipt(
-            status="unavailable",
-            action=action,
-            digest=digest,
-            reason_code="authenticated_mutation_bff_unavailable",
-            mutation_enabled=mutation_enabled,
-        )
-    _require_root_actor(actor_owner_user_id)
-    authority = default_vertical_binding_authority()
-    try:
-        outcome = authority.seed_factor_vertical_b_gate1(
-            workspace_id=action.workspace.workspace_id,
-            client_action_id=action.client_action_id,
-            action_digest=digest,
-            task_ref=action.task_ref,
-            expected_bind_digest=action.expected_bind_digest,
-            expected_plan_digest=action.expected_plan_digest,
-            reviewed_source_sha256=action.reviewed_source_sha256,
-            seed_note=action.seed_note,
-        )
-    except VerticalBindingAuthorityError as exc:
-        if exc.code == "validation":
-            raise SubmissionSagaError("validation", exc.message) from exc
-        if exc.code in {
-            "factor_b_task_not_found",
-            "factor_b_task_wrong_vertical",
-            "factor_b_bind_digest_mismatch",
-            "factor_b_gate1_not_seedable",
-            "factor_b_plan_digest_mismatch",
-            "factor_b_formula_source_unavailable",
-            "factor_b_formula_source_digest_mismatch",
-        }:
-            return _receipt(
-                status="unavailable",
-                action=action,
-                digest=digest,
-                reason_code=exc.code,
-                mutation_enabled=mutation_enabled,
-            )
-        if exc.code in {"conflict", "cascade_already_gate1_seeded"}:
-            return _receipt(
-                status="conflict",
-                action=action,
-                digest=digest,
-                reason_code=exc.code if exc.code != "conflict" else exc.message,
-                mutation_enabled=mutation_enabled,
-            )
-        return _receipt(
-            status="unavailable",
-            action=action,
-            digest=digest,
-            reason_code=exc.message or "vertical_binding_authority_unavailable",
-            mutation_enabled=mutation_enabled,
-        )
-    with suppress(Exception):
-        note_result_raised(
-            workspace_id=action.workspace.workspace_id,
-            result=outcome.result,
-        )
-    if outcome.gate_id is not None:
-        try:
-            gauth = default_gate_surface_authority()
-            gate_row = gauth.get(action.workspace.workspace_id, outcome.gate_id)
-            if gate_row is not None:
-                note_gate_raised(
-                    workspace_id=action.workspace.workspace_id,
-                    gate=gate_row,
-                )
-        except Exception:
-            pass
-    command_id: str | None = None
-    if _ensure_ready(settings):
-        control_session = control_plane_session_id(action.workspace.workspace_id)
-        try:
-            cmd = _create_idempotent_command(
-                settings,
-                platform_session_id=control_session,
-                client_request_id=action.client_action_id,
-                kind="vertical_factor_b_gate1_seed",
-                action_digest=digest,
-                payload_ref=action_payload_ref_for_digest(digest),
-                provider_policy_digest=None,
-            )
-            command_id = str(cmd.command.command_id)
-        except Exception:
-            command_id = None
-    return _receipt(
-        status="accepted",
-        action=action,
-        digest=digest,
-        command_id=command_id,
-        run_id=outcome.run.run_id,
-        task_id=outcome.task.task_id,
-        attempt_id=outcome.attempt.attempt_id,
-        result_id=outcome.result.result_id,
-        terminal_status=outcome.terminal,
-        mutation_enabled=mutation_enabled,
-        gate_id=outcome.gate_id,
-    )
-
-
-def submit_confirm_factor_vertical_b_gate1(
-    settings: Settings,
-    action: ConfirmFactorVerticalBGate1,
-    *,
-    mutation_enabled: bool,
-    actor_owner_user_id: UUID | str = ROOT_USER_ID,
-) -> ActionReceipt:
-    """V7g-B-M4: hermetic factor_b Gate1 decide→cascade coupler.
-
-    Dual-path: confirm pending Gate1 when needed, or cascade-only after V7e.
-    Never lifts gate_cascade_locked / auto Gate2 / StartResearch /
-    global ConfirmResearchPlan / Gate2-3 cascade / backtest / Git. Zero orders.
-    M3 seed acceptance is not standing auth for M4.
-    """
-    digest = canonical_action_digest(action)
-    if not mutation_enabled:
-        return _receipt(
-            status="unavailable",
-            action=action,
-            digest=digest,
-            reason_code="authenticated_mutation_bff_unavailable",
-            mutation_enabled=mutation_enabled,
-        )
-    _require_root_actor(actor_owner_user_id)
-    authority = default_vertical_binding_authority()
-    try:
-        outcome = authority.confirm_factor_vertical_b_gate1(
-            workspace_id=action.workspace.workspace_id,
-            client_action_id=action.client_action_id,
-            action_digest=digest,
-            task_ref=action.task_ref,
-            expected_bind_digest=action.expected_bind_digest,
-            expected_plan_digest=action.expected_plan_digest,
-            expected_gate1_id=action.expected_gate1_id,
-            reviewed_source_sha256=action.reviewed_source_sha256,
-            confirmation_note=action.confirmation_note,
-        )
-    except VerticalBindingAuthorityError as exc:
-        if exc.code == "validation":
-            raise SubmissionSagaError("validation", exc.message) from exc
-        if exc.code in {
-            "factor_b_task_not_found",
-            "factor_b_task_wrong_vertical",
-            "factor_b_bind_digest_mismatch",
-            "factor_b_gate1_not_confirmable",
-            "factor_b_plan_digest_mismatch",
-            "factor_b_gate1_id_mismatch",
-            "factor_b_formula_source_unavailable",
-            "factor_b_formula_source_digest_mismatch",
-        }:
-            return _receipt(
-                status="unavailable",
-                action=action,
-                digest=digest,
-                reason_code=exc.code,
-                mutation_enabled=mutation_enabled,
-            )
-        if exc.code in {"conflict", "cascade_already_gate1_confirmed"}:
-            return _receipt(
-                status="conflict",
-                action=action,
-                digest=digest,
-                reason_code=exc.code if exc.code != "conflict" else exc.message,
-                mutation_enabled=mutation_enabled,
-            )
-        return _receipt(
-            status="unavailable",
-            action=action,
-            digest=digest,
-            reason_code=exc.message or "vertical_binding_authority_unavailable",
-            mutation_enabled=mutation_enabled,
-        )
-    with suppress(Exception):
-        note_result_raised(
-            workspace_id=action.workspace.workspace_id,
-            result=outcome.result,
-        )
-    # note_gate_decided only when this act confirmed the surface (decision_action
-    # matches). CASCADE-ONLY after V7e leaves V7e's decision facts untouched.
-    if outcome.gate_id is not None:
-        try:
-            gauth = default_gate_surface_authority()
-            gate_row = gauth.get(action.workspace.workspace_id, outcome.gate_id)
-            if (
-                gate_row is not None
-                and gate_row.status == "confirmed"
-                and gate_row.decision_action_id == action.client_action_id
-                and gate_row.decision_action_digest == digest
-            ):
-                note_gate_decided(
-                    workspace_id=action.workspace.workspace_id,
-                    gate=gate_row,
-                )
-        except Exception:
-            pass
-    command_id: str | None = None
-    if _ensure_ready(settings):
-        control_session = control_plane_session_id(action.workspace.workspace_id)
-        try:
-            cmd = _create_idempotent_command(
-                settings,
-                platform_session_id=control_session,
-                client_request_id=action.client_action_id,
-                kind="vertical_factor_b_gate1_confirm",
-                action_digest=digest,
-                payload_ref=action_payload_ref_for_digest(digest),
-                provider_policy_digest=None,
-            )
-            command_id = str(cmd.command.command_id)
-        except Exception:
-            command_id = None
-    return _receipt(
-        status="accepted",
-        action=action,
-        digest=digest,
-        command_id=command_id,
-        run_id=outcome.run.run_id,
-        task_id=outcome.task.task_id,
-        attempt_id=outcome.attempt.attempt_id,
-        result_id=outcome.result.result_id,
-        terminal_status=outcome.terminal,
-        mutation_enabled=mutation_enabled,
-        gate_id=outcome.gate_id,
-    )
-
-
-def submit_seed_factor_vertical_b_gate2(
-    settings: Settings,
-    action: SeedFactorVerticalBGate2,
-    *,
-    mutation_enabled: bool,
-    actor_owner_user_id: UUID | str = ROOT_USER_ID,
-) -> ActionReceipt:
-    """V7g-B-M5: hermetic factor_b Gate2 seed cascade notch.
-
-    Never decides Gate2 / lifts gate_cascade_locked / StartResearch /
-    global ConfirmResearchPlan / Gate3 / backtest / Git. Zero orders.
-    M4 gate1_confirm acceptance is not standing auth for M5.
-    """
-    digest = canonical_action_digest(action)
-    if not mutation_enabled:
-        return _receipt(
-            status="unavailable",
-            action=action,
-            digest=digest,
-            reason_code="authenticated_mutation_bff_unavailable",
-            mutation_enabled=mutation_enabled,
-        )
-    _require_root_actor(actor_owner_user_id)
-    authority = default_vertical_binding_authority()
-    try:
-        outcome = authority.seed_factor_vertical_b_gate2(
-            workspace_id=action.workspace.workspace_id,
-            client_action_id=action.client_action_id,
-            action_digest=digest,
-            task_ref=action.task_ref,
-            expected_bind_digest=action.expected_bind_digest,
-            expected_plan_digest=action.expected_plan_digest,
-            expected_gate1_id=action.expected_gate1_id,
-            expected_gate1_confirm_digest=action.expected_gate1_confirm_digest,
-            expected_candidate_digest=action.expected_candidate_digest,
-            seed_note=action.seed_note,
-        )
-    except VerticalBindingAuthorityError as exc:
-        if exc.code == "validation":
-            raise SubmissionSagaError("validation", exc.message) from exc
-        if exc.code in {
-            "factor_b_task_not_found",
-            "factor_b_task_wrong_vertical",
-            "factor_b_bind_digest_mismatch",
-            "factor_b_gate2_not_seedable",
-            "factor_b_plan_digest_mismatch",
-            "factor_b_gate1_id_mismatch",
-            "factor_b_gate1_confirm_digest_mismatch",
-            "factor_b_formula_source_unavailable",
-            "factor_b_candidate_digest_mismatch",
-        }:
-            return _receipt(
-                status="unavailable",
-                action=action,
-                digest=digest,
-                reason_code=exc.code,
-                mutation_enabled=mutation_enabled,
-            )
-        if exc.code in {"conflict", "cascade_already_gate2_seeded"}:
-            return _receipt(
-                status="conflict",
-                action=action,
-                digest=digest,
-                reason_code=exc.code if exc.code != "conflict" else exc.message,
-                mutation_enabled=mutation_enabled,
-            )
-        return _receipt(
-            status="unavailable",
-            action=action,
-            digest=digest,
-            reason_code=exc.message or "vertical_binding_authority_unavailable",
-            mutation_enabled=mutation_enabled,
-        )
-    with suppress(Exception):
-        note_result_raised(
-            workspace_id=action.workspace.workspace_id,
-            result=outcome.result,
-        )
-    if outcome.gate_id is not None:
-        try:
-            gauth = default_gate_surface_authority()
-            gate_row = gauth.get(action.workspace.workspace_id, outcome.gate_id)
-            if gate_row is not None:
-                note_gate_raised(
-                    workspace_id=action.workspace.workspace_id,
-                    gate=gate_row,
-                )
-        except Exception:
-            pass
-    command_id: str | None = None
-    if _ensure_ready(settings):
-        control_session = control_plane_session_id(action.workspace.workspace_id)
-        try:
-            cmd = _create_idempotent_command(
-                settings,
-                platform_session_id=control_session,
-                client_request_id=action.client_action_id,
-                kind="vertical_factor_b_gate2_seed",
-                action_digest=digest,
-                payload_ref=action_payload_ref_for_digest(digest),
-                provider_policy_digest=None,
-            )
-            command_id = str(cmd.command.command_id)
-        except Exception:
-            command_id = None
-    return _receipt(
-        status="accepted",
-        action=action,
-        digest=digest,
-        command_id=command_id,
-        run_id=outcome.run.run_id,
-        task_id=outcome.task.task_id,
-        attempt_id=outcome.attempt.attempt_id,
-        result_id=outcome.result.result_id,
-        terminal_status=outcome.terminal,
-        mutation_enabled=mutation_enabled,
-        gate_id=outcome.gate_id,
     )
 
 
@@ -3234,8 +2283,6 @@ def submit_action(
     run_control_adapter: HermesRunControlPort | None = None,
     run_control_outcome_authority: RunControlOutcomeAuthority | None = None,
     vertical_a_authority: object | None = None,
-    paper_gate_authority: PaperGateAuthority | None = None,
-    paper_gate_port: PaperGateExecutionPort | None = None,
 ) -> ActionReceipt:
     """Dispatch one closed action through the crash-safe submission path."""
     if isinstance(action, dict):
@@ -3266,24 +2313,6 @@ def submit_action(
         and vertical_a_authority is not None
         and isinstance(vertical_a_authority, PostgresVerticalAAuthority)
     )
-    durable_paper_gate_action = type(parsed) in {
-        ConfirmFormulaSource,
-        ReviewCandidateCAS,
-        PreparePromotionReview,
-    }
-    explicitly_injected_paper_gate = (
-        durable_paper_gate_action
-        and paper_gate_authority is not None
-        and paper_gate_port is not None
-    )
-    if durable_paper_gate_action and ((paper_gate_authority is None) != (paper_gate_port is None)):
-        return _receipt(
-            status="unavailable",
-            action=parsed,
-            digest=canonical_action_digest(parsed),
-            reason_code="paper_gate_adapter_misconfigured",
-            mutation_enabled=mutation_enabled,
-        )
     if (
         mutation_enabled
         and not allow_hermetic_authorities
@@ -3291,7 +2320,6 @@ def submit_action(
         and not explicitly_injected_stop_port
         and not production_run_control
         and not explicitly_injected_vertical_a
-        and not explicitly_injected_paper_gate
         and type(parsed) in _PROCESS_LOCAL_AUTHORITY_ACTIONS
     ):
         public_cutover_action = type(parsed) in _PUBLIC_CUTOVER_ACTIONS
@@ -3352,33 +2380,6 @@ def submit_action(
             run_control_adapter=run_control_adapter,
             run_control_outcome_authority=run_control_outcome_authority,
         )
-    if type(parsed) is ConfirmFormulaSource:
-        return submit_confirm_formula_source(
-            settings,
-            parsed,
-            mutation_enabled=mutation_enabled,
-            actor_owner_user_id=actor_owner_user_id,
-            paper_gate_authority=paper_gate_authority,
-            paper_gate_port=paper_gate_port,
-        )
-    if type(parsed) is ReviewCandidateCAS:
-        return submit_review_candidate_cas(
-            settings,
-            parsed,
-            mutation_enabled=mutation_enabled,
-            actor_owner_user_id=actor_owner_user_id,
-            paper_gate_authority=paper_gate_authority,
-            paper_gate_port=paper_gate_port,
-        )
-    if type(parsed) is PreparePromotionReview:
-        return submit_prepare_promotion_review(
-            settings,
-            parsed,
-            mutation_enabled=mutation_enabled,
-            actor_owner_user_id=actor_owner_user_id,
-            paper_gate_authority=paper_gate_authority,
-            paper_gate_port=paper_gate_port,
-        )
     if type(parsed) is BindOptionsVerticalA:
         return submit_bind_options_vertical_a(
             settings,
@@ -3386,41 +2387,6 @@ def submit_action(
             mutation_enabled=mutation_enabled,
             actor_owner_user_id=actor_owner_user_id,
             vertical_a_authority=vertical_a_authority,
-        )
-    if type(parsed) is BindFactorVerticalB:
-        return submit_bind_factor_vertical_b(
-            settings,
-            parsed,
-            mutation_enabled=mutation_enabled,
-            actor_owner_user_id=actor_owner_user_id,
-        )
-    if type(parsed) is ConfirmFactorVerticalBPlan:
-        return submit_confirm_factor_vertical_b_plan(
-            settings,
-            parsed,
-            mutation_enabled=mutation_enabled,
-            actor_owner_user_id=actor_owner_user_id,
-        )
-    if type(parsed) is SeedFactorVerticalBGate1:
-        return submit_seed_factor_vertical_b_gate1(
-            settings,
-            parsed,
-            mutation_enabled=mutation_enabled,
-            actor_owner_user_id=actor_owner_user_id,
-        )
-    if type(parsed) is ConfirmFactorVerticalBGate1:
-        return submit_confirm_factor_vertical_b_gate1(
-            settings,
-            parsed,
-            mutation_enabled=mutation_enabled,
-            actor_owner_user_id=actor_owner_user_id,
-        )
-    if type(parsed) is SeedFactorVerticalBGate2:
-        return submit_seed_factor_vertical_b_gate2(
-            settings,
-            parsed,
-            mutation_enabled=mutation_enabled,
-            actor_owner_user_id=actor_owner_user_id,
         )
     if type(parsed) is IssueCanaryGrant:
         return submit_issue_canary_grant(
@@ -3457,27 +2423,6 @@ def submit_action(
             mutation_enabled=mutation_enabled,
             actor_owner_user_id=actor_owner_user_id,
         )
-    if type(parsed) in (StartResearch, ContinueResearch, ConfirmResearchPlan):
-        # Research kinds are typed and digest-stable, but the HQA prepare →
-        # ensure_bound_command browser path stays dark in V4. Public mutation
-        # gate still wins first when OFF; hermetic mutation=True still refuses
-        # with an explicit research submission blocker (zero PG writes).
-        digest = canonical_action_digest(parsed)
-        if not mutation_enabled:
-            return _receipt(
-                status="unavailable",
-                action=parsed,
-                digest=digest,
-                reason_code="authenticated_mutation_bff_unavailable",
-                mutation_enabled=mutation_enabled,
-            )
-        return _receipt(
-            status="unavailable",
-            action=parsed,
-            digest=digest,
-            reason_code="research_workflow_submission_unavailable",
-            mutation_enabled=mutation_enabled,
-        )
     if type(parsed) is UnsupportedWorkspaceAction:
         digest = canonical_action_digest(parsed)
         return _receipt(
@@ -3498,12 +2443,7 @@ __all__ = [
     "derive_managed_hermes_session_id",
     "derive_managed_platform_session_id",
     "submit_action",
-    "submit_bind_factor_vertical_b",
     "submit_bind_options_vertical_a",
-    "submit_confirm_factor_vertical_b_plan",
-    "submit_seed_factor_vertical_b_gate1",
-    "submit_confirm_factor_vertical_b_gate1",
-    "submit_seed_factor_vertical_b_gate2",
     "submit_issue_canary_grant",
     "submit_revoke_canary_grant",
     "submit_accept_canary_dual_vertical",

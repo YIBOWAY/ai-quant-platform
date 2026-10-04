@@ -69,6 +69,8 @@ def run_reversal_momentum_replication(
         ohlcv,
         initial_cash=request.initial_cash,
         top_n=request.top_n,
+        run_id=run_id,
+        trials_root=settings.data.data_dir / "trials",
     )
     result.update(
         {
@@ -139,7 +141,7 @@ def reversal_momentum_replication_detail(
 
 
 def _status_for_futu_error(code: str) -> int:
-    if code in {"opend_unavailable", "provider_timeout", "rate_limited"}:
+    if code in {"opend_unavailable", "provider_timeout", "provider_unavailable", "rate_limited"}:
         return 503
     if code in {"invalid_symbol", "unsupported_interval"}:
         return 400

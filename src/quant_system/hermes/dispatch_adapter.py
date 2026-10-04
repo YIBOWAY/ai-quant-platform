@@ -107,6 +107,9 @@ class HermesRunObservation:
     error_code: str | None = None
     next_cursor: int = 0
     replay_complete: bool = False
+    # Native HTTP terminal status is a different evidence source, not a
+    # counterfeit replay of the historical fork's event log.
+    terminal_evidence_source: Literal["event_replay", "native_status"] = "event_replay"
 
     @property
     def is_terminal(self) -> bool:

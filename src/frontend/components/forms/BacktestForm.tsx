@@ -3,6 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
+import { useMemo } from "react";
 import { useForm, useWatch, type FieldError } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -17,6 +18,11 @@ import { ApiClientError, apiPost, splitSymbols } from "@/lib/apiClient";
 import { isBacktestJobState, waitForBacktestJob } from "@/lib/backtestJobs";
 import { useIsHydrated } from "@/lib/hydration";
 import { localizePath } from "@/lib/locale";
+import {
+  localizedFactorName,
+  localizedStrategyName,
+  localizedUniverseName,
+} from "@/lib/catalogPresentation";
 import {
   TerminalToolbarButton,
   terminalInputClass,
@@ -62,6 +68,18 @@ const copy = {
     monthly: "Monthly",
     maxWeight: "Max weight / name",
     capHelp: "Optional. 0–1 per-name weight cap; leave blank for no cap.",
+    errorSelectUniverse: "Select a universe",
+    errorSelectStrategy: "Select a strategy",
+    errorEnterBenchmark: "Enter a benchmark",
+    errorSelectFactors: "Select at least one factor",
+    errorStartRequired: "Start date is required",
+    errorEndRequired: "End date is required",
+    errorDateOrder: "End date must be on or after start date",
+    errorWeightRange: "Enter a weight between 0 and 1",
+    errorInvalidNumber: "Enter a valid number",
+    errorPositiveInteger: "Enter a positive integer",
+    errorPositiveNumber: "Enter a number greater than 0",
+    errorNonNegativeNumber: "Enter a non-negative number",
   },
   zh: {
     scopeGroup: "策略与股票池",
@@ -98,43 +116,75 @@ const copy = {
     monthly: "每月",
     maxWeight: "单标的上限",
     capHelp: "可选。0–1 之间的单标的权重上限；留空表示不限制。",
+    errorSelectUniverse: "请选择股票池",
+    errorSelectStrategy: "请选择策略",
+    errorEnterBenchmark: "请输入基准",
+    errorSelectFactors: "请至少选择一个因子",
+    errorStartRequired: "请选择开始日期",
+    errorEndRequired: "请选择结束日期",
+    errorDateOrder: "结束日期不能早于开始日期",
+    errorWeightRange: "请输入 0 到 1 之间的权重",
+    errorInvalidNumber: "请输入有效数字",
+    errorPositiveInteger: "请输入正整数",
+    errorPositiveNumber: "请输入大于 0 的数字",
+    errorNonNegativeNumber: "请输入不小于 0 的数字",
   },
 } as const;
 
-const capString = z
-  .string()
-  .optional()
-  .refine(
-    (value) => {
-      if (value === undefined || value.trim() === "") {
-        return true;
-      }
-      const parsed = Number(value);
-      return Number.isFinite(parsed) && parsed > 0 && parsed <= 1;
-    },
-    { message: "Enter a weight between 0 and 1" },
-  );
+export function buildBacktestSchema(locale: Locale) {
+  const text = copy[locale];
+  const capString = z
+    .string()
+    .optional()
+    .refine(
+      (value) => {
+        if (value === undefined || value.trim() === "") {
+          return true;
+        }
+        const parsed = Number(value);
+        return Number.isFinite(parsed) && parsed > 0 && parsed <= 1;
+      },
+      { message: text.errorWeightRange },
+    );
 
-const backtestSchema = z.object({
-  symbols: z.string().optional(),
-  universe_id: z.string().min(1, "Select a universe"),
-  strategy_id: z.string().min(1, "Select a strategy"),
-  benchmark_symbol: z.string().min(1, "Enter a benchmark"),
-  factor_ids: z.array(z.string()).min(1, "Select at least one factor"),
-  weights: z.record(z.coerce.number()),
-  start: z.string().min(1, "Start date is required"),
-  end: z.string().min(1, "End date is required"),
-  provider: z.enum(["sample", "futu", "tiingo"]),
-  lookback: z.coerce.number().int().positive(),
-  top_n: z.coerce.number().int().positive(),
-  initial_cash: z.coerce.number().positive(),
-  commission_bps: z.coerce.number().nonnegative(),
-  slippage_bps: z.coerce.number().nonnegative(),
-  min_order_value: z.coerce.number().nonnegative(),
-  whole_share_orders: z.boolean(),
-  rebalance_frequency: z.enum(["every_bar", "weekly", "monthly"]),
-  max_weight_per_symbol: capString,
-});
+  return z.object({
+    symbols: z.string().optional(),
+    universe_id: z.string().min(1, text.errorSelectUniverse),
+    strategy_id: z.string().min(1, text.errorSelectStrategy),
+    benchmark_symbol: z.string().min(1, text.errorEnterBenchmark),
+    factor_ids: z.array(z.string()).min(1, text.errorSelectFactors),
+    weights: z.record(z.coerce.number()),
+    start: z.string().min(1, text.errorStartRequired),
+    end: z.string().min(1, text.errorEndRequired),
+    provider: z.enum(["sample", "futu", "tiingo"]),
+    lookback: z.coerce
+      .number({ invalid_type_error: text.errorInvalidNumber })
+      .int(text.errorPositiveInteger)
+      .positive(text.errorPositiveInteger),
+    top_n: z.coerce
+      .number({ invalid_type_error: text.errorInvalidNumber })
+      .int(text.errorPositiveInteger)
+      .positive(text.errorPositiveInteger),
+    initial_cash: z.coerce
+      .number({ invalid_type_error: text.errorInvalidNumber })
+      .positive(text.errorPositiveNumber),
+    commission_bps: z.coerce
+      .number({ invalid_type_error: text.errorInvalidNumber })
+      .nonnegative(text.errorNonNegativeNumber),
+    slippage_bps: z.coerce
+      .number({ invalid_type_error: text.errorInvalidNumber })
+      .nonnegative(text.errorNonNegativeNumber),
+    min_order_value: z.coerce
+      .number({ invalid_type_error: text.errorInvalidNumber })
+      .nonnegative(text.errorNonNegativeNumber),
+    whole_share_orders: z.boolean(),
+    rebalance_frequency: z.enum(["every_bar", "weekly", "monthly"]),
+    max_weight_per_symbol: capString,
+  }).refine((value) => !value.start || !value.end || value.start <= value.end, {
+    path: ["end"],
+    message: text.errorDateOrder,
+  });
+}
 
 function parseCap(value: string | undefined): number | undefined {
   if (value === undefined || value.trim() === "") {
@@ -144,7 +194,7 @@ function parseCap(value: string | undefined): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-type BacktestFormValues = z.infer<typeof backtestSchema>;
+type BacktestFormValues = z.infer<ReturnType<typeof buildBacktestSchema>>;
 export type BacktestFormInitialValues = Partial<BacktestFormValues>;
 
 function isoDate(date: Date) {
@@ -203,7 +253,7 @@ export function BacktestForm({
   const text = copy[locale];
   const defaults = mergeDefaults(initialValues);
   const form = useForm<BacktestFormValues>({
-    resolver: zodResolver(backtestSchema),
+    resolver: useMemo(() => zodResolver(buildBacktestSchema(locale)), [locale]),
     defaultValues: defaults,
   });
   const mutation = useMutation({
@@ -253,7 +303,7 @@ export function BacktestForm({
           <select className={inputClass} {...form.register("strategy_id")}>
             {activeStrategies.map((strategy) => (
               <option key={strategy.id} value={strategy.id}>
-                {strategy.name}
+                {localizedStrategyName(strategy, locale)}
               </option>
             ))}
           </select>
@@ -265,7 +315,7 @@ export function BacktestForm({
           <select className={inputClass} {...form.register("universe_id")}>
             {activeUniverses.map((universe) => (
               <option key={universe.id} value={universe.id}>
-                {universe.name}
+                {localizedUniverseName(universe, locale)}
               </option>
             ))}
           </select>
@@ -352,7 +402,7 @@ export function BacktestForm({
             >
               <span className="inline-flex min-w-0 items-center gap-2">
                 <input type="checkbox" value={factor.factor_id} {...form.register("factor_ids")} />
-                <span className="truncate">{factor.factor_name}</span>
+                <span className="truncate">{localizedFactorName(factor, locale)}</span>
               </span>
               <input
                 aria-label={`${factor.factor_id} ${text.weight}`}
@@ -486,6 +536,7 @@ function fallbackFactors(): FactorMetadata[] {
     {
       factor_id: "momentum",
       factor_name: "Momentum",
+      display_name_zh: "动量",
       factor_version: "0.1.0",
       lookback: 20,
       direction: "higher_is_better",
@@ -494,6 +545,7 @@ function fallbackFactors(): FactorMetadata[] {
     {
       factor_id: "volatility",
       factor_name: "Volatility",
+      display_name_zh: "波动率",
       factor_version: "0.1.0",
       lookback: 20,
       direction: "lower_is_better",
@@ -502,6 +554,7 @@ function fallbackFactors(): FactorMetadata[] {
     {
       factor_id: "liquidity",
       factor_name: "Liquidity",
+      display_name_zh: "流动性",
       factor_version: "0.1.0",
       lookback: 20,
       direction: "higher_is_better",
@@ -515,6 +568,7 @@ function fallbackStrategies(): StrategyMetadata[] {
     {
       id: "cross_sectional_top_n",
       name: "Cross-Sectional Top-N",
+      display_name_zh: "横截面 Top-N",
       description: "",
       paper_source: null,
       run_endpoint: "/api/backtests/run",

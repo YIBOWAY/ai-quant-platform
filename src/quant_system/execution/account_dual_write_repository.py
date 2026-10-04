@@ -5,6 +5,7 @@ from collections.abc import Mapping
 
 from quant_system.execution.account import DEFAULT_INITIAL_CASH, PaperAccount
 from quant_system.execution.account_repository import (
+    PaperAccountAllocationIntegrityResult,
     PaperAccountReconciliationResult,
     PaperAccountRepository,
     paper_account_reconciliation_result,
@@ -50,6 +51,9 @@ class DualWritePaperAccountRepository:
         elif self.last_warning != MIRROR_UNAVAILABLE_WARNING:
             self.last_warning = None
         return account
+
+    def allocation_integrity(self) -> PaperAccountAllocationIntegrityResult:
+        return self.file_repo.allocation_integrity()
 
     def load_or_open(
         self,

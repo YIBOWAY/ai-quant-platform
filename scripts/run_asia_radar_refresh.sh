@@ -9,4 +9,7 @@ if [[ ! -x "$VENV_PY" ]]; then
 fi
 
 cd "$ROOT"
-exec "$VENV_PY" -m quant_system.cli data asia-radar-refresh
+result=0
+"$VENV_PY" -m quant_system.cli data asia-radar-refresh || result=$?
+"$VENV_PY" "$ROOT/scripts/refresh_market_assessments.py" || result=$?
+exit "$result"

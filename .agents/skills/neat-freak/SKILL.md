@@ -1,16 +1,8 @@
 ---
 name: neat-freak
 description: >
-  End-of-session knowledge cleanup with OCD-level rigor — reconciles project docs
-  (CLAUDE.md, README.md, docs/) and agent memory against the code so nothing rots.
-  会话结束后对项目文档和记忆进行洁癖级审查与同步。MUST trigger when the user says:
-  "sync up", "tidy up docs", "update memory", "clean up docs", "/sync", "/neat", "同步一下",
-  "整理文档", "整理一下", "更新记忆", "梳理一下", "收尾", "这个阶段做完了",
-  "新人能直接上手", or any phrase suggesting a dev milestone where knowledge needs
-  reconciliation. Also trigger when the user reports stale docs, conflicting memories,
-  or wants a clean handoff to teammates or other agents. Bare "整理" / "tidy" with
-  prior dev context counts — do not under-trigger. Cross-platform: works on Claude Code,
-  OpenAI Codex, OpenCode, and OpenClaw.
+  用户要求同步项目文档、整理交接资料或更新记忆时使用。
+  核对本次范围内的事实与文档；只审查的请求不自动修改，记忆写入遵守宿主授权。
 ---
 
 # 洁癖 — Knowledge Base Neat-Freak
@@ -18,7 +10,7 @@ description: >
 > **Cross-platform Agent Skill** — Claude Code · OpenAI Codex · OpenCode · OpenClaw 通用。
 > 跨平台 SKILL.md，遵循开放 Agent Skill 规范。
 
-你是一个**知识库编辑**，不是记录员。记录员只会往后追加，编辑会审查全局、合并重复、修正过期、删除废弃。你的工作是让整个项目的知识体系始终保持**干净、准确、对新人友好**的状态——像有洁癖一样。
+根据本次请求核对文档与项目事实，合并重复、修正过期说明，让指定范围的资料准确且便于接手。已有证据和未提交工作必须保留；审查发现不自动扩大实施范围。
 
 ## 为什么这件事重要
 
@@ -28,99 +20,90 @@ description: >
 
 ## 关键概念：三类知识，三种受众
 
-**必须先理解这件事，否则你会只改 CLAUDE.md 就结束，把下游同事和其他 agent 晾在那儿。**
+按受众选择承载信息的文档；不要求每个事实都写入三层。
 
 | 位置 | 受众 | 职责 | 不同步的代价 |
 |------|------|------|--------------|
 | **Agent 记忆系统**（若 agent 支持） | Agent 自己跨会话复用 | 个人偏好、非显而易见的项目事实、跨项目 reference | 下次会话 Agent 忘记历史决策 |
-| 项目根 `CLAUDE.md` / `AGENTS.md` | 当前项目里的 AI（下次会话自己） | 项目约定、结构、红线、环境变量、路由清单 | 下次 AI 在这个项目里走弯路 |
+| 项目根 canonical `AGENTS.md`（`CLAUDE.md` 仅作兼容入口） | 当前项目里的 AI（下次会话自己） | 项目约定、结构、红线、环境变量、路由清单 | 下次 AI 在这个项目里走弯路 |
 | 项目 `docs/` + `README.md` | **其他人**（人类同事、下游开发者、未来接手的 AI） | 接入指南、架构图、运维手册、交接说明、API 参考 | **其他人或系统无法正确接入或运维** |
 
-这三层**受众不同，职责不重叠**。CLAUDE.md 里写"新增了 device flow 五个路由" ≠ docs/integration-guide.md 里"下游怎么接这套 flow" —— 前者是提醒自己，后者是教别人。**两份都要写。**
+项目规则记录稳定约定与权威文档指针；接入指南说明如何使用接口；记忆只在宿主允许且有明确写入授权时记录可复用信息。两类读者确实需要同一变更时分别补充对应说明，避免复制规则正文。
 
-> **Agent 记忆系统的具体位置因平台而异**（Claude Code 在 `~/.claude/projects/<...>/memory/`，Codex 用 `AGENTS.md`，OpenCode 用 `.opencode/`，OpenClaw 用 `~/.openclaw/`）。完整路径速查见 [references/agent-paths.md](references/agent-paths.md)。如果当前 agent 没有独立的记忆系统，直接跳过这一层，把功夫全花在 docs 和项目根 markdown 上。
+> **涉及记忆的任务中，位置和写入授权因宿主而异。** 按
+> [references/agent-paths.md](references/agent-paths.md) 识别当前宿主真实提供的机制；
+> 发现记忆不等于获准修改。当前 agent 没有独立记忆系统时，跳过这一层，把功夫放在
+> docs 和项目根 markdown 上。
 
 ## 执行流程
 
-### 第一步：盘点现状（强制机械式枚举，不能跳过）
+### 第一步：按本次请求盘点
 
-**先做 ls，再做判断。**
-
-1. 列出 agent 的记忆文件（如有）：
-   - Claude Code：`ls ~/.claude/projects/<...>/memory/` 并读 `MEMORY.md` 及所有被引用的 `.md`
-   - Codex / OpenCode / 其他：找该 agent 的等价位置（见 references/agent-paths.md）
-2. 对本次对话涉及的**每一个项目**：
-   - `ls <project-root>/` → 确认根目录结构
-   - `ls <project-root>/docs/ 2>/dev/null` → **枚举所有 docs**（缺失也要确认）
-   - `find <project-root> -maxdepth 2 -name "*.md" -not -path "*/node_modules/*" -not -path "*/.git/*"` → 兜底抓散落的 .md
-   - 读 `README.md`、`CLAUDE.md` / `AGENTS.md`、每一个 `docs/*.md`
-3. 读全局 agent 配置（若有，如 `~/.claude/CLAUDE.md`、`~/.codex/AGENTS.md`）
-4. 回顾本次对话全部内容
-
-**输出一张文件清单**（内部用，不用给用户看），对每个文件标：「评估过 / 要改 / 不用改」。**漏一个不行**——这是这个 skill 最容易翻车的地方。
+先从本次变更、指定目录和直接依赖定位相关文档；需要全项目盘点时，用户请求应覆盖该范围。
+读取适用的 canonical AGENTS.md 与相关 README/docs 段落；CLAUDE.md 若只是兼容入口就跟随引用，
+不复制规则正文。只有请求涉及记忆，且当前宿主授权读取时，才按 references/agent-paths.md 检索相关记忆。
+列出已检查、需修改和无需修改的文件。任务外历史问题记录为可暂缓，不自动扩成全仓扫描。
 
 ### 第二步：识别变更——用"变更影响矩阵"思考
 
 **不要只看对话增量有什么新事实，要看新事实会波及哪些文档层级。**
 
-常见模式速览：
-- 新增 API / 路由 → CLAUDE.md 路由清单 + integration-guide + architecture 的 Routes
-- 新增 / 改名 环境变量 → CLAUDE.md 环境变量表 + runbook + 下游 integration-guide
-- 新增数据库表 → CLAUDE.md + architecture 的 Data Model
-- 新增大特性（跨多文件） → 以上全部 + architecture 新章节 + handoff 已完成清单
-- 跨项目改动 → 上下游两边的 docs **都要对齐**（最常见的漏改场景）
-- 记忆层面：相对时间→绝对日期、过期事实→改、重复→合并、已完成待办→删
+常见模式速览（只检查本次受影响且已有对应职责的位置）：
+- 新增 API / 路由 → 接入指南；数据流变化时更新架构说明，根规则只留稳定边界或指针
+- 新增 / 改名环境变量 → 配置说明或 runbook；下游需要配置时同步接入指南
+- 新增数据库表 → 架构 Data Model；确有需要时更新项目根速查
+- 跨多文件特性 → 按用户、架构、运维和交接视角选择相关说明
+- 跨项目契约变化 → 核对直接消费者，在授权范围内同步
+- 获授权的记忆更新 → 核定事实与日期、合并重复；有证据价值的历史原文保留
 
 完整映射表（覆盖更多变更类型与对应文档）见 **[references/sync-matrix.md](references/sync-matrix.md)**——遇到不确定的改动先查这张表。
 
-**关键检查**：这次对话是不是**跨项目**的？如果改了项目 A 且项目 B 依赖它（通过 SDK、API、子域、环境变量），**项目 B 的 docs 也要改**。这是历次同步最常翻的车。
+**跨项目影响检查**：若本次变更改变项目 B 实际消费的契约，核对 B 的对应说明。授权覆盖 B 时同步该处；否则给出具体建议，不把提到 B 当作写入授权。
 
 ### 第三步：实际修改（用工具，不只是描述）
 
-你必须**真的用 Edit 修改现有文件、用 Write 创建新文件、用删除命令清理废弃文件**。"我会怎么改"的描述不算完成。
+用户要求实施同步时，用当前宿主可用的文件工具完成范围内修改；仅审查请求输出问题与拟议 diff。删除只处理本次确认无后续用途的临时文件；重要数据、历史证据及权限外文件按已有授权边界处理。
 
-**顺序建议**：先改 docs/（改错影响外部）→ 再改 CLAUDE.md/AGENTS.md → 最后理记忆。先动外部优先级最高的，即使中途被打断，读者看到的也是对齐的最新状态。
+**顺序建议**：先修改实际承载变更事实的文档，再调整必要的 canonical AGENTS.md 指针；记忆仅在明确获准更新时处理。
 
 **编辑原则**：
 
 - **合并优于追加**：新信息是对旧信息的更新，改旧条目，不要再加一条
-- **删除优于保留**：完成的临时计划、推翻的决策、过期的上下文，删掉
+- **现役与历史分开**：更新现役事实；有证据价值的历史计划、决策与验收原文保留，必要时补冻结提示和现役指针，遵循 references/sync-matrix.md。
 - **精确优于冗长**：一条记忆说清楚一件事，别塞三件
-- **绝对时间**：永远 `2026-04-29`，不写"今天"、"最近"
+- **可复核日期**：新写的易变事实注明实际日期或证据版本；不机械改写用户原话与历史引用
 - **面向读者**：docs/ 的读者是"第一次接触这个项目的外部人"，写的时候想象对方只有 5 分钟能看完
-- **受众不混**：CLAUDE.md 里不抄 docs/ 的全文，docs/ 里不写"我记得上次……"——这是记忆的事
+- **受众不混**：AGENTS.md 不抄 docs/ 全文，CLAUDE.md 只作兼容入口；docs/ 使用可复核的事实来源
 
-**全局配置极度克制**：`~/.claude/CLAUDE.md` / `~/.codex/AGENTS.md` 只有用户在对话中明确表达了**跨项目的核心原则**才动。日常项目细节绝不进全局。
+**全局规则**：以当前生效的 canonical AGENTS.md 为准；CLAUDE.md 只作兼容入口。修改全局文件须在本次授权范围内，表达跨项目偏好本身不等于授权写入。日常项目事实留在项目文档。
 
-**docs/ 编辑要点**——新增一个能力的文档变更通常要四处都补：
+**docs/ 编辑要点**——按本次能力变化选择需要更新的视角，已有权威说明优先合并，不机械补齐四份：
 1. **integration-guide** 或对应"外部视角"文档：加**怎么用**（curl / SDK 示例 / 错误码表）
 2. **architecture**：加**怎么工作**（数据流、状态机、设计取舍）
 3. **runbook**：加**怎么运维**（冒烟命令、故障排查、环境变量）
 4. **handoff** 或 CHANGELOG：加**已完成**
 
-API 速查表、环境变量表、术语表是高频查询的结构化信息，**必须保持"所见即最新"**。
+本次改变的 API、环境变量和术语应与对应现役速查一致；不能核定的现况明确标为未验证。
 
-### 第四步：自检清单（必须逐项过一遍）
+### 第四步：按变更影响自检
 
-这一步防止"漏改 docs"。改完后逐条检查：
+从以下清单选择本次变更适用项，不适用项标为 N/A；不因此扩大读取或修改范围：
 
 - [ ] 第一步列出的每个文件，都判断了"不用改"或"已改"
 - [ ] 记忆索引（若有）里的每个链接指向存在的文件
 - [ ] 每个记忆文件的 description 和内容对得上
 - [ ] 记忆之间没有互相矛盾
-- [ ] CLAUDE.md / AGENTS.md 里提到的路径 / 命令 / 工具 / 环境变量在代码中真实存在
+- [ ] 本次修改的 AGENTS.md 指针、路径、命令、工具和环境变量可核对；CLAUDE.md 兼容引用仍有效
 - [ ] README 的安装 / 运行步骤跟代码一致
-- [ ] 新增 API 路由：**在 integration-guide 和 architecture 都出现了**
-- [ ] 新增环境变量：**在 runbook 和项目根 markdown 都出现了**
-- [ ] 新增数据库表：**在 architecture 的 Data Model 和项目根 markdown 都出现了**
-- [ ] 跨项目影响：下游项目的 docs 也跟着改了
-- [ ] 没有相对时间遗留（`grep -E "今天|昨天|刚刚|最近|上周|today|yesterday|recently"` 清零）
+- [ ] 新增 API、环境变量或数据表：实际受影响的接入、运维或架构说明已同步
+- [ ] 跨项目影响：直接消费者的说明已核对，权限外或待核定事项已列明
+- [ ] 本次新增或修改的运行事实绑定实际日期；不机械修改历史引用或用户原话
 
-哪条打不了勾，**回去补**。不要因为"差不多了"就跳过这一步——这是这个 skill 的灵魂。
+适用项缺失且阻塞本次完成标准时补齐；任务外问题列明。相关检查完成后停止。
 
 ### 第五步：变更摘要
 
-在所有文件修改完之后（不是之前），给用户简洁摘要：
+达到本次审查或实施完成标准后，简要报告实际改动、检查结果和未处理项。以下为实施摘要示例，纯审查用发现与拟议 diff：
 
 ```
 ## 同步完成
@@ -131,7 +114,7 @@ API 速查表、环境变量表、术语表是高频查询的结构化信息，*
 - 删除：xxx（原因）
 
 ### 文档变更（按项目分组，每个项目列全改动的文件）
-- <项目 A>/CLAUDE.md — xxx
+- <项目 A>/AGENTS.md — xxx
 - <项目 A>/docs/integration-guide.md — xxx
 - <项目 A>/docs/architecture.md — xxx
 - <项目 B>/docs/<integration>.md — xxx
@@ -144,21 +127,17 @@ API 速查表、环境变量表、术语表是高频查询的结构化信息，*
 
 ## 特殊情况
 
-**项目还没有 README 或 CLAUDE.md/AGENTS.md**：判断项目是不是到了"有可运行代码"的阶段。是 → 创建。还在 vibe 阶段 → 跳过，但在摘要里提一句。
+**项目缺少必要说明**：只有本次交付确实需要时创建最小文档；已有 canonical 规则时保持兼容入口，不另造规则正文。
 
-**对话没有产生新事实**：审查现有记忆和文档有没有过期 / 冲突 / 相对时间——审查本身就有价值。
+**没有新事实**：按用户要求完成指定范围审查即可；不自动转入记忆或历史文档清理。
 
-**记忆之间出现无法自动判断的矛盾**：列在「未处理」让用户决定。**这是唯一需要用户介入的情况**，其他都自己拍板。
+**缺少会实质改变结果的信息或下一步超出授权**：先完成已授权的独立工作，再提出具体问题；已有授权不重复索要。无法核定的事实保留并标注疑问。
 
-**跨项目改动**：本次对话改了多个项目，每个项目都要跑一次完整的第一步（ls + 读 docs）。不要假设一个项目的 docs 改了，另一个就不用。尤其是上游-下游对接文档（集成指南 / SDK 说明 / API 协议），两边都要对齐。
+**跨项目改动**：对直接受影响的上下游文档核对同一接口、配置或调度事实；只在本次允许写入的项目内修改，范围外给具体建议。
 
-**发现之前的同步漏了东西**：修掉。不要说"那不是这次对话的事"——你就是这个项目的持续编辑，过去的漏洞也归你管。
+**发现历史遗漏**：只有阻塞本次完成或直接影响本次文档事实时纳入；其余列为可暂缓。
 
 ## 参考资料
 
 - **[references/sync-matrix.md](references/sync-matrix.md)** — 完整的"变更类型 → 要改哪些文件"映射表
 - **[references/agent-paths.md](references/agent-paths.md)** — Claude Code / Codex / OpenCode 各自的记忆与配置路径速查
-
-<!-- Tip: Use /create-skill in chat to generate content with agent assistance -->
-
-Define the functionality provided by this skill, including detailed instructions and examples

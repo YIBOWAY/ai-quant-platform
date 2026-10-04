@@ -1,4 +1,8 @@
+import type { WorkspaceRunActivityResponse } from "@/lib/api.generated";
 import type { WorkspaceCommandProjection } from "@/lib/hermes/workspaceClient";
+
+export type WorkspaceRunActivity = WorkspaceRunActivityResponse;
+export type WorkspaceRunActivityStage = WorkspaceRunActivity["stage"];
 
 /** Newest-first by updated_at, then created_at, then stable command_id. */
 export function sortCommandsNewestFirst(
@@ -99,4 +103,88 @@ export function isInFlightCommandState(state: string | null | undefined): boolea
   const s = (state || "").trim();
   if (!s) return false;
   return !RUNNING_TERMINAL_STATES.has(s);
+}
+
+export function selectChatCommand(
+  commands: WorkspaceCommandProjection[] | null | undefined,
+  hermesSessionId: string | null | undefined,
+): WorkspaceCommandProjection | null {
+  const sessionId = hermesSessionId?.trim();
+  if (!sessionId) return null;
+  const matches = sortCommandsNewestFirst(commands).filter(
+    (command) => command.hermes_session_id === sessionId,
+  );
+  return matches.find((command) => isInFlightCommandState(command.state)) ?? matches[0] ?? null;
+}
+
+export function activityStageLabel(
+  stage: WorkspaceRunActivityStage | null | undefined,
+  commandState: string | null | undefined,
+  isZh: boolean,
+): string {
+  const commandTerminal = RUNNING_TERMINAL_STATES.has(commandState?.trim() ?? "");
+  const key = commandTerminal ? commandState ?? "" : stage ?? commandState ?? "";
+  const zh: Record<string, string> = {
+    queued: "等待 Hermes 接单",
+    leased: "正在交给 Hermes",
+    delivered: "Hermes 正在处理",
+    running: "Hermes 正在处理",
+    analyzing: "正在分析你的问题",
+    using_tool: "正在使用本机工具",
+    answering: "正在生成回复",
+    waiting_for_approval: "等待你的确认",
+    stopping: "正在停止",
+    succeeded: commandState === "succeeded" ? "回复已完成" : "正在整理回复",
+    failed: "处理失败",
+    rejected: "请求已拒绝",
+    cancelled: "已取消",
+    timed_out: "处理超时",
+    outcome_unknown: "仍在确认处理结果",
+    stopped: "已停止",
+  };
+  const en: Record<string, string> = {
+    queued: "Waiting for Hermes",
+    leased: "Sending to Hermes",
+    delivered: "Hermes is working",
+    running: "Hermes is working",
+    analyzing: "Analyzing your request",
+    using_tool: "Using a local tool",
+    answering: "Writing the reply",
+    waiting_for_approval: "Waiting for your approval",
+    stopping: "Stopping",
+    succeeded: commandState === "succeeded" ? "Reply complete" : "Finalizing the reply",
+    failed: "Processing failed",
+    rejected: "Request rejected",
+    cancelled: "Cancelled",
+    timed_out: "Timed out",
+    outcome_unknown: "Confirming the result",
+    stopped: "Stopped",
+  };
+  return (isZh ? zh : en)[key] ?? (isZh ? "等待发送" : "Waiting to send");
+}
+
+export function activityTransportLabel(
+  transport: string,
+  error: string | null | undefined,
+  isZh: boolean,
+): string {
+  if (error) {
+    return isZh
+      ? "连接中断，任务可能仍在后台继续"
+      : "Connection interrupted; the task may still be running";
+  }
+  if (transport === "sse") return isZh ? "实时连接" : "Live connection";
+  if (transport === "poll") return isZh ? "正在定时获取进度" : "Checking progress";
+  return isZh ? "正在连接 Hermes" : "Connecting to Hermes";
+}
+
+export function activityToolLabel(
+  activity: Pick<WorkspaceRunActivity, "tool_state" | "tool_duration_seconds">,
+  isZh: boolean,
+): string {
+  if (activity.tool_state === "active") return isZh ? "正在使用本机工具" : "Using a local tool";
+  if (activity.tool_state === "failed") return isZh ? "本机工具执行失败" : "Local tool failed";
+  const duration = activity.tool_duration_seconds;
+  const suffix = duration == null ? "" : ` · ${duration.toFixed(1)} ${isZh ? "秒" : "s"}`;
+  return `${isZh ? "本机工具完成" : "Local tool complete"}${suffix}`;
 }

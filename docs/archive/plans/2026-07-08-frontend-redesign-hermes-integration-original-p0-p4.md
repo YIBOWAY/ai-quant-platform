@@ -917,7 +917,7 @@ def test_editorial_and_hermes_component_dirs_exist():
 
 Run:
 ```bash
-cd /Users/sunyibo/programs/ai-quant-platform
+cd $HOME/programs/ai-quant-platform
 pytest tests/test_frontend_terminal_surface_contract.py -v
 ```
 Expected: PASS(旧断言 + 新目录断言全过)
@@ -925,7 +925,7 @@ Expected: PASS(旧断言 + 新目录断言全过)
 - [ ] **Step 3: 提交**
 
 ```bash
-cd /Users/sunyibo/programs/ai-quant-platform
+cd $HOME/programs/ai-quant-platform
 git add tests/test_frontend_terminal_surface_contract.py
 git commit -m "test(frontend): add editorial/hermes dir contract assertion
 
@@ -942,7 +942,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 - [ ] **V3:** `cd src/frontend && npx vitest run` 全绿(含新 design-tokens/editorial-font/editorial-typography/navConfig/chartTokens/chart-theme-injection 6 个测试文件)
 - [ ] **V4:** `cd src/frontend && npm run build` 全绿
 - [ ] **V5:** `cd src/frontend && PW_E2E=1 npx playwright test` 全绿(现有 10 个 E2E 零回归)
-- [ ] **V6:** `cd /Users/sunyibo/programs/ai-quant-platform && pytest tests/test_frontend_topbar_navigation_contract.py tests/test_frontend_terminal_surface_contract.py` 全绿
+- [ ] **V6:** `cd $HOME/programs/ai-quant-platform && pytest tests/test_frontend_topbar_navigation_contract.py tests/test_frontend_terminal_surface_contract.py` 全绿
 - [ ] **V7:** 手动目检 22 个现有页面确认 warm base/sidebar 改动后无布局、对比度、可读性回归
 - [ ] **V8:** 浏览器 DevTools `:root` 确认 editorial + hermes token 可见
 

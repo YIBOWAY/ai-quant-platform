@@ -7,6 +7,7 @@ import {
   getBriefRollup,
   listBriefRollups,
   normalizeBriefRollupEnvelope,
+  formatArchivedRollupText,
   type BriefRollupEnvelope,
   type BriefRollupPayload,
 } from "./briefRollup";
@@ -85,6 +86,33 @@ const weeklyEnvelope: BriefRollupEnvelope = {
   },
   warnings: [],
 };
+
+describe("source-bound rollup number presentation", () => {
+  const figures: BriefRollupPayload = { ...weeklyPayload, stats: {
+    ...weeklyPayload.stats, equity_start: 1032508.130682835, equity_end: 1070743.636847631,
+    period_change_pct: 3.703168,
+  }, account_summary: {
+    start: { cash: 705565.1695754678, pnl_pct: 0.03250813068283501, invested_pct: 0.3166492847772036 },
+    end: { cash: 705527.280612604, pnl_pct: 0.07074363684763108, invested_pct: 0.341086646389287 },
+  } };
+  it("formats only matching financial facts with explicit unit or field context", () => {
+    const text = "期间变动3.703168%；现金由705565.1695754678美元变为705527.280612604美元，已投资比例由0.3166492847772036变为0.341086646389287。pnl_pct 0.03250813068283501。2026-08-31，GPT-5.6，版本0.341086646389287。";
+    const before = JSON.stringify(figures);
+    const result = formatArchivedRollupText(text, figures, "zh");
+    expect(result).toContain("3.70%");
+    expect(result).toContain("705,565.17美元");
+    expect(result).toContain("705,527.28美元");
+    expect(result).toContain("已投资比例由31.66%变为34.11%");
+    expect(result).toContain("账户盈亏比例 3.25%");
+    expect(result).toContain("2026-08-31，GPT-5.6，版本0.341086646389287");
+    expect(JSON.stringify(figures)).toBe(before);
+  });
+  it("keeps unbound numbers, dates, identifier fragments and ambiguous prose intact", () => {
+    const text = "收益0.123456789；pnl_pct 0.999；现金99.9999美元；代码X3.703168%；2026-08-31";
+    expect(formatArchivedRollupText(text, figures, "zh")).toBe(text);
+    expect(formatArchivedRollupText("3.703168%", null, "zh")).toBe("3.703168%");
+  });
+});
 
 afterEach(() => {
   vi.unstubAllGlobals();

@@ -7,7 +7,7 @@ import logging
 import os
 import re
 import sys
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -43,7 +43,6 @@ from quant_system.data.price_history import (
     read_historical_prices,
 )
 from quant_system.data.provider_factory import build_ohlcv_provider
-from quant_system.data.providers.futu import FutuMarketDataProvider
 from quant_system.execution.pipeline import PaperTradingRunResult, run_sample_paper_trading
 from quant_system.experiments.config import load_experiment_config
 from quant_system.experiments.models import (
@@ -65,12 +64,26 @@ from quant_system.options.buy_side_decision import (
     BuySideDecisionRequest,
     run_buy_side_decision,
 )
+from quant_system.options.buy_side_market_data import (
+    load_buy_side_market_inputs,
+    resolve_buy_side_underlying_quote,
+)
+from quant_system.options.daily_task import (
+    OptionsDailyTaskDependencies,
+    OptionsDailyTaskRequest,
+    build_options_radar_provider,
+    build_radar_screen_config,
+    run_options_daily_task,
+)
 from quant_system.options.data_refresh import (
+    refresh_dividend_events,
     refresh_earnings_calendar,
     refresh_options_universe,
     refresh_vix_history,
 )
+from quant_system.options.dividend_events import load_dividend_events
 from quant_system.options.earnings_calendar import EarningsCalendar
+from quant_system.options.iv_history import resolve_options_market_session
 from quant_system.options.market_regime import (
     VixRegimeSnapshot,
     load_market_regime,
@@ -82,11 +95,15 @@ from quant_system.options.models import (
     BuySideVolatilityView,
     OptionsScreenerConfig,
 )
-from quant_system.options.radar import OptionsRadarConfig, run_options_radar
+from quant_system.options.radar import (
+    CURATED_RECOMMENDATION_TICKERS,
+    CURATED_RECOMMENDATION_UNIVERSE_SIZE,
+    OptionsRadarConfig,
+    run_options_radar,
+)
 from quant_system.options.radar_storage import RadarSnapshotStore
-from quant_system.options.rate_limiter import RateLimitedFutuProvider, TokenBucket
-from quant_system.options.sample_provider import SampleOptionsProvider
 from quant_system.options.scan_lock import OptionsRadarScanLocked, options_radar_scan_lock
+from quant_system.options.seller_score import latest_us_market_session
 from quant_system.options.universe import OptionsUniverse
 from quant_system.prediction_market.charts import (
     write_prediction_market_timeseries_charts,
@@ -236,24 +253,31 @@ def _emit_json(payload: dict[str, Any]) -> None:
     typer.echo(json.dumps(payload, sort_keys=True))
 
 
+def _retarget_futu_stdout_handler(handler) -> None:
+    # Futu's console handler is the one bound to the current sys.stdout. The
+    # SDK marks FTConsoleLog non-propagating, so foreign handlers (e.g. pytest
+    # capture handlers) can share the logger and must be left alone.
+    if getattr(handler, "stream", None) is not sys.stdout:
+        return
+    set_stream = getattr(handler, "setStream", None)
+    if callable(set_stream) and sys.__stderr__ is not None:
+        set_stream(sys.__stderr__)
+
+
 @contextmanager
 def _futu_json_stdout_guard():
     """Keep Futu SDK lifecycle logs off a machine-readable stdout stream."""
     futu_console_logger = logging.getLogger("FTConsoleLog")
     was_disabled = futu_console_logger.disabled
     for handler in futu_console_logger.handlers:
-        set_stream = getattr(handler, "setStream", None)
-        if callable(set_stream) and sys.__stderr__ is not None:
-            set_stream(sys.__stderr__)
+        _retarget_futu_stdout_handler(handler)
     futu_console_logger.disabled = True
     try:
         yield
     finally:
         # The SDK may be imported lazily while the guarded call runs.
         for handler in futu_console_logger.handlers:
-            set_stream = getattr(handler, "setStream", None)
-            if callable(set_stream) and sys.__stderr__ is not None:
-                set_stream(sys.__stderr__)
+            _retarget_futu_stdout_handler(handler)
         futu_console_logger.disabled = was_disabled
 
 
@@ -413,10 +437,7 @@ def migrate(
     unavailable_fingerprints = {"<db-disabled>", "<unavailable>"}
     if fingerprint_before in unavailable_fingerprints:
         typer.echo(f"schema_fingerprint_before={fingerprint_before}")
-        typer.echo(
-            "error: schema fingerprint unavailable before apply; "
-            "no migrations were applied"
-        )
+        typer.echo("error: schema fingerprint unavailable before apply; no migrations were applied")
         raise typer.Exit(code=2)
 
     typer.echo(f"schema_fingerprint_before={fingerprint_before}")
@@ -521,6 +542,20 @@ def ingest_sample(
     _emit_ingestion_summary(result)
     if not result.quality_passed and not allow_failed_quality:
         raise typer.Exit(code=1)
+
+
+@data_app.command("security-search")
+def data_security_search(query: str, limit: int = 8) -> None:
+    """Find US-listed equities and ETFs by name/code; directory metadata, not market prices."""
+    from quant_system.data.security_catalog import search_catalog
+
+    if not 1 <= limit <= 30:
+        raise typer.BadParameter("limit must be between 1 and 30")
+    try:
+        _emit_json(search_catalog(load_settings(), query, limit=limit))
+    except (OSError, ValueError, KeyError) as exc:
+        _emit_json({"error": "security_catalog_unavailable", "reason": type(exc).__name__})
+        raise typer.Exit(code=1) from exc
 
 
 @data_app.command("asia-radar-refresh")
@@ -694,9 +729,7 @@ def data_etf_bars_backup_refresh(
         raise typer.Exit(code=1) from exc
 
     if not start or not end:
-        default_start, default_end = default_backup_window(
-            lookback_calendar_days=lookback_days
-        )
+        default_start, default_end = default_backup_window(lookback_calendar_days=lookback_days)
         start = start or default_start
         end = end or default_end
 
@@ -736,9 +769,7 @@ def data_etf_bars_backup_refresh(
             "end": snapshot.end,
             "fetched_at": snapshot.fetched_at,
             "symbols": snapshot.symbols,
-            "row_counts": {
-                item["symbol"]: item["row_count"] for item in snapshot.series
-            },
+            "row_counts": {item["symbol"]: item["row_count"] for item in snapshot.series},
             "fallbacks": result.fallbacks,
         }
     )
@@ -1215,9 +1246,7 @@ def run_config_experiment_command(
             "--expected-digest must be a lowercase 64-character SHA-256 digest"
         )
     if (candidate_id is None) != (expected_candidate_digest is None):
-        raise typer.BadParameter(
-            "--candidate-id and --expected-digest must be supplied together"
-        )
+        raise typer.BadParameter("--candidate-id and --expected-digest must be supplied together")
     config = load_experiment_config(config_path)
     if config.candidate_binding is not None and candidate_id is None:
         raise typer.BadParameter(
@@ -1290,9 +1319,7 @@ def run_config_experiment_command(
                 "config": str(result.config_path),
                 "config_sha256": hashlib.sha256(config_bytes).hexdigest(),
                 "agent_summary": str(result.agent_summary_path),
-                "agent_summary_sha256": hashlib.sha256(
-                    agent_summary_bytes
-                ).hexdigest(),
+                "agent_summary_sha256": hashlib.sha256(agent_summary_bytes).hexdigest(),
                 "report": str(result.report_path),
                 "report_sha256": hashlib.sha256(report_bytes).hexdigest(),
                 "approved_candidates_loaded": loaded,
@@ -1516,9 +1543,7 @@ def paper_account_show_command(
         # readable CLI contract by moving lifecycle logs to stderr and silencing
         # synchronous provider logs while the payload is materialised.
         for handler in futu_console_logger.handlers:
-            set_stream = getattr(handler, "setStream", None)
-            if callable(set_stream) and sys.__stderr__ is not None:
-                set_stream(sys.__stderr__)
+            _retarget_futu_stdout_handler(handler)
         futu_console_logger.disabled = True
     try:
         snapshot = PaperAccountSnapshotReader(
@@ -1542,9 +1567,7 @@ def paper_account_show_command(
             # The SDK is imported lazily during the read, so its handler may
             # only exist now. Rebind it before asynchronous disconnect logs run.
             for handler in futu_console_logger.handlers:
-                set_stream = getattr(handler, "setStream", None)
-                if callable(set_stream) and sys.__stderr__ is not None:
-                    set_stream(sys.__stderr__)
+                _retarget_futu_stdout_handler(handler)
             futu_console_logger.disabled = futu_console_was_disabled
     if output_format == "json":
         typer.echo(json.dumps(snapshot.to_dict(), indent=2, sort_keys=True))
@@ -1818,7 +1841,8 @@ def paper_strategy_execute_pending_command(
 
     typer.echo(
         f"processed={result.processed_count} "
-        f"filled={result.filled_count} blocked={result.blocked_count}"
+        f"filled={result.filled_count} blocked={result.blocked_count} "
+        f"missed_window={result.missed_window_count}"
     )
     for execution in result.executions:
         typer.echo(
@@ -2103,13 +2127,8 @@ def agent_propose_factor(
     if candidate_source is None:
         raise typer.BadParameter("verified candidate is missing factor.py.candidate")
     candidate_source_sha256 = hashlib.sha256(candidate_source).hexdigest()
-    if (
-        external_source_sha256 is not None
-        and candidate_source_sha256 != external_source_sha256
-    ):
-        raise typer.BadParameter(
-            "candidate source bytes differ from the external source bytes"
-        )
+    if external_source_sha256 is not None and candidate_source_sha256 != external_source_sha256:
+        raise typer.BadParameter("candidate source bytes differ from the external source bytes")
     _emit_agent_artifact(
         artifact.candidate_id,
         artifact.path,
@@ -2260,9 +2279,7 @@ def agent_list_candidates(
         # Never substitute observed digest for the authoritative approval digest.
         if integrity == "verified" and candidate.get("manifest_digest"):
             parts.append(f"manifest_digest={candidate['manifest_digest']}")
-            if candidate.get("status") == "pending" and candidate.get(
-                "approval_enabled"
-            ):
+            if candidate.get("status") == "pending" and candidate.get("approval_enabled"):
                 # Listing is evidence only. In particular, do not create a
                 # copyable raw Gate-2 command that bypasses HQA Scene-B Gate 1.
                 parts.append("review_authority=withheld_use_exact_detail")
@@ -2431,624 +2448,6 @@ def agent_review(
                 "manifest_digest": record.manifest_digest,
             }
         )
-
-
-@agent_app.command("auto-review")
-def agent_auto_review(
-    candidate_id: Annotated[str, typer.Option("--candidate-id")],
-    expected_manifest_digest: Annotated[str, typer.Option("--expected-digest")],
-    expected_status: Annotated[Literal["pending"], typer.Option("--expected-status")],
-    policy_digest: Annotated[str, typer.Option("--policy-digest")],
-    intake_contract_digest: Annotated[
-        str, typer.Option("--intake-contract-digest")
-    ],
-    agent_output_dir: Annotated[str | None, typer.Option("--agent-output-dir")] = None,
-    json_output: Annotated[bool, typer.Option("--json")] = False,
-) -> None:
-    """Machine Gate 2 for the paper-only automation path.
-
-    The normal ``agent review`` command remains manual and byte-compatible.
-    This separate surface is fail-closed when the Platform automation flag is
-    off and binds both versioned policy and paper-intake contract digests into
-    the immutable approval lock note.
-    """
-    from quant_system.agent.candidate_manifest import load_verified_candidate_snapshot
-    from quant_system.agent.candidate_pool import (
-        CandidateIntegrityError,
-        CandidateMigrationRequiredError,
-        CandidateReviewStateStaleError,
-        CandidateStaleError,
-    )
-
-    settings = reload_settings()
-    if settings.factor_automation.mode is not True:
-        typer.echo("auto_review_refused reason=factor_automation_disabled")
-        raise typer.Exit(code=1)
-    digest_re = re.compile(r"^[0-9a-f]{64}$")
-    if (
-        digest_re.fullmatch(policy_digest) is None
-        or digest_re.fullmatch(intake_contract_digest) is None
-    ):
-        typer.echo("auto_review_refused reason=invalid_automation_lineage")
-        raise typer.Exit(code=1)
-    note = f"auto:policy:{policy_digest}:intake:{intake_contract_digest}"
-    try:
-        record = AgentRunner(
-            agent_output_dir=resolve_agent_output_dir(agent_output_dir),
-        ).review(
-            candidate_id=candidate_id,
-            decision="approve",
-            note=note,
-            expected_manifest_digest=expected_manifest_digest,
-            expected_status=expected_status,
-            reviewer="auto",
-        )
-    except CandidateReviewStateStaleError:
-        try:
-            snapshot = load_verified_candidate_snapshot(
-                agent_output_dir=resolve_agent_output_dir(agent_output_dir),
-                candidate_id=candidate_id,
-            )
-            recovered = snapshot.review_record
-            if (
-                snapshot.approval_binding != "approved"
-                or snapshot.manifest_digest != expected_manifest_digest
-                or recovered is None
-                or recovered.candidate_id != candidate_id
-                or recovered.decision != "approve"
-                or recovered.manifest_digest != expected_manifest_digest
-                or recovered.reviewer != "auto"
-                or recovered.note != note
-            ):
-                raise CandidateIntegrityError(
-                    "existing decision does not match automation lineage"
-                )
-            record = recovered
-        except (
-            CandidateIntegrityError,
-            CandidateMigrationRequiredError,
-            CandidateStaleError,
-            FileNotFoundError,
-        ) as recovery_exc:
-            typer.echo(f"auto_review_refused reason={recovery_exc}")
-            raise typer.Exit(code=1) from recovery_exc
-    except (
-        CandidateIntegrityError,
-        CandidateMigrationRequiredError,
-        CandidateStaleError,
-        FileNotFoundError,
-    ) as exc:
-        typer.echo(f"auto_review_refused reason={exc}")
-        raise typer.Exit(code=1) from exc
-    payload = {
-        "candidate_id": record.candidate_id,
-        "decision": record.decision,
-        "registration": "auto_promote",
-        "manifest_digest": record.manifest_digest,
-        "reviewer": "auto",
-        "policy_digest": policy_digest,
-        "intake_contract_digest": intake_contract_digest,
-    }
-    typer.echo(
-        " ".join(
-            [
-                f"candidate_id={record.candidate_id}",
-                "decision=approve",
-                "registration=auto_promote",
-                "reviewer=auto",
-            ]
-        )
-    )
-    if json_output:
-        _emit_json(payload)
-
-
-@agent_app.command("promote-candidate")
-def agent_promote_candidate(
-    candidate_id: Annotated[
-        str,
-        typer.Option("--candidate-id", help="Approved candidate id from list-candidates."),
-    ],
-    expected_digest: Annotated[
-        str,
-        typer.Option(
-            "--expected-digest",
-            help="Exact manifest SHA-256 bound by Gate 2 approval (CAS).",
-        ),
-    ],
-    final_backtest_receipt: Annotated[
-        str,
-        typer.Option(
-            "--final-backtest-receipt",
-            help="Exact successful full-window receipt verified by the HQA Gate 3 caller.",
-        ),
-    ],
-    base_commit: Annotated[
-        str,
-        typer.Option(
-            "--base-commit",
-            help="Main-worktree HEAD commit the isolated review worktree must match.",
-        ),
-    ],
-) -> None:
-    """Prepare an isolated Gate-3 review worktree and scoped patch; NEVER commits."""
-    from quant_system.agent.promotion_workspace import (
-        PromotionWorkspaceError,
-        _human_instructions,
-        default_promotion_root,
-        prepare_cli_payload,
-        prepare_promotion_workspace,
-        resolve_managed_worktree_root,
-        resolve_platform_repo,
-    )
-
-    try:
-        agent_root = resolve_agent_output_dir()
-        result = prepare_promotion_workspace(
-            repo_dir=resolve_platform_repo(),
-            agent_output_dir=agent_root,
-            candidate_id=candidate_id,
-            expected_candidate_digest=expected_digest,
-            final_backtest_receipt_id=final_backtest_receipt,
-            base_commit=base_commit,
-            promotion_root=default_promotion_root(agent_root),
-            worktree_root=resolve_managed_worktree_root(),
-        )
-    except PromotionWorkspaceError as exc:
-        typer.echo(f"promotion_refused reason={exc}", err=True)
-        raise typer.Exit(code=1) from exc
-
-    typer.echo(json.dumps(prepare_cli_payload(result), sort_keys=True))
-    typer.echo(
-        _human_instructions(
-            result.promotion_id,
-            result.scoped_paths,
-            final_backtest_receipt,
-        ),
-        err=True,
-    )
-
-
-@agent_app.command("promote-auto-prepare")
-def agent_promote_auto_prepare(
-    candidate_id: Annotated[str, typer.Option("--candidate-id")],
-    expected_digest: Annotated[str, typer.Option("--expected-digest")],
-    final_backtest_receipt: Annotated[
-        str, typer.Option("--final-backtest-receipt")
-    ],
-    base_commit: Annotated[str, typer.Option("--base-commit")],
-    policy_digest: Annotated[str, typer.Option("--policy-digest")],
-    intake_contract_digest: Annotated[
-        str, typer.Option("--intake-contract-digest")
-    ],
-) -> None:
-    """Prepare Gate 3 with immutable paper-only qualification; never commits."""
-    from quant_system.agent.promotion_workspace import (
-        PromotionWorkspaceError,
-        default_promotion_root,
-        prepare_cli_payload,
-        prepare_promotion_workspace,
-        resolve_managed_worktree_root,
-        resolve_platform_repo,
-    )
-
-    settings = reload_settings()
-    if settings.factor_automation.mode is not True:
-        typer.echo("auto_promotion_refused reason=factor_automation_disabled")
-        raise typer.Exit(code=1)
-    try:
-        agent_root = resolve_agent_output_dir()
-        result = prepare_promotion_workspace(
-            repo_dir=resolve_platform_repo(),
-            agent_output_dir=agent_root,
-            candidate_id=candidate_id,
-            expected_candidate_digest=expected_digest,
-            final_backtest_receipt_id=final_backtest_receipt,
-            base_commit=base_commit,
-            promotion_root=default_promotion_root(agent_root),
-            worktree_root=resolve_managed_worktree_root(),
-            promotion_scope="paper_only",
-            reviewer="auto",
-            automation_policy_digest=policy_digest,
-            intake_contract_digest=intake_contract_digest,
-        )
-    except PromotionWorkspaceError as exc:
-        typer.echo(f"auto_promotion_refused reason={exc}")
-        raise typer.Exit(code=1) from exc
-    typer.echo(json.dumps(prepare_cli_payload(result), sort_keys=True))
-
-
-def _require_auto_land_flags() -> None:
-    settings = reload_settings()
-    if (
-        settings.factor_automation.mode is not True
-        or settings.factor_automation.auto_land is not True
-    ):
-        typer.echo("auto_promotion_refused reason=factor_automation_disabled")
-        raise typer.Exit(code=1)
-
-
-def _automatic_promotion_status(promotion_id: str) -> dict[str, Any]:
-    from quant_system.agent.promotion_workspace import (
-        default_promotion_root,
-        promotion_status,
-        resolve_managed_worktree_root,
-        resolve_platform_repo,
-    )
-
-    agent_root = resolve_agent_output_dir()
-    return promotion_status(
-        promotion_id=promotion_id,
-        agent_output_dir=agent_root,
-        promotion_root=default_promotion_root(agent_root),
-        worktree_root=resolve_managed_worktree_root(),
-        repo_dir=resolve_platform_repo(),
-    )
-
-
-@agent_app.command("promote-auto-commit")
-def agent_promote_auto_commit(
-    promotion_id: Annotated[str, typer.Option("--promotion-id")],
-) -> None:
-    """Second Gate-3 phase: commit the exact prepared patch locally."""
-    from quant_system.agent.promotion_workspace import (
-        PromotionWorkspaceError,
-        commit_automatic_promotion,
-        default_promotion_root,
-        resolve_managed_worktree_root,
-        resolve_platform_repo,
-    )
-
-    _require_auto_land_flags()
-    try:
-        agent_root = resolve_agent_output_dir()
-        result = commit_automatic_promotion(
-            promotion_id=promotion_id,
-            agent_output_dir=agent_root,
-            promotion_root=default_promotion_root(agent_root),
-            worktree_root=resolve_managed_worktree_root(),
-            repo_dir=resolve_platform_repo(),
-        )
-    except PromotionWorkspaceError as exc:
-        typer.echo(f"auto_promotion_refused reason={exc}")
-        raise typer.Exit(code=1) from exc
-    _emit_json(result)
-
-
-@agent_app.command("promote-auto-land")
-def agent_promote_auto_land(
-    promotion_id: Annotated[str, typer.Option("--promotion-id")],
-    expected_base_commit: Annotated[str, typer.Option("--expected-base-commit")],
-    expected_reviewed_commit: Annotated[
-        str, typer.Option("--expected-reviewed-commit")
-    ],
-) -> None:
-    """Fast-forward local main only; this command has no push implementation."""
-    from quant_system.agent.promotion_workspace import (
-        PromotionWorkspaceError,
-        default_promotion_root,
-        land_automatic_promotion,
-        resolve_managed_worktree_root,
-        resolve_platform_repo,
-    )
-
-    _require_auto_land_flags()
-    try:
-        agent_root = resolve_agent_output_dir()
-        result = land_automatic_promotion(
-            promotion_id=promotion_id,
-            expected_base_commit=expected_base_commit,
-            expected_reviewed_commit=expected_reviewed_commit,
-            agent_output_dir=agent_root,
-            promotion_root=default_promotion_root(agent_root),
-            worktree_root=resolve_managed_worktree_root(),
-            repo_dir=resolve_platform_repo(),
-        )
-    except PromotionWorkspaceError as exc:
-        typer.echo(f"auto_promotion_refused reason={exc}")
-        raise typer.Exit(code=1) from exc
-    _emit_json(result)
-
-
-@agent_app.command("factor-automation-authorize-land")
-def factor_automation_authorize_land_command(
-    automation_id: Annotated[str, typer.Option("--automation-id")],
-    promotion_id: Annotated[str, typer.Option("--promotion-id")],
-    policy_digest: Annotated[str, typer.Option("--policy-digest")],
-    intake_contract_digest: Annotated[
-        str, typer.Option("--intake-contract-digest")
-    ],
-    gate1_digest: Annotated[str, typer.Option("--gate1-digest")],
-    gate2_digest: Annotated[str, typer.Option("--gate2-digest")],
-) -> None:
-    """Consume the DB daily quota after exact automatic Gate-3 commit review."""
-    from dataclasses import asdict
-
-    from quant_system.execution.factor_automation_activation import (
-        AutomaticLandAuthorizationRequest,
-        FactorAutomationActivationError,
-        authorize_automatic_land,
-    )
-    from quant_system.execution.factor_automation_authority import (
-        FactorAutomationAuthorityError,
-    )
-
-    _require_auto_land_flags()
-    settings = reload_settings()
-    try:
-        lineage, receipt = authorize_automatic_land(
-            settings,
-            AutomaticLandAuthorizationRequest(
-                automation_id=automation_id,
-                promotion_id=promotion_id,
-                automation_policy_digest=policy_digest,
-                intake_contract_digest=intake_contract_digest,
-                gate1_digest=gate1_digest,
-                gate2_digest=gate2_digest,
-            ),
-            promotion_status=_automatic_promotion_status(promotion_id),
-        )
-    except (FactorAutomationActivationError, FactorAutomationAuthorityError) as exc:
-        typer.echo(f"factor_automation_refused reason={exc}")
-        raise typer.Exit(code=1) from exc
-    _emit_json(
-        {
-            "state": "land_authorized",
-            "lineage": asdict(lineage),
-            "audit": {
-                "event_seq": receipt.event_seq,
-                "event_day": receipt.event_day.isoformat(),
-                "idempotent_replay": receipt.idempotent_replay,
-            },
-        }
-    )
-
-
-@agent_app.command("factor-automation-activate-sleeve")
-def factor_automation_activate_sleeve_command(
-    automation_id: Annotated[str, typer.Option("--automation-id")],
-    promotion_id: Annotated[str, typer.Option("--promotion-id")],
-    candidate_id: Annotated[str, typer.Option("--candidate-id")],
-    candidate_digest: Annotated[str, typer.Option("--candidate-digest")],
-    factor_id: Annotated[str, typer.Option("--factor-id")],
-    manifest_digest: Annotated[str, typer.Option("--manifest-digest")],
-    policy_digest: Annotated[str, typer.Option("--policy-digest")],
-    intake_contract_digest: Annotated[
-        str, typer.Option("--intake-contract-digest")
-    ],
-    gate1_digest: Annotated[str, typer.Option("--gate1-digest")],
-    gate2_digest: Annotated[str, typer.Option("--gate2-digest")],
-    gate3_digest: Annotated[str, typer.Option("--gate3-digest")],
-    commit_sha: Annotated[str, typer.Option("--commit-sha")],
-    symbols: Annotated[list[str], typer.Option("--symbol")],
-    provider: Annotated[Literal["futu", "tiingo"], typer.Option("--provider")],
-) -> None:
-    """Create one deterministic allocated paper sleeve after local ff-land."""
-    from quant_system.execution.account_repository_factory import (
-        build_paper_account_repository,
-    )
-    from quant_system.execution.account_snapshot import resolve_account_quotes
-    from quant_system.execution.factor_automation_activation import (
-        AccountValuation,
-        AutomaticSleeveRequest,
-        FactorAutomationActivationError,
-        create_automatic_paper_sleeve,
-    )
-    from quant_system.execution.factor_automation_authority import (
-        FactorAutomationAuthorityError,
-        FactorAutomationLineage,
-    )
-    from quant_system.execution.paper_strategy_sleeve_storage import (
-        PaperStrategySleeveStorage,
-    )
-
-    _require_auto_land_flags()
-    settings = reload_settings()
-    status = _automatic_promotion_status(promotion_id)
-    if (
-        status.get("status") != "landed"
-        or status.get("reviewed_commit") != commit_sha
-        or status.get("candidate_id") != candidate_id
-        or status.get("candidate_digest") != candidate_digest
-        or status.get("manifest_sha256") != manifest_digest
-        or status.get("patch_sha256") != gate3_digest
-    ):
-        typer.echo("factor_automation_refused reason=landed_status_mismatch")
-        raise typer.Exit(code=1)
-    api_runs_dir = settings.data.data_dir / "api_runs"
-    account_storage = build_paper_account_repository(
-        api_runs_dir,
-        settings=settings,
-    )
-    account = account_storage.load()
-    if account is None:
-        typer.echo("factor_automation_refused reason=paper_account_missing")
-        raise typer.Exit(code=1)
-    try:
-        quotes = resolve_account_quotes(account, settings=settings)
-        prices = {symbol: quote.price for symbol, quote in quotes.items()}
-        valuation = AccountValuation(
-            account_id=account.account_id,
-            account_updated_at=account.updated_at,
-            nav=account.equity(prices),
-            prices=prices,
-            price_metadata={
-                symbol: {"kind": quote.price_kind, "as_of": quote.as_of}
-                for symbol, quote in quotes.items()
-            },
-        )
-        sleeve, receipt = create_automatic_paper_sleeve(
-            settings,
-            AutomaticSleeveRequest(
-                lineage=FactorAutomationLineage(
-                    automation_id=automation_id,
-                    candidate_id=candidate_id,
-                    candidate_digest=candidate_digest,
-                    factor_id=factor_id,
-                    manifest_digest=manifest_digest,
-                    automation_policy_digest=policy_digest,
-                    intake_contract_digest=intake_contract_digest,
-                    gate1_digest=gate1_digest,
-                    gate2_digest=gate2_digest,
-                    gate3_digest=gate3_digest,
-                    commit_sha=commit_sha,
-                ),
-                promotion_id=promotion_id,
-                universe=tuple(symbol.upper() for symbol in symbols),
-                provider=provider,
-            ),
-            valuation=valuation,
-            account_storage=account_storage,
-            sleeve_storage=PaperStrategySleeveStorage(api_runs_dir),
-        )
-    except (FactorAutomationActivationError, FactorAutomationAuthorityError) as exc:
-        typer.echo(f"factor_automation_refused reason={exc}")
-        raise typer.Exit(code=1) from exc
-    _emit_json(
-        {
-            "state": "sleeve_created",
-            "sleeve_id": sleeve.sleeve_id,
-            "allocated_cash": sleeve.initial_allocated_cash,
-            "promotion_scope": sleeve.metadata.get("promotion_scope"),
-            "audit": {
-                "event_seq": receipt.event_seq,
-                "event_day": receipt.event_day.isoformat(),
-                "idempotent_replay": receipt.idempotent_replay,
-            },
-        }
-    )
-
-
-@agent_app.command("factor-automation-maintain")
-def factor_automation_maintain_command() -> None:
-    """Pause breached sleeves and quarantine automation factors missing from paper."""
-    from quant_system.execution.account_repository_factory import (
-        build_paper_account_repository,
-    )
-    from quant_system.execution.account_snapshot import resolve_account_quotes
-    from quant_system.execution.factor_automation_activation import (
-        AccountValuation,
-        FactorAutomationActivationError,
-        maintain_automatic_paper_sleeves,
-        run_automatic_paper_cycle,
-    )
-    from quant_system.execution.factor_automation_authority import (
-        FactorAutomationAuthorityError,
-    )
-    from quant_system.execution.paper_strategy_sleeve_storage import (
-        PaperStrategySleeveStorage,
-    )
-
-    _require_auto_land_flags()
-    settings = reload_settings()
-    api_runs_dir = settings.data.data_dir / "api_runs"
-    account_storage = build_paper_account_repository(
-        api_runs_dir,
-        settings=settings,
-    )
-    account = account_storage.load()
-    if account is None:
-        typer.echo("factor_automation_refused reason=paper_account_missing")
-        raise typer.Exit(code=1)
-    try:
-        quotes = resolve_account_quotes(account, settings=settings)
-        prices = {symbol: quote.price for symbol, quote in quotes.items()}
-        sleeve_storage = PaperStrategySleeveStorage(api_runs_dir)
-        result = maintain_automatic_paper_sleeves(
-            settings,
-            valuation=AccountValuation(
-                account_id=account.account_id,
-                account_updated_at=account.updated_at,
-                nav=account.equity(prices),
-                prices=prices,
-                price_metadata={
-                    symbol: {"kind": quote.price_kind, "as_of": quote.as_of}
-                    for symbol, quote in quotes.items()
-                },
-            ),
-            account_storage=account_storage,
-            sleeve_storage=sleeve_storage,
-        )
-        cycle = run_automatic_paper_cycle(
-            settings,
-            now=datetime.now().astimezone(),
-            account_storage=account_storage,
-            sleeve_storage=sleeve_storage,
-        )
-    except (FactorAutomationActivationError, FactorAutomationAuthorityError) as exc:
-        typer.echo(f"factor_automation_refused reason={exc}")
-        raise typer.Exit(code=1) from exc
-    _emit_json({"state": "maintained", **result, "paper_cycle": cycle})
-
-
-@agent_app.command("promotion-status")
-def agent_promotion_status(
-    promotion_id: Annotated[
-        str,
-        typer.Option("--promotion-id", help="Immutable Gate 3 promotion id."),
-    ],
-) -> None:
-    """Report whether the human review commit matches the prepared scoped patch."""
-    from quant_system.agent.promotion_workspace import (
-        PromotionWorkspaceError,
-        default_promotion_root,
-        promotion_status,
-        resolve_managed_worktree_root,
-        resolve_platform_repo,
-    )
-
-    try:
-        agent_root = resolve_agent_output_dir()
-        payload = promotion_status(
-            promotion_id=promotion_id,
-            agent_output_dir=agent_root,
-            promotion_root=default_promotion_root(agent_root),
-            worktree_root=resolve_managed_worktree_root(),
-            repo_dir=resolve_platform_repo(),
-        )
-    except PromotionWorkspaceError as exc:
-        typer.echo(f"promotion_status_refused reason={exc}", err=True)
-        raise typer.Exit(code=1) from exc
-    typer.echo(json.dumps(payload, sort_keys=True))
-
-
-@agent_app.command("cleanup-promotion")
-def agent_cleanup_promotion(
-    promotion_id: Annotated[
-        str,
-        typer.Option("--promotion-id", help="Immutable Gate 3 promotion id."),
-    ],
-    abandon: Annotated[
-        bool,
-        typer.Option(
-            "--abandon",
-            help="Force-remove an unreviewed workspace and mark state abandoned.",
-        ),
-    ] = False,
-) -> None:
-    """Remove the managed review worktree after durable review evidence or --abandon."""
-    from quant_system.agent.promotion_workspace import (
-        PromotionWorkspaceError,
-        cleanup_promotion_workspace,
-        default_promotion_root,
-        resolve_managed_worktree_root,
-        resolve_platform_repo,
-    )
-
-    try:
-        agent_root = resolve_agent_output_dir()
-        payload = cleanup_promotion_workspace(
-            promotion_id=promotion_id,
-            agent_output_dir=agent_root,
-            promotion_root=default_promotion_root(agent_root),
-            worktree_root=resolve_managed_worktree_root(),
-            repo_dir=resolve_platform_repo(),
-            abandon=abandon,
-        )
-    except PromotionWorkspaceError as exc:
-        typer.echo(f"promotion_cleanup_refused reason={exc}", err=True)
-        raise typer.Exit(code=1) from exc
-    typer.echo(json.dumps(payload, sort_keys=True))
 
 
 @agent_app.command("migrate-candidates")
@@ -3358,7 +2757,7 @@ def options_daily_scan(
     top: Annotated[
         int,
         typer.Option("--top", help="Number of universe symbols to scan."),
-    ] = 100,
+    ] = 34,
     strategies: Annotated[
         str,
         typer.Option("--strategies", help="Comma-separated sell_put,covered_call list."),
@@ -3384,11 +2783,23 @@ def options_daily_scan(
     settings = reload_settings()
     active_provider_name = provider or settings.options_radar.provider
     selected_strategies = _parse_strategies(strategies)
+    active_output_dir = Path(output_dir) if output_dir else settings.options_radar.output_dir
+    if active_provider_name == "sample" and not dry_run:
+        _require_isolated_sample_options_paths(
+            settings,
+            provided_paths=(output_dir,),
+            active_paths=(active_output_dir,),
+        )
+    elif not dry_run:
+        _require_noncanonical_options_output(
+            settings,
+            provided_output=output_dir,
+            active_output=active_output_dir,
+        )
     universe = OptionsUniverse.load(
-        settings.options_radar.universe_path,
+        settings.options_radar.curated_universe_path,
         top_n=top,
     )
-    active_output_dir = Path(output_dir) if output_dir else settings.options_radar.output_dir
     typer.echo(
         " ".join(
             [
@@ -3437,7 +2848,7 @@ def options_daily_scan(
                     base_screen_config=_build_radar_screen_config(settings),
                     strategies=selected_strategies,
                     universe_top_n=top,
-                    top_per_ticker=5,
+                    risk_free_rate=settings.options_radar.risk_free_rate,
                 ),
                 iv_history_dir=active_output_dir / "iv_history",
                 earnings_calendar=EarningsCalendar.load(
@@ -3450,20 +2861,24 @@ def options_daily_scan(
     except OptionsRadarScanLocked as exc:
         typer.echo(f"scan status=failed reason={type(exc).__name__}: {exc}")
         raise typer.Exit(code=1) from exc
+    recommendation_count = (
+        len(report.candidates) if report.status == "available" and report.provider == "futu" else 0
+    )
     typer.echo(
         " ".join(
             [
                 f"run_date={report.run_date}",
+                f"status={report.status}",
                 f"universe_size={report.universe_size}",
                 f"scanned_tickers={report.scanned_tickers}",
                 f"failed_tickers={len(report.failed_tickers)}",
-                f"candidates={len(report.candidates)}",
+                f"candidates={recommendation_count}",
                 f"data={data_path}",
                 f"meta={meta_path}",
             ]
         )
     )
-    if report.scanned_tickers == 0:
+    if report.status == "unavailable" or report.scanned_tickers == 0:
         raise typer.Exit(code=3)
     if report.failed_tickers:
         raise typer.Exit(code=2)
@@ -3474,7 +2889,7 @@ def options_daily_task(
     top: Annotated[
         int,
         typer.Option("--top", help="Number of universe symbols to scan."),
-    ] = 100,
+    ] = 34,
     strategies: Annotated[
         str,
         typer.Option("--strategies", help="Comma-separated sell_put,covered_call list."),
@@ -3488,9 +2903,12 @@ def options_daily_task(
         typer.Option("--provider", help="Read-only options data provider."),
     ] = None,
     universe_source: Annotated[
-        Literal["public", "github", "sample"],
-        typer.Option("--universe-source", help="Universe refresh source."),
-    ] = "public",
+        Literal["existing", "public", "github", "sample"],
+        typer.Option(
+            "--universe-source",
+            help="Use the existing static universe or refresh from a configured source.",
+        ),
+    ] = "existing",
     earnings_source: Annotated[
         Literal["public", "nasdaq", "yfinance", "sample"],
         typer.Option("--earnings-source", help="Earnings calendar refresh source."),
@@ -3498,6 +2916,10 @@ def options_daily_task(
     vix_source: Annotated[
         Literal["public", "sample"],
         typer.Option("--vix-source", help="VIX history refresh source."),
+    ] = "public",
+    dividend_source: Annotated[
+        Literal["public", "yfinance", "sample"],
+        typer.Option("--dividend-source", help="Dividend events refresh source."),
     ] = "public",
     universe_path: Annotated[
         Path | None,
@@ -3511,9 +2933,20 @@ def options_daily_task(
         Path | None,
         typer.Option("--vix-path", help="Override VIX history CSV path."),
     ] = None,
+    dividends_path: Annotated[
+        Path | None,
+        typer.Option("--dividends-path", help="Override dividend events CSV path."),
+    ] = None,
     output_dir: Annotated[
         Path | None,
         typer.Option("--output-dir", help="Override radar snapshot output directory."),
+    ] = None,
+    iv_history_dir: Annotated[
+        Path | None,
+        typer.Option(
+            "--iv-history-dir",
+            help="Override the real IV-history directory independently of snapshot output.",
+        ),
     ] = None,
     vix_lookback_days: Annotated[
         int,
@@ -3524,120 +2957,140 @@ def options_daily_task(
     settings = reload_settings()
     active_provider_name = provider or settings.options_radar.provider
     selected_strategies = _parse_strategies(strategies)
-    active_universe_path = universe_path or settings.options_radar.universe_path
+    active_universe_path = universe_path or (
+        settings.options_radar.curated_universe_path
+        if universe_source == "existing"
+        else settings.options_radar.universe_path
+    )
     active_earnings_path = earnings_path or settings.options_radar.earnings_calendar_path
     active_vix_path = vix_path or settings.options_radar.vix_history_path
+    active_dividends_path = dividends_path or settings.options_radar.dividend_events_path
     active_output_dir = output_dir or settings.options_radar.output_dir
-    task_date = date.fromisoformat(run_date) if run_date else None
-    started_at = datetime.now(UTC).isoformat()
-    steps: dict[str, dict[str, Any]] = {}
-    current_step = "lock"
-    scan_lock = options_radar_scan_lock(active_output_dir)
-    lock_acquired = False
-
-    try:
-        scan_lock.__enter__()
-        lock_acquired = True
-        current_step = "universe"
-        steps["universe"] = refresh_options_universe(
-            active_universe_path,
-            source=universe_source,
+    active_iv_history_dir = iv_history_dir or active_output_dir / "iv_history"
+    canonical_output = active_output_dir.expanduser().resolve(
+        strict=False
+    ) == settings.options_radar.output_dir.expanduser().resolve(strict=False)
+    if active_provider_name == "futu" and "sample" in {
+        universe_source,
+        earnings_source,
+        vix_source,
+        dividend_source,
+    }:
+        typer.echo(
+            "status=failed reason=sample_options_input_withdrawn "
+            "message=sample inputs cannot feed a Futu recommendation scan"
         )
-        _echo_options_daily_task_step("universe", steps["universe"])
-
-        current_step = "earnings"
-        steps["earnings"] = refresh_earnings_calendar(
-            universe_path=active_universe_path,
-            output_path=active_earnings_path,
-            source=earnings_source,
-            top=top,
-            today=task_date,
-        )
-        _echo_options_daily_task_step("earnings", steps["earnings"])
-
-        current_step = "vix"
-        steps["vix"] = refresh_vix_history(
-            active_vix_path,
-            source=vix_source,
-            lookback_days=vix_lookback_days,
-            end=task_date,
-        )
-        _echo_options_daily_task_step("vix", steps["vix"])
-
-        current_step = "scan"
-        market_regime = load_market_regime(active_vix_path, run_date=run_date)
-        universe = OptionsUniverse.load(active_universe_path, top_n=top)
-        report = run_options_radar(
-            provider=_build_options_radar_provider(settings, active_provider_name),
-            universe=universe,
-            config=OptionsRadarConfig(
-                base_screen_config=_build_radar_screen_config(settings),
-                strategies=selected_strategies,
-                universe_top_n=top,
-                top_per_ticker=5,
+        raise typer.Exit(code=2)
+    if active_provider_name == "sample":
+        _require_isolated_sample_options_paths(
+            settings,
+            provided_paths=(
+                universe_path,
+                earnings_path,
+                vix_path,
+                dividends_path,
+                output_dir,
+                iv_history_dir,
             ),
-            iv_history_dir=active_output_dir / "iv_history",
-            earnings_calendar=EarningsCalendar.load(active_earnings_path),
-            run_date=run_date,
-            market_regime=market_regime,
+            active_paths=(
+                active_universe_path,
+                active_earnings_path,
+                active_vix_path,
+                active_dividends_path,
+                active_output_dir,
+                active_iv_history_dir,
+            ),
         )
-        data_path, meta_path = RadarSnapshotStore(active_output_dir).write(report)
-        steps["scan"] = {
-            "status": "completed",
-            "run_date": report.run_date,
-            "universe_size": report.universe_size,
-            "scanned_tickers": report.scanned_tickers,
-            "failed_tickers": len(report.failed_tickers),
-            "candidate_count": len(report.candidates),
-            "data_path": str(data_path),
-            "meta_path": str(meta_path),
-        }
-        _echo_options_daily_task_step("scan", steps["scan"])
-
-        current_step = "status"
-        status_value = "completed_with_warnings" if report.failed_tickers else "completed"
-        status_path = _write_options_daily_task_status(
-            active_output_dir,
-            {
-                "status": status_value,
-                "run_date": steps["scan"]["run_date"],
-                "provider": active_provider_name,
-                "strategies": list(selected_strategies),
-                "started_at": started_at,
-                "finished_at": datetime.now(UTC).isoformat(),
-                "steps": steps,
-            },
+    if canonical_output and top != CURATED_RECOMMENDATION_UNIVERSE_SIZE:
+        typer.echo(
+            "status=failed reason=canonical_options_universe_size_required "
+            f"message=canonical recommendations require exactly "
+            f"{CURATED_RECOMMENDATION_UNIVERSE_SIZE} requested symbols"
+        )
+        raise typer.Exit(code=2)
+    if canonical_output and (
+        universe_source != "existing"
+        or active_universe_path.expanduser().resolve(strict=False)
+        != settings.options_radar.curated_universe_path.expanduser().resolve(strict=False)
+    ):
+        typer.echo(
+            "status=failed reason=canonical_options_curated_universe_required "
+            "message=canonical recommendations require the tracked curated universe"
+        )
+        raise typer.Exit(code=2)
+    canonical_universe = None
+    if canonical_output:
+        canonical_universe = OptionsUniverse.load(active_universe_path)
+        if tuple(entry.ticker for entry in canonical_universe) != (CURATED_RECOMMENDATION_TICKERS):
+            typer.echo(
+                "status=failed reason=canonical_options_curated_universe_mismatch "
+                "message=canonical curated universe identity does not match the product contract"
+            )
+            raise typer.Exit(code=2)
+    target_session = run_date or resolve_options_market_session().isoformat()
+    request = OptionsDailyTaskRequest(
+        provider=active_provider_name,
+        top=top,
+        strategies=selected_strategies,
+        run_date=target_session,
+        universe_source=universe_source,
+        earnings_source=earnings_source,
+        vix_source=vix_source,
+        universe_path=Path(active_universe_path),
+        earnings_path=Path(active_earnings_path),
+        vix_path=Path(active_vix_path),
+        output_dir=Path(active_output_dir),
+        iv_history_dir=Path(active_iv_history_dir),
+        trigger="scheduled",
+        vix_lookback_days=vix_lookback_days,
+        dividend_source=dividend_source,
+        dividends_path=Path(active_dividends_path),
+    )
+    dependencies = OptionsDailyTaskDependencies(
+        load_universe=OptionsUniverse.load,
+        refresh_universe=refresh_options_universe,
+        refresh_earnings=refresh_earnings_calendar,
+        refresh_vix=refresh_vix_history,
+        refresh_dividends=refresh_dividend_events,
+        load_dividend_events=load_dividend_events,
+        build_provider=_build_options_radar_provider,
+        build_screen_config=_build_radar_screen_config,
+        load_market_regime=load_market_regime,
+        load_earnings_calendar=EarningsCalendar.load,
+        run_radar=run_options_radar,
+        write_snapshot=lambda output, report: RadarSnapshotStore(output).write(report),
+    )
+    try:
+        result = run_options_daily_task(
+            settings=settings,
+            request=request,
+            dependencies=dependencies,
         )
     except Exception as exc:
-        if not lock_acquired:
-            typer.echo(f"step={current_step} status=failed reason={type(exc).__name__}: {exc}")
-            raise typer.Exit(code=1) from exc
-        status_path = _write_options_daily_task_status(
-            active_output_dir,
-            {
-                "status": "failed",
-                "run_date": run_date,
-                "provider": active_provider_name,
-                "strategies": list(selected_strategies),
-                "started_at": started_at,
-                "finished_at": datetime.now(UTC).isoformat(),
-                "failed_step": current_step,
-                "error": f"{type(exc).__name__}: {exc}",
-                "steps": steps,
-            },
-        )
-        typer.echo(f"step={current_step} status=failed reason={type(exc).__name__}: {exc}")
-        typer.echo(f"task_status={status_path}")
+        status_path = request.output_dir / "daily_task_status.json"
+        failed_step = "lock"
+        if status_path.exists():
+            with suppress(OSError, json.JSONDecodeError):
+                failed_step = json.loads(status_path.read_text(encoding="utf-8")).get(
+                    "failed_step", "lock"
+                )
+        typer.echo(f"step={failed_step} status=failed reason={type(exc).__name__}: {exc}")
+        if status_path.exists():
+            typer.echo(f"task_status={status_path}")
         raise typer.Exit(code=1) from exc
-    finally:
-        if lock_acquired:
-            scan_lock.__exit__(None, None, None)
 
-    typer.echo(f"task_status={status_path}")
-    if report.scanned_tickers == 0:
+    status_payload = json.loads(result.status_path.read_text(encoding="utf-8"))
+    for step_name in ("universe", "earnings", "dividends", "vix", "scan"):
+        step = status_payload.get("steps", {}).get(step_name)
+        if isinstance(step, dict):
+            _echo_options_daily_task_step(step_name, step)
+    typer.echo(f"task_status={result.status_path}")
+    if result.status == "data_unavailable":
         raise typer.Exit(code=3)
-    if report.failed_tickers:
-        typer.echo(f"warning=partial_scan failed_tickers={len(report.failed_tickers)}")
+    if result.report.failed_tickers:
+        typer.echo(
+            f"warning=partial_scan failed_tickers={len(result.report.failed_tickers)}"
+        )
 
 
 @options_app.command("buyside-screen")
@@ -3689,18 +3142,6 @@ def options_buyside_screen(
             help="Optional expected IV change in volatility points.",
         ),
     ] = None,
-    iv_rank: Annotated[
-        float | None,
-        typer.Option("--iv-rank", help="Optional current IV rank, 0-100."),
-    ] = None,
-    historical_volatility: Annotated[
-        float | None,
-        typer.Option("--historical-volatility", help="Optional HV decimal value."),
-    ] = None,
-    as_of_date: Annotated[
-        str | None,
-        typer.Option("--as-of-date", help="Decision date, YYYY-MM-DD."),
-    ] = None,
     max_recommendations: Annotated[
         int,
         typer.Option("--max-recommendations", help="Maximum recommendations to return."),
@@ -3709,17 +3150,39 @@ def options_buyside_screen(
     """Run the Phase 14 read-only buy-side options assistant."""
     settings = reload_settings()
     provider = _build_options_radar_provider(settings, "futu")
+    market_session = _options_market_session()
     try:
-        spot_price = _resolve_options_spot(provider.fetch_underlying_snapshot(ticker), ticker)
-        start_expiration, end_expiration = _buyside_expiration_window(view, as_of_date)
+        underlying_quote = resolve_buy_side_underlying_quote(
+            provider.fetch_underlying_snapshot(ticker),
+            ticker=ticker,
+            market_session=market_session,
+            observed_at=datetime.now(UTC).isoformat(),
+        )
+        spot_price = underlying_quote.spot_price
+        if date.fromisoformat(target_date) <= market_session or target_price <= spot_price:
+            raise ValueError("invalid_buy_side_target")
+        start_expiration, end_expiration = _buyside_expiration_window(
+            view,
+            market_session,
+        )
         option_chain = provider.fetch_option_quotes_range(
             ticker,
             start_expiration=start_expiration,
             end_expiration=end_expiration,
-            option_type="CALL",
+            option_type="ALL",
+        )
+        option_chain_observed_at = datetime.now(UTC).isoformat()
+        market_inputs = load_buy_side_market_inputs(
+            provider=provider,
+            ticker=ticker,
+            option_chain=option_chain,
+            spot_price=spot_price,
+            market_session=market_session,
+            option_chain_observed_at=option_chain_observed_at,
+            iv_history_dir=settings.options_radar.output_dir / "iv_history",
         )
         result = run_buy_side_decision(
-            option_chain,
+            market_inputs.option_chain,
             BuySideDecisionRequest(
                 ticker=ticker,
                 spot_price=spot_price,
@@ -3733,11 +3196,12 @@ def options_buyside_screen(
                 volatility_view=volatility_view,
                 event_risk=event_risk,
                 expected_iv_change_vol_points=expected_iv_change_vol_points,
-                iv_rank=iv_rank,
-                historical_volatility=historical_volatility,
-                as_of_date=as_of_date,
+                iv_rank=market_inputs.iv_rank,
+                iv_measure=market_inputs.iv_measure,
+                historical_volatility=market_inputs.historical_volatility,
+                as_of_date=market_session.isoformat(),
             ),
-            market_regime=_load_market_regime(settings, as_of_date),
+            market_regime=_load_market_regime(settings, market_session.isoformat()),
             max_recommendations=max_recommendations,
         )
     except Exception as exc:
@@ -3811,24 +3275,62 @@ def options_prune_cache(
 
 
 def _build_options_radar_provider(settings, provider: Literal["futu", "sample"]):
-    if provider == "sample":
-        return SampleOptionsProvider()
-    futu_provider = FutuMarketDataProvider(
-        host=settings.futu.host,
-        port=settings.futu.port,
-        request_timeout_seconds=settings.futu.request_timeout_seconds,
-        option_quotes_cache_path=(
-            settings.futu.cache_dir / "options_cache.duckdb" if settings.futu.use_cache else None
-        ),
+    return build_options_radar_provider(settings, provider)
+
+
+def _require_isolated_sample_options_paths(
+    settings,
+    *,
+    provided_paths: tuple[str | Path | None, ...],
+    active_paths: tuple[str | Path, ...],
+) -> None:
+    canonical_paths = tuple(
+        Path(path).expanduser().resolve(strict=False)
+        for path in (
+            settings.options_radar.universe_path,
+            settings.options_radar.curated_universe_path,
+            settings.options_radar.earnings_calendar_path,
+            settings.options_radar.vix_history_path,
+            settings.options_radar.dividend_events_path,
+            settings.options_radar.output_dir,
+            settings.options_radar.output_dir / "iv_history",
+        )
     )
-    futu_provider.snapshot_batch_size = settings.options_radar.snapshot_batch_size
-    return RateLimitedFutuProvider(
-        futu_provider,
-        bucket=TokenBucket(
-            max_tokens=1,
-            refill_seconds=settings.options_radar.futu_request_pause_seconds,
-        ),
+    active = tuple(Path(path).expanduser().resolve(strict=False) for path in active_paths)
+    explicit = all(path is not None for path in provided_paths)
+    isolated = explicit and all(
+        not _paths_overlap(candidate, canonical)
+        for candidate in active
+        for canonical in canonical_paths
     )
+    if isolated:
+        return
+    typer.echo(
+        "status=failed reason=sample_options_paths_required "
+        "message=sample options require explicit non-canonical paths"
+    )
+    raise typer.Exit(code=2)
+
+
+def _paths_overlap(left: Path, right: Path) -> bool:
+    return left == right or left in right.parents or right in left.parents
+
+
+def _require_noncanonical_options_output(
+    settings,
+    *,
+    provided_output: str | Path | None,
+    active_output: str | Path,
+) -> None:
+    canonical = settings.options_radar.output_dir.expanduser().resolve(strict=False)
+    candidate = Path(active_output).expanduser().resolve(strict=False)
+    if provided_output is not None and not _paths_overlap(candidate, canonical):
+        return
+    typer.echo(
+        "status=failed reason=options_output_path_required "
+        "message=ad-hoc options scans require an explicit non-canonical output path"
+    )
+    raise typer.Exit(code=2)
 
 
 def _load_market_regime(settings, run_date: str | None) -> VixRegimeSnapshot | None:
@@ -3854,59 +3356,14 @@ def _echo_options_daily_task_step(name: str, payload: dict[str, Any]) -> None:
     typer.echo(" ".join(fields))
 
 
-def _write_options_daily_task_status(
-    output_dir: Path,
-    payload: dict[str, Any],
-) -> Path:
-    output_dir.mkdir(parents=True, exist_ok=True)
-    status_path = output_dir / "daily_task_status.json"
-    status_path.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
-        encoding="utf-8",
-    )
-    return status_path
-
-
 def _build_radar_screen_config(settings) -> OptionsScreenerConfig:
-    return OptionsScreenerConfig(
-        ticker="SPY",
-        strategy_type="sell_put",
-        min_dte=settings.options_radar.min_dte_for_radar,
-        max_dte=settings.options_radar.max_dte_for_radar,
-        max_delta=settings.options_radar.max_delta_for_radar,
-        min_premium=0.10,
-        min_apr=0.0,
-        max_spread_pct=0.25,
-        min_open_interest=20,
-        max_hv_iv=1.0,
-        trend_filter=True,
-        hv_iv_filter=False,
-        provider="futu",
-        top_n=100,
-        min_mid_price=0.10,
-        min_avg_daily_volume=100_000,
-        min_market_cap=0.0,
-        avoid_earnings_within_days=7,
-    )
-
-
-def _resolve_options_spot(snapshot: dict[str, object], ticker: str) -> float:
-    for key in ("last", "close", "price"):
-        value = snapshot.get(key)
-        try:
-            parsed = float(value)
-        except (TypeError, ValueError):
-            continue
-        if parsed > 0:
-            return parsed
-    raise ValueError(f"no usable underlying price for {ticker}")
+    return build_radar_screen_config(settings)
 
 
 def _buyside_expiration_window(
     view: BuySideViewType,
-    as_of_date: str | None,
+    market_session: date,
 ) -> tuple[str, str]:
-    start = date.fromisoformat(as_of_date) if as_of_date else date.today()
     if view.startswith("long_term"):
         min_dte, max_dte = 180, 760
     elif view == "short_term_speculative_bullish":
@@ -3914,9 +3371,13 @@ def _buyside_expiration_window(
     else:
         min_dte, max_dte = 14, 120
     return (
-        (start + timedelta(days=min_dte)).isoformat(),
-        (start + timedelta(days=max_dte)).isoformat(),
+        (market_session + timedelta(days=min_dte)).isoformat(),
+        (market_session + timedelta(days=max_dte)).isoformat(),
     )
+
+
+def _options_market_session() -> date:
+    return latest_us_market_session(pd.Timestamp.now(tz="America/New_York").date())
 
 
 app.add_typer(config_app, name="config")

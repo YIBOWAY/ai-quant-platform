@@ -1,5 +1,7 @@
 # Phase 9 API Delivery
 
+> 本地路径说明（公开版）：文中未随本版提供的 `artifacts/`、`evidence/` 和运行目录是本地证据坐标或路径示例，原件未公开；不能把路径存在当作公开证据。详见[公开范围说明](../publication-20261004.md)。
+
 ## 交付内容
 
 Phase 9 已交付本地 HTTP API 层，作为 Web 前端的后端入口。API 复用已有 Phase 1-8 模块，不新增真实交易能力。

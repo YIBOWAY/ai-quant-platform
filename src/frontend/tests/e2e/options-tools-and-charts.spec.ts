@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+const apiBase = `http://127.0.0.1:${process.env.PW_BACKEND_PORT ?? "8765"}`;
+
 async function installOptionsMarketFixtures(page: import("@playwright/test").Page) {
   const expiry = "2026-07-17";
   await page.route("**/api/options/snapshot/*", async (route) => {
@@ -11,6 +13,7 @@ async function installOptionsMarketFixtures(page: import("@playwright/test").Pag
         source: "playwright-fixture",
         price: 200,
         nearest_expiry: expiry,
+        iv_expiry: expiry,
         atm_iv: 0.28,
         hv_30d: 0.22,
         iv_rank: 55,
@@ -30,6 +33,7 @@ async function installOptionsMarketFixtures(page: import("@playwright/test").Pag
         source: "playwright-fixture",
         expiration: expiry,
         option_type: "ALL",
+        implied_volatility_unit: "percent",
         contracts: [
           {
             symbol: "AAPL260717C00195000",
@@ -38,7 +42,7 @@ async function installOptionsMarketFixtures(page: import("@playwright/test").Pag
             strike: 195,
             bid: 8.2,
             ask: 8.6,
-            implied_volatility: 0.3,
+            implied_volatility: 30,
             delta: 0.61,
             volume: 1200,
             open_interest: 5000,
@@ -50,7 +54,7 @@ async function installOptionsMarketFixtures(page: import("@playwright/test").Pag
             strike: 200,
             bid: 5.2,
             ask: 5.6,
-            implied_volatility: 0.28,
+            implied_volatility: 28,
             delta: 0.52,
             volume: 1500,
             open_interest: 6200,
@@ -62,7 +66,7 @@ async function installOptionsMarketFixtures(page: import("@playwright/test").Pag
             strike: 210,
             bid: 2.3,
             ask: 2.6,
-            implied_volatility: 0.29,
+            implied_volatility: 29,
             delta: 0.34,
             volume: 900,
             open_interest: 4100,
@@ -74,7 +78,7 @@ async function installOptionsMarketFixtures(page: import("@playwright/test").Pag
             strike: 200,
             bid: 4.8,
             ask: 5.1,
-            implied_volatility: 0.29,
+            implied_volatility: 29,
             delta: -0.47,
             volume: 1100,
             open_interest: 5800,
@@ -87,6 +91,27 @@ async function installOptionsMarketFixtures(page: import("@playwright/test").Pag
 
 test.describe("options tools and real chart surfaces", () => {
   test.skip(process.env.PW_E2E !== "1", "Set PW_E2E=1 to run local full-stack smoke.");
+
+  test("hedge advisor prices all legs and never writes more covered calls than 250 held shares", async ({ page }) => {
+    await installOptionsMarketFixtures(page);
+    await page.goto("/en/options-tools", { waitUntil: "networkidle" });
+    await page.getByRole("tab", { name: "Research Ops" }).click();
+    await page.getByLabel("Shares", { exact: true }).fill("250");
+    await page.getByLabel("Cost basis", { exact: true }).fill("100");
+    const reply = page.waitForResponse(response => response.url().includes("/api/options/tools/hedge-advisor") && response.request().method() === "POST");
+    await page.getByRole("button", { name: "Hedge Advisor", exact: true }).click();
+    const response = await reply;
+    expect(response.status()).toBe(200);
+    const result = await response.json();
+    expect(typeof result.situation).toBe("string");
+    expect(result.structures).toEqual(expect.arrayContaining([
+      expect.objectContaining({ structure: "long_put", put_contracts: 3, estimated_debit: 1485, excess_put_coverage_shares: 50 }),
+      expect.objectContaining({ structure: "collar", put_contracts: 3, call_contracts: 2, call_covered_shares: 200, uncapped_shares: 50, estimated_net_debit: 995 }),
+    ]));
+    expect(response.request().postDataJSON()).toMatchObject({ ticker: "AAPL", shares: 250, cost_basis: 100, spot: 200 });
+    await expect(page.locator("pre").filter({ hasText: '"call_contracts"' })).toContainText('"call_contracts": 2');
+    await expect(page.locator("pre").filter({ hasText: '"estimated_net_debit"' })).toContainText('"estimated_net_debit": 995');
+  });
 
   test("data explorer renders a real candlestick chart", async ({ page }) => {
     await page.goto("/data-explorer?provider=sample&symbol=SPY&start=2024-01-02&end=2024-02-15", {
@@ -116,6 +141,7 @@ test.describe("options tools and real chart surfaces", () => {
       const rawHeader = page.locator("thead").filter({ hasText: "Timestamp (UTC)" });
       await expect(scrollRegion).toBeVisible();
       await expect(chart).toBeVisible();
+      await page.locator("details").filter({ has: rawHeader }).locator(":scope > summary").click();
       await expect(rawHeader).toBeVisible();
 
       const chartBox = await chart.boundingBox();
@@ -148,7 +174,7 @@ test.describe("options tools and real chart surfaces", () => {
   });
 
   test("backtest renders a strategy and benchmark line chart", async ({ page, request }) => {
-    const response = await request.post("http://127.0.0.1:8765/api/backtests/run", {
+    const response = await request.post(`${apiBase}/api/backtests/run`, {
       data: {
         symbols: ["SPY", "QQQ"],
         start: "2024-01-02",

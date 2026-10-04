@@ -94,8 +94,8 @@ def test_backup_refresh_reports_serving_lane_and_fallbacks(monkeypatch, tmp_path
     assert payload["adjustment"] == "splits"
     assert payload["row_counts"] == {"EWH": 2, "EWJ": 2}
     assert payload["fallbacks"][0]["provider"] == "futu"
-    # The explicit chain defaults to both verified backup lanes, in order.
-    assert captured["backup_providers"] == ("twelvedata", "tiingo")
+    # This opt-in command tries Longbridge before the keyed backup lanes.
+    assert captured["backup_providers"] == ("longbridge", "twelvedata", "tiingo")
     assert captured["symbols"] == ["EWH", "EWJ"]
 
 

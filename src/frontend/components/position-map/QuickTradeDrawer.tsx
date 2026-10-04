@@ -1,7 +1,13 @@
 'use client';
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import {
+  type KeyboardEvent as ReactKeyboardEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { toast } from "sonner";
 import type { AccountPositionView, PaperAccountOrderResponse } from "@/lib/api";
 import { ApiClientError, apiPost } from "@/lib/apiClient";
@@ -86,6 +92,8 @@ export function QuickTradeDrawer({
   const router = useRouter();
   const text = drawerCopy[locale];
   const open = request !== null;
+  const drawerRef = useRef<HTMLElement | null>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
 
   const [symbol, setSymbol] = useState("");
   const [side, setSide] = useState<Side>("buy");
@@ -119,12 +127,47 @@ export function QuickTradeDrawer({
 
   useEffect(() => {
     if (!open) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+    previouslyFocusedRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focusFrame = window.requestAnimationFrame(() => {
+      const preferred =
+        drawerRef.current?.querySelector<HTMLElement>("#qtd-symbol") ??
+        drawerRef.current?.querySelector<HTMLElement>(
+          'button:not([disabled]),input:not([disabled]),[tabindex]:not([tabindex="-1"])',
+        );
+      preferred?.focus();
+    });
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      previouslyFocusedRef.current?.focus?.();
+      previouslyFocusedRef.current = null;
     };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  }, [open]);
+
+  function onDrawerKeyDown(event: ReactKeyboardEvent<HTMLElement>) {
+    if (!open) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      onClose();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const focusable = Array.from(
+      drawerRef.current?.querySelectorAll<HTMLElement>(
+        'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),summary,[tabindex]:not([tabindex="-1"])',
+      ) ?? [],
+    ).filter((item) => item.getClientRects().length > 0);
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
 
   const qtyNum = Number(quantity);
   const priceNum = Number(limitPrice);
@@ -183,10 +226,14 @@ export function QuickTradeDrawer({
         }`}
       />
       <aside
-        role="dialog"
-        aria-label={text.title}
-        className={`fixed inset-y-0 right-0 z-50 flex w-[400px] max-w-[92vw] flex-col border-l border-border-subtle bg-bg-surface shadow-[-24px_0_60px_rgba(0,0,0,0.45)] transition-transform duration-300 ease-out ${
-          open ? "translate-x-0" : "translate-x-full"
+        ref={drawerRef}
+        role={open ? "dialog" : undefined}
+        aria-modal={open || undefined}
+        aria-label={open ? text.title : undefined}
+        inert={!open}
+        onKeyDown={onDrawerKeyDown}
+        className={`fixed inset-y-0 right-0 z-50 flex w-[400px] max-w-[92vw] flex-col border-l border-border-subtle bg-bg-surface shadow-[-24px_0_60px_rgba(0,0,0,0.45)] transition-transform duration-[var(--duration-motion-medium)] ease-[var(--ease-motion-out)] ${
+          open ? "translate-x-0" : "translate-x-full pointer-events-none"
         }`}
       >
         <div className="flex items-start justify-between gap-3 border-b border-border-subtle px-5 py-4">

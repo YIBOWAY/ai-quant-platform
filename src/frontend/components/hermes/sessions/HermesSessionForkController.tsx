@@ -366,7 +366,11 @@ export function HermesSessionForkController({
               : "This session cannot be forked"}
           </p>
           <p className="mt-1 font-body-sm text-text-secondary">
-            {isZh
+            {forkReasonCode === "native_exact_fork_unavailable"
+              ? isZh
+                ? "当前 Hermes 版本不支持从指定消息建立独立分支。历史消息仍可查看；需要继续讨论时，请点「新对话」并自行补充背景。"
+                : "This Hermes version cannot create an independent branch from an exact message. You can still read the history, or choose New chat and provide the context yourself."
+              : isZh
               ? "只有后端明确标记为 eligible 的外部只读会话才可继续到新的 Web 会话。"
               : "Only external read-only sessions explicitly marked eligible by the server can continue into a new Web session."}
           </p>

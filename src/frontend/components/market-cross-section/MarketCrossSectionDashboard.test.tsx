@@ -8,8 +8,7 @@ import {
 import type { MarketCrossSectionResponse } from "@/lib/marketCrossSection";
 
 function payload(): MarketCrossSectionResponse {
-  // Deliberately shuffled ranks: rows arrive out of order and the component
-  // must re-sort by rank. If the sort is removed this fixture fails.
+  // Deliberately shuffled rows; default ranking uses recent returns.
   const rows: Array<[string, number]> = [
     ["SPY", 2],
     ["QQQ", 4],
@@ -60,7 +59,7 @@ function payload(): MarketCrossSectionResponse {
 }
 
 describe("MarketCrossSectionDashboard", () => {
-  it("renders heatmap cards and table rows sorted by rank, not input order", () => {
+  it("renders heatmap cards and table rows sorted by recent returns, not input order", () => {
     const html = renderToStaticMarkup(
       <MarketCrossSectionDashboard
         basket="ai_watch"
@@ -93,10 +92,22 @@ describe("MarketCrossSectionDashboard", () => {
     expect(html).toContain("Futu 真实行情");
     expect(html).toContain("2026-08-07");
     expect(html).toContain("美股时段");
-    expect(html).toContain("YTD 热力图");
+    expect(html).toContain("收益热力图");
     expect(html).toContain("横截面表");
     // ai_watch holds individual stocks; no blanket "ETF" badge may appear.
     expect(html).not.toContain(">ETF<");
+  });
+
+  it("surfaces the weekly leader even when its historical YTD rank is last", () => {
+    const data = payload();
+    const qqq = data.rows.find((row) => row.symbol === "QQQ")!;
+    qqq.returns.week_pct = 12;
+    const html = renderToStaticMarkup(<MarketCrossSectionDashboard basket="ai_watch" data={data} locale="zh" />);
+    const cardOrder = [...html.matchAll(/data-market-card="([A-Z]+)"/g)].map((match) => match[1]);
+    expect(cardOrder[0]).toBe("QQQ");
+    expect(html).toContain('data-watch-pulse="week_pct"');
+    expect(html).toContain("+12.00%");
+    expect(html).toContain("/zh/watch?pane=quotes&amp;symbol=QQQ&amp;provider=futu");
   });
 
   it("surfaces the backend basket_label and methodology instead of dropping them", () => {

@@ -17,10 +17,12 @@ from quant_system.execution.account import (
 )
 from quant_system.execution.account_backfill import ROOT_OWNER_USER_ID, _write_account
 from quant_system.execution.account_repository import (
+    PaperAccountAllocationIntegrityResult,
     PaperAccountBootstrapRequired,
     PaperAccountReconciliationDifference,
     PaperAccountReconciliationResult,
     PaperAccountStorageCorrupt,
+    inspect_persisted_paper_account_allocation,
     paper_account_reconciliation_result,
     validate_paper_account_identity,
 )
@@ -196,6 +198,59 @@ class PostgresPaperAccountRepository:
             return self._row_to_account(raw)
         except (TypeError, ValueError) as exc:
             raise PaperAccountStorageCorrupt(self.account_id) from exc
+
+    def allocation_integrity(self) -> PaperAccountAllocationIntegrityResult:
+        database = self._require_database()
+        try:
+            with database.connect() as conn:
+                row = conn.execute(
+                    """
+                    SELECT
+                        accounts.raw,
+                        COALESCE(
+                            (
+                                SELECT jsonb_agg(
+                                    jsonb_build_object(
+                                        'kind', ledger.kind,
+                                        'source', ledger.source
+                                    )
+                                    ORDER BY ledger.seq
+                                )
+                                FROM quant_system.paper_account_ledger ledger
+                                WHERE ledger.account_id = accounts.account_id
+                            ),
+                            '[]'::jsonb
+                        ) AS allocation_ledger
+                    FROM quant_system.paper_accounts accounts
+                    WHERE accounts.account_id = %s
+                    """,
+                    (self.account_id,),
+                ).fetchone()
+        except RuntimeError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise self._wrap_db_error(exc, action="load") from exc
+        if row is None:
+            return {
+                "status": "missing",
+                "account_id": self.account_id,
+                "raw_sha256": None,
+                "cash": None,
+                "manual_cash": None,
+                "partition_sum": None,
+                "ledger_count": None,
+                "invalid_sleeve_ids": [],
+            }
+        if isinstance(row, Mapping):
+            raw = row["raw"]
+            persisted_ledger = row["allocation_ledger"]
+        else:
+            raw, persisted_ledger = row
+        return inspect_persisted_paper_account_allocation(
+            raw,
+            account_id=self.account_id,
+            persisted_ledger=persisted_ledger,
+        )
 
     def reconciliation(
         self,

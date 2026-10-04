@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, BarChart3, Globe2, RefreshCw, TrendingUp } from "lucide-react";
+import { AlertTriangle, BarChart3, ChevronDown, Globe2, RefreshCw, TrendingUp } from "lucide-react";
+import Link from "next/link";
+import { MarketPulse, watchPeriodLabels, type WatchPeriod } from "@/components/watch/MarketPulse";
+import { watchHref } from "@/lib/watchPanes";
+import { MarketAssessmentView } from "@/components/watch/MarketAssessmentView";
 
 import {
   getAsiaRadarOverview,
@@ -15,8 +19,8 @@ import type { Locale } from "@/lib/locale";
 const copy = {
   en: {
     eyebrow: "ASIA MARKET PULSE",
-    title: "Asia Radar",
-    subtitle: "A cross-market read of 12 U.S.-listed Asia ETFs using strict Futu daily bars.",
+    title: "Asia Valuation",
+    subtitle: "Compare Asian market valuations and price pressure, with sources, risk factors and conditional suggestions.",
     loading: "Reading 12 ETF histories from Futu OpenD…",
     unavailable: "Asia Radar is unavailable",
     unavailableHint: "No substitute curve was used. Restore Futu OpenD and retry.",
@@ -27,10 +31,10 @@ const copy = {
     timezone: "US session",
     cached: "cached bar",
     live: "live Futu",
-    heatmap: "YTD heatmap",
-    heatmapHint: "Color and order are calculated from current YTD returns.",
+    heatmap: "Regional strength",
+    heatmapHint: "12 US-listed ETF proxies in USD, using completed US sessions. Select a market to inspect it below.",
     ranking: "Cross-market ranking",
-    rankingHint: "Ranked by current YTD return; no fixed winners or laggards.",
+    rankingHint: "Ordered by the selected return period; volatility and drawdown describe the risk alongside the move.",
     kShape: "Dynamic K-shape divergence",
     kShapeHint: "Daily top-three and bottom-three YTD basket averages.",
     kShapeEmpty: "No YTD K-shape series yet for the current calendar year.",
@@ -82,9 +86,9 @@ const copy = {
     readOnly: "Read-only market research. Not investment advice and no trading action is available here.",
   },
   zh: {
-    eyebrow: "亚洲市场脉搏",
-    title: "亚洲雷达",
-    subtitle: "以 12 只美国上市亚洲 ETF 为代理，严格读取 Futu 真实日线进行跨市场观察。",
+    eyebrow: "区域市场表现",
+    title: "亚洲泡沫",
+    subtitle: "哪些市场估值偏高，上涨是否伴随更大风险？结合基金发行人估值与真实行情，解释当前需要关注什么。",
     loading: "正在从 Futu OpenD 读取 12 只 ETF 日线…",
     unavailable: "亚洲雷达暂不可用",
     unavailableHint: "未使用替代曲线。请恢复 Futu OpenD 后重试。",
@@ -95,15 +99,15 @@ const copy = {
     timezone: "美股时段",
     cached: "缓存 bar",
     live: "实时 Futu",
-    heatmap: "YTD 热力图",
-    heatmapHint: "颜色与顺序由当前 YTD 收益动态计算。",
+    heatmap: "区域强弱",
+    heatmapHint: "12 只美股上市 ETF，以美元和已收盘的美股交易日比较。选择一个市场，查看下方详情。",
     ranking: "跨市场排名",
-    rankingHint: "按当前 YTD 收益排名，不固定赢家或输家。",
+    rankingHint: "按所选周期收益排序，同时对照波动与回撤。",
     kShape: "动态 K 型分化",
-    kShapeHint: "每日重算 YTD 前三与后三篮子的平均表现。",
+    kShapeHint: "比较年内涨幅前三名与后三名市场的平均表现。",
     kShapeEmpty: "当前自然年尚无可用的 K 型序列。",
-    winner: "赢家篮子",
-    laggard: "输家篮子",
+    winner: "涨幅前三名市场",
+    laggard: "涨幅后三名市场",
     week: "周",
     month: "月",
     ytd: "YTD",
@@ -130,24 +134,29 @@ const copy = {
     indexReasonChannel: "该市场指数暂无已验证的本地数据通道。",
     indexReasonMissing: "该市场的本地指数数据未加载。",
     driverBasketNote:
-      "龙头篮子为非加权展示，不是指数替代，也不与美元 ETF 代理混合计算任何指标；每只龙头保留各自的数据源、币种、交易日历与纵轴刻度。",
+      "相关股票分别展示，不与指数或 ETF 合并计算。每只股票标明来源、币种和交易日期。",
     driverUsAdr: "美股 ADR",
     driverHkLocal: "港股本地",
-    driverPendingTitle: "龙头篮子待接入",
-    driverErrorTitle: "龙头篮子暂不可用",
-    driverErrorHint: "未用替代篮子或 ETF 代理曲线冒充；ETF 代理页签不受影响。",
+    driverPendingTitle: "相关股票数据待接入",
+    driverErrorTitle: "相关股票数据暂不可用",
+    driverErrorHint: "当前无法读取相关股票数据，可以查看该市场的 ETF。",
     driverReasonNoListing:
       "三星电子与 SK 海力士无流动性充足的美国上市凭证，该市场暂无已验证的龙头数据通道。",
     driverReasonPermission:
       "Futu 账户未开通 A 股行情权限；开通后可接入 A 股龙头。",
     driverReasonFormat: "已验证通道暂不支持该市场的龙头代码格式。",
     driverReasonChannel: "该市场暂无已验证的龙头数据通道。",
-    driverReasonMissing: "该市场的龙头篮子数据未加载。",
+    driverReasonMissing: "该市场的相关股票数据未加载。",
     driverLeaderErrorPrefix: "龙头暂不可用",
     close: "最新收盘",
-    methodology: "口径",
+    methodology: "计算方法",
     readOnly: "仅供只读市场研究，不构成投资建议，本页不提供任何交易操作。",
   },
+} as const;
+
+export const asiaRadarTitle = {
+  en: copy.en.title,
+  zh: copy.zh.title,
 } as const;
 
 type DetailTab = "index" | "proxy" | "drivers";
@@ -173,8 +182,17 @@ export function AsiaRadarView({ locale }: { locale: Locale }) {
     };
   }, [requestId]);
 
-  if (error) {
-    return (
+  return <div className="h-full overflow-y-auto bg-bg-base text-text-primary">
+    <header className="px-5 pb-4 pt-7 lg:px-8"><p className="text-xs tracking-wide text-[var(--color-hermes)]">{locale === "zh" ? "亚洲估值与泡沫观察" : "ASIA VALUATION & BUBBLE INDICATORS"}</p><h1 className="mt-2 font-headline-xl">{copy[locale].title}</h1><p className="mt-3 max-w-3xl text-sm leading-6 text-text-secondary">{copy[locale].subtitle}</p></header>
+    <div className="px-5 pb-8 lg:px-8"><MarketAssessmentView scope="asia" locale={locale} /></div>
+    <details className="group/market-details mx-5 pb-8 lg:mx-8">
+      <summary className="app-touch-target mb-5 flex cursor-pointer list-none items-center gap-3 rounded-lg border border-border-subtle bg-bg-surface px-4 py-4 text-sm text-text-primary transition-colors hover:border-[var(--color-hermes)] hover:bg-bg-surface-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-hermes)] [&::-webkit-details-marker]:hidden">
+        <BarChart3 size={18} className="shrink-0 text-[var(--color-hermes)]" aria-hidden="true" />
+        <span className="font-medium">{locale === "zh" ? "各市场走势、指数与相关股票" : "Regional charts, indices and stocks"}</span>
+        <span className="ml-auto shrink-0 text-xs text-[var(--color-hermes)]"><span className="group-open/market-details:hidden">{locale === "zh" ? "展开" : "Expand"}</span><span className="hidden group-open/market-details:inline">{locale === "zh" ? "收起" : "Collapse"}</span></span>
+        <ChevronDown size={17} className="shrink-0 transition-transform group-open/market-details:rotate-180 motion-reduce:transition-none" aria-hidden="true" />
+      </summary>
+    {error ? (
       <AsiaRadarUnavailable
         locale={locale}
         message={error}
@@ -184,10 +202,9 @@ export function AsiaRadarView({ locale }: { locale: Locale }) {
           setRequestId((value) => value + 1);
         }}
       />
-    );
-  }
-  if (!overview) return <AsiaRadarLoading locale={locale} />;
-  return <AsiaRadarDashboard locale={locale} overview={overview} />;
+    ) : !overview ? <AsiaRadarLoading locale={locale} /> : <AsiaRadarDashboard locale={locale} overview={overview} />}
+    </details>
+  </div>;
 }
 
 export function AsiaRadarDashboard({
@@ -198,9 +215,10 @@ export function AsiaRadarDashboard({
   overview: AsiaRadarOverview;
 }) {
   const text = copy[locale];
+  const [period, setPeriod] = useState<WatchPeriod>("week_pct");
   const ranked = useMemo(
-    () => [...overview.markets].sort((left, right) => left.rank - right.rank),
-    [overview.markets],
+    () => [...overview.markets].sort((left, right) => right.returns[period] - left.returns[period]),
+    [overview.markets, period],
   );
   const [selectedSymbol, setSelectedSymbol] = useState(ranked[0]?.symbol ?? "");
   const [tab, setTab] = useState<DetailTab>("proxy");
@@ -212,12 +230,11 @@ export function AsiaRadarDashboard({
       <header className="border-b border-border-subtle px-4 pb-6 pt-6 lg:px-8">
         <div className="flex flex-wrap items-end justify-between gap-5">
           <div>
-            <div className="flex items-center gap-2 font-label-caps text-accent-success">
+            <div className="flex items-center gap-2 font-label-caps text-warning">
               <Globe2 size={15} />
               <span>{text.eyebrow}</span>
             </div>
-            <h1 className="mt-2 font-headline-xl">{text.title}</h1>
-            <p className="mt-2 max-w-3xl font-body-sm text-text-secondary">{text.subtitle}</p>
+            <h2 className="mt-2 text-xl font-semibold">{locale === "zh" ? "亚洲市场走势对照" : "Asian market performance"}</h2>
           </div>
           <ProvenanceBadges
             locale={locale}
@@ -230,7 +247,8 @@ export function AsiaRadarDashboard({
       </header>
 
       <div className="space-y-6 px-4 py-6 lg:px-8">
-        <section className="rounded-2xl border border-border-subtle bg-bg-surface p-4 lg:p-5">
+        <MarketPulse rows={overview.markets} period={period} onPeriodChange={setPeriod} locale={locale} />
+        <section>
           <ChartHeader
             asOf={overview.as_of}
             icon={<Globe2 size={17} />}
@@ -240,38 +258,56 @@ export function AsiaRadarDashboard({
             provenance={overview.provenance}
             timezone={overview.timezone}
           />
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {ranked.map((market) => (
+          <div className="mt-5 grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-4">
+            {ranked.map((market, index) => (
               <button
-                className="rounded-xl border border-white/10 p-4 text-left transition hover:-translate-y-0.5 hover:border-white/25"
+                className={`rounded-md border p-3 text-left transition hover:border-warning/50 ${selected?.symbol === market.symbol ? "border-warning/70" : "border-border-subtle"}`}
                 data-market-card={market.symbol}
+                aria-pressed={selected?.symbol === market.symbol}
                 key={market.symbol}
-                onClick={() => setSelectedSymbol(market.symbol)}
-                style={{ backgroundColor: heatColor(market.returns.ytd_pct) }}
+                onClick={() => {
+                  setSelectedSymbol(market.symbol);
+                  document.getElementById("asia-market-detail")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                }}
+                style={{ backgroundColor: heatColor(market.returns[period]) }}
                 type="button"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="font-mono text-xs text-white/65">#{market.rank}</div>
-                    <div className="mt-1 text-base font-semibold text-white">
+                    <div className="font-mono text-[10px] text-white/65">#{index + 1}</div>
+                    <div className="mt-1 text-sm font-semibold text-white">
                       {locale === "zh" ? market.name_zh : market.name_en}
                     </div>
                   </div>
-                  <span className="rounded-md bg-black/20 px-2 py-1 font-mono text-xs text-white">
+                  <span className="font-mono text-xs text-white/70">
                     {market.symbol}
                   </span>
                 </div>
-                <div className="mt-6 font-data-mono text-2xl font-semibold text-white">
-                  {formatPct(market.returns.ytd_pct)}
+                <div className="mt-3 font-data-mono text-xl font-semibold text-white">
+                  {formatPct(market.returns[period])}
                 </div>
-                <div className="mt-1 text-[11px] uppercase tracking-wider text-white/60">YTD</div>
+                <div className="mt-1 text-[10px] text-white/60">{watchPeriodLabels[locale][period]}</div>
               </button>
             ))}
           </div>
         </section>
 
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-          <section className="rounded-2xl border border-border-subtle bg-bg-surface p-4 lg:p-5">
+        {selected ? (
+          <div id="asia-market-detail" className="scroll-mt-4">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3 text-xs">
+              <span className="text-text-secondary">{locale === "zh" ? "继续核对这个市场" : "Investigate this market"}</span>
+              <Link prefetch={false} className="text-warning hover:underline" href={watchHref("quotes", locale, { symbol: selected.symbol, provider: "futu" })}>
+                {locale === "zh" ? `查看 ${selected.symbol} K 线与成交量 →` : `Inspect ${selected.symbol} price and volume →`}
+              </Link>
+            </div>
+            <MarketDetail locale={locale} market={selected} methodology={overview.methodology} onTabChange={setTab} tab={tab} />
+          </div>
+        ) : null}
+
+        <details className="border-t border-border-subtle pt-5">
+          <summary className="cursor-pointer text-sm text-text-secondary">{locale === "zh" ? "展开完整排名与年内分化" : "Full ranking and year-to-date divergence"}</summary>
+        <div className="mt-5 grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          <section className="min-w-0">
             <ChartHeader
               asOf={overview.as_of}
               icon={<BarChart3 size={17} />}
@@ -295,9 +331,9 @@ export function AsiaRadarDashboard({
                   </tr>
                 </thead>
                 <tbody>
-                  {ranked.map((market) => (
+                  {ranked.map((market, index) => (
                     <tr className="border-b border-border-subtle/60" key={market.symbol}>
-                      <td className="py-3 font-mono text-text-secondary">{market.rank}</td>
+                      <td className="py-3 font-mono text-text-secondary">{index + 1}</td>
                       <td>
                         <button
                           className="text-left font-semibold text-text-primary hover:text-accent-success"
@@ -319,7 +355,7 @@ export function AsiaRadarDashboard({
             </div>
           </section>
 
-          <section className="rounded-2xl border border-border-subtle bg-bg-surface p-4 lg:p-5">
+          <section className="min-w-0">
             <ChartHeader
               asOf={overview.as_of}
               icon={<TrendingUp size={17} />}
@@ -332,16 +368,7 @@ export function AsiaRadarDashboard({
             <KShapeChart locale={locale} overview={overview} />
           </section>
         </div>
-
-        {selected ? (
-          <MarketDetail
-            locale={locale}
-            market={selected}
-            methodology={overview.methodology}
-            onTabChange={setTab}
-            tab={tab}
-          />
-        ) : null}
+        </details>
 
         <footer className="border-t border-border-subtle py-5 text-xs text-text-secondary">
           {text.readOnly}
@@ -445,10 +472,10 @@ function ProvenanceBadges({
   const text = copy[locale];
   return (
     <div className={`flex flex-wrap items-center gap-2 ${compact ? "text-[10px]" : "text-xs"}`}>
-      <span className="rounded-full border border-accent-success/40 bg-accent-success/10 px-2.5 py-1 font-semibold text-accent-success">
+      <span className="font-medium text-text-secondary">
         {text.real}
       </span>
-      <span className="rounded-full border border-info/40 bg-info/10 px-2.5 py-1 font-semibold text-info">
+      <span className="font-medium text-text-secondary">
         {text.proxy}
       </span>
       {provenance ? (
@@ -752,7 +779,7 @@ export function DriverBasketPanel({
             <AlertTriangle size={15} /> {text.driverErrorTitle}
           </div>
           <div className="mt-2 font-mono text-xs text-text-secondary">
-            {locale === "zh" ? basket.label_zh : basket.label_en}
+            {locale === "zh" ? "相关龙头股票" : basket.label_en}
           </div>
           <p className="mt-2 font-mono text-xs text-accent-danger">
             {text.indexErrorReasonPrefix}
@@ -790,7 +817,7 @@ export function DriverBasketPanel({
     <div data-driver-basket-state="available">
       <div className="flex flex-wrap items-center gap-2 text-[10px]">
         <span className="rounded-full border border-warning/40 bg-warning/10 px-2.5 py-1 font-semibold text-warning">
-          {locale === "zh" ? basket.label_zh : basket.label_en}
+          {locale === "zh" ? "相关龙头股票" : basket.label_en}
         </span>
         <span className="rounded-full border border-border-subtle px-2.5 py-1 font-mono text-text-secondary">
           {basket.basket_note}

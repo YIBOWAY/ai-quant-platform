@@ -17,7 +17,7 @@ from quant_system.config.settings import (
     Settings,
 )
 from quant_system.data.providers.futu import FutuMarketDataProvider
-from quant_system.execution.account import PaperAccount
+from quant_system.execution.account import PaperAccount, PendingAccountOrder
 from quant_system.execution.account_storage import PaperAccountStorage
 from quant_system.execution.models import ExecutionFill, OrderSide
 from quant_system.execution.price_source import PaperPriceSource, PricedQuote
@@ -200,7 +200,8 @@ def test_manual_order_updates_account_and_position_map(tmp_path, stub_prices) ->
     assert payload["order"]["price_kind"] == "futu_snapshot"
 
     account = payload["account"]
-    assert account["cash"] == pytest.approx(1_000_000.0 - 20_000.0)
+    # R3 parity: 100 shares slipped 200 -> 200.10 plus 1bp commission
+    assert account["cash"] == pytest.approx(1_000_000.0 - 100.0 * 200.10 * (1 + 1.0 / 10_000))
     assert len(account["positions"]) == 1
     pos = account["positions"][0]
     assert pos["symbol"] == "AAPL"
@@ -347,6 +348,34 @@ def test_account_snapshot_reads_existing_account(tmp_path, stub_prices) -> None:
     assert account["account_id"] == "default"
     assert account["positions"][0]["symbol"] == "AAPL"
     assert account["positions"][0]["quantity"] == pytest.approx(3)
+
+
+def test_account_snapshot_separates_manual_available_cash_from_strategy_cash(
+    tmp_path, stub_prices
+) -> None:
+    account = PaperAccount.open_new(initial_cash=1_000.0)
+    account.sleeve_cash = {"manual": 200.0, "sleeve-strategy": 800.0}
+    account.pending_orders = [
+        PendingAccountOrder(
+            order_id="manual-pending",
+            created_at="2026-08-27T00:00:00Z",
+            symbol="AAPL",
+            side="buy",
+            quantity=1.0,
+            limit_price=100.0,
+            reserved_cash=100.0,
+            source="manual",
+        )
+    ]
+    PaperAccountStorage(tmp_path / "api_runs").save(account)
+    client = TestClient(create_app(output_dir=tmp_path))
+
+    response = client.get("/api/paper/account/snapshot")
+
+    assert response.status_code == 200
+    payload = response.json()["account"]
+    assert payload["available_cash"] == pytest.approx(900.0)
+    assert payload["manual_available_cash"] == pytest.approx(100.0)
 
 
 def test_account_repository_factory_selects_configured_mode(tmp_path) -> None:
@@ -677,12 +706,19 @@ def test_account_equity_curve_replays_ledger_and_current_mark(
     assert fill["event_kind"] == "fill"
     assert fill["symbol"] == "AAPL"
     assert fill["quantity"] == pytest.approx(100.0)
-    assert fill["market_value"] == pytest.approx(20_000.0)
-    assert fill["equity"] == pytest.approx(1_000_000.0)
+    # R3 parity: the fill event marks at the slipped fill price (200.10)
+    assert fill["market_value"] == pytest.approx(100.0 * 200.10)
+    # R3 parity: equity nets commission and marks at the slipped price
+    assert fill["equity"] == pytest.approx(
+        1_000_000.0 - 100.0 * 200.10 * (1 + 1.0 / 10_000) + 100.0 * 200.10
+    )
     assert current["event_kind"] == "current"
     assert current["price_source"]["kind"] == "futu_snapshot"
     assert current["market_value"] == pytest.approx(21_000.0)
-    assert current["equity"] == pytest.approx(1_001_000.0)
+    # R3 parity: equity carries the commission paid on the buy
+    assert current["equity"] == pytest.approx(
+        1_001_000.0 - 100.0 * 200.10 * (1.0 / 10_000) - 100.0 * (200.10 - 200.0)
+    )
 
 
 def test_rebalance_applies_strategy_targets_to_account(tmp_path, stub_prices, monkeypatch) -> None:
@@ -767,14 +803,16 @@ def test_limit_price_queues_unfavorable_fill_and_later_fills(tmp_path, stub_pric
     assert len(blocked["account"]["pending_orders"]) == 1
     pending_order = blocked["account"]["pending_orders"][0]
     assert pending_order["symbol"] == "AAPL"
-    assert pending_order["reserved_cash"] == pytest.approx(750.0)
+    # R3 parity: reserve covers the limit notional plus 1bp commission + 5bp slippage.
+    reserved = 5 * 150.0 * (1 + 6.0 / 10_000)
+    assert pending_order["reserved_cash"] == pytest.approx(reserved)
     assert pending_order["reserved_quantity"] == pytest.approx(0.0)
-    assert blocked["account"]["reserved_cash"] == pytest.approx(750.0)
-    assert blocked["account"]["available_cash"] == pytest.approx(999_250.0)
+    assert blocked["account"]["reserved_cash"] == pytest.approx(reserved)
+    assert blocked["account"]["available_cash"] == pytest.approx(1_000_000.0 - reserved)
 
     persisted = client.get("/api/paper/account").json()
     assert len(persisted["pending_orders"]) == 1
-    assert persisted["available_cash"] == pytest.approx(999_250.0)
+    assert persisted["available_cash"] == pytest.approx(1_000_000.0 - reserved)
 
     stub_prices["AAPL"] = 140.0
     processed = client.post("/api/paper/account/orders/process").json()

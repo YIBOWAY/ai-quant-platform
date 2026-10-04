@@ -1,6 +1,6 @@
-# Hermes 会话、读取边界与本地写入门禁
+# Hermes 助手（现役入口：`/hermes`）、会话与本地写入边界
 
-## 当前结论（2026-07-31）
+## 当前结论（2026-09-05）
 
 平台已经能通过 **official Hermes API Server** 读取本机已保存的 Hermes 会话：
 
@@ -16,13 +16,19 @@
 读取面与写入面必须分开理解：
 
 - gateway/capability、session list/detail/messages 是 server-side GET-only；
-- Discord、外部导入和历史会话在 Web 中始终只读，继续上下文必须显式 fork
-  到新的 managed Hermes Session，并保留不可变 lineage；
-- 新 managed Session 的 composer/submit-turn 已有本地单用户路径，但只有
-  local mutation/composer、owner cookie/CSRF、完整 schema/runtime、有效
-  candidate 或 accepted release、Keychain、paper safety 与 connector liveness
-  同时通过时才可打开；
-- `chat_write_ready` 表示本地 readiness，不表示
+- Discord、外部导入和历史会话在 Web 中始终只读。仅当当前接口支持从指定消息
+  建立独立分支、且保留原会话时才展示分支操作。`official-http-v1` 当前不支持这项
+  精确分支能力，页面说明原因并保留历史阅读；可另开「新对话」自行补充背景；
+- 新 managed Session 的 composer/submit-turn 已有本地单用户 `local_trust` 路径。
+  它仍要求 local mutation/composer、owner cookie/CSRF、完整 034 schema/resource
+  envelope、Keychain、paper safety 与 supervised connector liveness；local trust
+  只省去 candidate identity ceremony，不放松其余条件；
+- 同聊研究缺 note、可执行 formula 或 ordered universe 时只追问且零入队；材料充分的
+  同一 operation 最多创建一个 job。当前支持日线 OHLCV Qlib 表达式，公式结构化传到容器后固定复现一次，Platform独立回放同源权重；不能表达的复杂策略明确返回不支持。
+  新完成研究通过现有 DSR/相关性/成本/资金检查后自动分配一个 $10,000 模拟策略仓。
+  `paper_running` 表示已启用，不代表已成交；拒绝保留候选，部分写入走现有对账恢复。
+  `/library` 保留旧候选手动启用；不会扫描启用全部旧候选。
+- `chat_write_ready` 与 `admission_mode=local_trust` 表示本地 readiness，不表示
   `public_chat_write_ready`、`public_write_authorized` 或
   `release_authorized`；public standing 继续 OFF；
 - Unified Results preview/catalog 可见，但 legacy redirect/retirement 仍需独立授权。
@@ -30,15 +36,34 @@
   Hermes 当前配置的 Codex、Grok 或其他 provider 额度。
 - 会话 GET 不把 Hermes 会话复制进平台数据库；写端只持久化 Platform 的
   managed-session/command/evidence 权威。
+- `/hermes` 的聊天栏在 Hermes 头像后的对话流中，把当前 managed Session 命令映射为
+  排队、处理中、分析、使用工具、生成回复与终态，并用不确定进度条表示正在工作。
+  桌面对话位于主区左侧，可在 320–860px 范围（受视窗宽度约束）拖拽，也可以用左右方向键调整；移动端仍使用抽屉。该状态来自
+  durable command、Hermes Run status 和有限事件快照，不是模型思维链或 token stream。
+  工具名、参数、输出、错误正文与 reasoning 文本不会下发浏览器。
+- 会话列表的标题和预览会清理 Discord 传输前缀和敏感片段；空会话与内部 `web_`
+  识别符不出现在侧栏。
+- 未指明数据源的“我的持仓/资金/模拟仓”和个性化标的问题，Hermes 先读 Platform
+  canonical `default` 模拟账户；installed HQA wrapper 直接读 Platform loopback
+  snapshot，不使用源码 checkout 的 file account。只有用户明确指定 Longbridge 时才改用 Longbridge，并分别标明账户换算
+  币种和 `cash_infos` 原始币种。
+- workspace 同源请求固定 30 秒截止。GET 超时显示 `workspace_request_timeout`，可检查
+  本机服务后重新读取；POST 超时显示 `outcome_unknown`，保留原 `client_action_id`，
+  只能使用“重试同一次发送”，不创建第二条逻辑消息。
+
+2026-10-04 修复合同：点击「新对话」后，路由切换及新会话写入资格检查期间锁定发送，
+仍可保留草稿；旧路由不得把当前会话恢复为旧 ID。风险等结果若已有合法的失败原件，
+统一详情会保留 `unavailable` 并显示当时的失败原因，而不是把原件当作格式错误丢弃；
+身份失配、超大载荷和损坏原件仍按原校验处理。这些是源码合同，发布状态以该批收据为准。
 
 旧的 TUI gateway capability contract 已随上游实现漂移并 fail closed。它只保留历史/
 诊断价值，平台的现行主读取链路是 official API Server。
 
-数据库迁移、readiness、服务重启、candidate E2E 与 restore 只以
+数据库迁移、readiness、服务重启、受控 E2E 与 restore 只以
 [Agent v0.2 local-stack runbook](../runbooks/agent-v0-2-local-stack.md) 为准。
-仓库 change set 包含 source 016–028；2026-07-31 的只读现场核对显示 016–027
-标记存在、028 标记不存在。这个快照不是 028 live 或 release 授权，本指南也不证明
-028 是否 committed/installed/isolated-replayed/live-applied/authorized。
+正式 migration 034 已在备份与 restored-sibling rehearsal 后唯一一次应用；当前
+local-trust composer 与 research resource envelope 依赖它。不要重放 034，也不要把
+本地 readiness 投影成 public/release 授权。
 
 ## 启用条件
 
@@ -57,7 +82,7 @@ ASGI factory，则还必须显式设置 `QS_API_BIND_ADDRESS=127.0.0.1`；未声
 准备专用文件（不要把真实 key 写入命令行参数、shell history、Git 或浏览器）：
 
 ```bash
-cd /Users/sunyibo/programs/Hermes-quant-agent
+cd $HOME/programs/Hermes-quant-agent
 install -d -m 700 data/_runtime
 if [ ! -e data/_runtime/hermes-api.key ]; then
   install -m 600 /dev/null data/_runtime/hermes-api.key
@@ -65,7 +90,7 @@ fi
 ```
 
 随后用可信的本地编辑器或密码管理器把 Hermes API Server 的 key 粘贴进
-`/Users/sunyibo/programs/Hermes-quant-agent/data/_runtime/hermes-api.key`（该运行时目录已
+`$HOME/programs/Hermes-quant-agent/data/_runtime/hermes-api.key`（该运行时目录已
 gitignore），再确认：
 
 ```bash
@@ -83,7 +108,7 @@ test "$(stat -f '%Lp' data/_runtime/hermes-api.key)" = 600
 ```bash
 export QS_HERMES_GATEWAY_ENABLED=true
 export QS_HERMES_GATEWAY_BASE_URL=http://127.0.0.1:8642
-export QS_HERMES_GATEWAY_API_KEY_FILE=/Users/sunyibo/programs/Hermes-quant-agent/data/_runtime/hermes-api.key
+export QS_HERMES_GATEWAY_API_KEY_FILE=$HOME/programs/Hermes-quant-agent/data/_runtime/hermes-api.key
 export QS_HERMES_GATEWAY_TIMEOUT_SECONDS=2
 export QS_HERMES_GATEWAY_MAX_RESPONSE_BYTES=4194304
 export QS_HERMES_GATEWAY_MAX_MESSAGES=200
@@ -94,7 +119,7 @@ quant-system serve --host 127.0.0.1 --port 8765
 前端仍按通常方式绑定 loopback：
 
 ```bash
-cd /Users/sunyibo/programs/ai-quant-platform/src/frontend
+cd $HOME/programs/ai-quant-platform/src/frontend
 npm run dev -- --hostname 127.0.0.1 --port 3001
 ```
 
@@ -117,10 +142,10 @@ gateway 正常时应看到：
 - `connected=true`
 - `session_api_available=true`
 - `read_status=available`
-- `chat_write_ready` 只按当前 local candidate/release readiness 计算，可能为 false
-  或在受控窗口内为 true，不能据此推断 public write；
+- `chat_write_ready` 按当前 local-trust readiness 计算，可能为 false 或在本地条件完整时
+  为 true；同时检查 `admission_mode=local_trust`，但不能据此推断 public write；
 - `platform_delivery_blockers` 与 `blockers` 必须如实保留 schema、runtime、
-  candidate/release、connector、Keychain 或上游缺口，不能把 unavailable 改写成空状态。
+  resource envelope、connector、Keychain 或上游缺口，不能把 unavailable 改写成空状态。
 
 `GET /api/safety/effective` 不调用 provider。只有 canonical 模式、root owner 恰好一个
 `default` 账户、materialized/raw `account_id` 与 JSON boolean `kill_switch=true`
@@ -134,10 +159,12 @@ curl -fsS 'http://127.0.0.1:8765/api/hermes/sessions/<URL_ENCODED_ID>'
 curl -fsS 'http://127.0.0.1:8765/api/hermes/sessions/<URL_ENCODED_ID>/messages'
 ```
 
-最后用浏览器检查：
+最后用浏览器检查现役入口和深链：
 
-- `http://127.0.0.1:3001/zh/hermes/sessions`
+- `http://127.0.0.1:3001/zh/hermes`（会话列表已合并到助手页）
 - `http://127.0.0.1:3001/zh/hermes/sessions/<URL_ENCODED_ID>`
+
+`/hermes/sessions` 是到 `/hermes` 的 301 兼容别名，不是另一套会话列表页面。
 
 persisted-session 详情页只显示 `user` / `assistant` 文本消息，并保持只读；它不是
 managed workspace composer。system/tool/reasoning 等上游消息不会透传；消息数受
@@ -155,6 +182,7 @@ managed workspace composer。system/tool/reasoning 等上游消息不会透传�
 | `GET /api/hermes/sessions` | persisted session list | 否 |
 | `GET /api/hermes/sessions/{session_id}` | persisted session detail | 否 |
 | `GET /api/hermes/sessions/{session_id}/messages` | persisted messages | 否 |
+| `GET /api/workspace/{workspace_id}/commands/{command_id}/activity` | owner/workspace 绑定的 Run status + 有限事件快照，只返回通用阶段/耗时 | 否 |
 
 adapter 没有 generic request 或 POST 方法。它只接受显式 HTTP loopback origin，关闭
 environment proxy (`trust_env=false`) 和 redirects，限制超时/响应 bytes/message count，
@@ -217,6 +245,7 @@ Browser (QS_HERMES_CHAT_ENABLED + owner cookie/CSRF)
        -> bind_resolve payload -> HttpHermesDispatchAdapter POST /v1/runs
   -> Browser observe (L2b)
        GET …/snapshot + …/follow  (lifecycle; no assistant bodies)
+       GET …/commands/{command_id}/activity  (sanitized stage/tool state)
        after delivered: GET /api/hermes/sessions/{id}/messages (preview)
 ```
 
@@ -238,12 +267,14 @@ Worker 模式：
 | `QS_HERMES_CHAT_ENABLED`（FE） | 解锁 composer 草稿 UI；与 API local mutation 联用后可走 L2a composite submit（仍非 public V8） |
 | `QS_INTENT_PAYLOAD_*` | BFF/worker 子进程调用 HQA Intent Payload CLI（put / bind_resolve）；平台不 `import hqa` |
 
-这些开关之外还必须满足 migration 028 exact readiness、effective paper safety、
-非创建式 HQA Keychain `probe`、短时 private candidate 或 exact accepted release、
-fresh supervised connector 与 owner/CSRF。Key missing 时必须暂停；只有操作者可按
-local-stack runbook 单独执行 `initialize-key`，普通 put/encrypt 不得创建 key。
+这些开关之外还必须满足 migration 034 exact readiness/resource envelope、effective
+paper safety、非创建式 HQA Keychain `probe`、fresh supervised connector 与
+owner/CSRF。`local_trust` 下不需要伪造 private candidate 或 accepted release，且绝不
+投影 public/release authority。Key missing 时必须暂停；只有操作者可按 local-stack
+runbook 单独执行 `initialize-key`，普通 put/encrypt 不得创建 key。
 
-Private candidate 的状态与关闭入口是：
+保留的 private candidate CLI 属于 legacy candidate/release qualification，不是
+local-trust composer 的前置条件：
 
 ```bash
 quant-system hermes candidate status
@@ -272,7 +303,11 @@ quant-system hermes candidate revoke \
    无任务时零 provider 请求、零 provider 额度。
 5. upstream events 写入带稳定 event identity/cursor 的 durable ledger；重连时 replay/
    reconcile，而不是把内存队列当事实源。
-6. UI 只从平台 read model 恢复状态；网络 timeout 是 unknown outcome，不能直接重试创建
-   第二个 run。
+6. UI 只从平台 read model 恢复状态；GET timeout 可安全重读，POST timeout 是
+   `outcome_unknown`，不能直接创建第二个 run。
+
+聊天栏活动查询只在命令仍在运行且侧栏可见时进行，切换命令或关闭移动侧栏会中止当前
+请求；终态与历史命令不继续轮询。连接断开不等于 Run 已失败，页面会明确说明任务可能仍
+在后台继续。成功终态活动行会收起；失败保留可见状态供用户判断。
 
 不推荐“让 Hermes cron 每隔 N 秒请求平台并问有没有任务”。

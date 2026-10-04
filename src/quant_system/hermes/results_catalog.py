@@ -57,6 +57,45 @@ _HQA_KINDS = {
     "opportunity_summary",
     "automation_status",
 }
+_RESULT_SEARCH_LABELS_ZH = {
+    "backtest": "回测",
+    "factor": "因子运行",
+    "paper": "模拟运行",
+    "replication": "策略复现",
+    "experiment": "实验",
+    "factor_candidate": "因子候选",
+    "portfolio_risk": "组合风险",
+    "prediction": "预测",
+    "market_foresight": "市场前瞻",
+    "weekly_review": "每周复盘",
+    "opportunity_summary": "机会摘要 机会复盘",
+    "automation_status": "自动化状态 自动化历史快照",
+}
+
+
+def _result_data_provenance(
+    metadata: dict[str, Any], configuration: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    request = metadata.get("request")
+    request = request if isinstance(request, dict) else {}
+    configuration = configuration or {}
+    values = [metadata.get("source"), metadata.get("provider")]
+    providers = [
+        value.strip().lower() for value in values
+        if isinstance(value, str) and value.strip()
+    ]
+    # Explicit sample evidence must remain visible, even if request metadata
+    # also names a different provider. Missing evidence never means real data.
+    sample_hints = [*providers, request.get("source"), request.get("provider"),
+                    configuration.get("source"), configuration.get("provider")]
+    if any(isinstance(value, str) and value.strip().lower() == "sample"
+           for value in sample_hints):
+        return {"data_mode": "sample", "data_provider": "sample"}
+    provider = providers[0][:160] if providers else None
+    return {
+        "data_mode": "market" if provider in {"futu", "tiingo", "longbridge"} else "unknown",
+        "data_provider": provider,
+    }
 _SAFE_RESULT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$")
 _MAX_RESPONSE_WARNINGS = 200
 _MAX_DETAIL_WARNINGS = 20
@@ -76,6 +115,14 @@ _MAX_HQA_SOURCE_ENTRIES = 1_000
 _MAX_CANDIDATE_SOURCE_ENTRIES = 8
 _MAX_LIST_RUN_LINKS_PER_RESOURCE = 3
 _MAX_DETAIL_RUN_LINKS_PER_RESOURCE = 100
+_LEGACY_CANDIDATE_TITLES_ZH = {
+    "factor-reproduce_arxiv_1904_04912_classical_mul-6fc8e027a7":
+        "经典多周期 MACD 时间序列动量复现",
+    "factor-research_proxy_of_arxiv_2511_12490_drift-d719757028":
+        "漂移状态反转因子研究代理",
+    "factor-implement_and_validate_an_operational_us-f0e6ea4fa1":
+        "短期反转与长期动量 ETF 代理",
+}
 _RUN_DETAIL_PATHS = {
     "backtest": (
         "metadata.json",
@@ -307,6 +354,29 @@ def _candidate_projection(
         if part
     ]
     return display_title, _projection_text(" · ".join(summary_parts), maximum=_MAX_SUMMARY_CHARS)
+
+
+def _candidate_projection_zh(
+    *,
+    resource_id: str,
+    goal: object,
+    universe: object,
+) -> tuple[str, str | None]:
+    exact = _LEGACY_CANDIDATE_TITLES_ZH.get(resource_id)
+    goal_text = _projection_text(goal, maximum=_MAX_DISPLAY_TITLE_CHARS)
+    symbols = _projection_symbols(universe)
+    if exact is not None:
+        title = exact
+    elif goal_text is not None and re.search(r"[\u3400-\u9fff]", goal_text):
+        title = goal_text
+    elif goal_text is not None and "momentum" in goal_text.lower():
+        title = "动量因子候选"
+    elif goal_text is not None and "reversion" in goal_text.lower():
+        title = "均值回归因子候选"
+    else:
+        title = f"{symbols} 因子候选" if symbols else "已验证因子候选"
+    summary = f"标的范围：{symbols.replace(', ', '、')}" if symbols else None
+    return title, summary
 
 
 def _hqa_projection(artifact: dict[str, Any]) -> tuple[str, str | None]:
@@ -605,6 +675,7 @@ def _experiment_item(
         ),
         "source": "platform_experiments",
         "authority": "platform_experiment_artifact",
+        **_result_data_provenance(metadata, config),
         "freshness": "not_applicable",
         "read_status": "available" if metadata else "degraded",
         "detail_href": f"/api/hermes/results/experiment/{resource_id}",
@@ -657,11 +728,18 @@ def _candidate_item(
         artifact_type=artifact_type,
         universe=universe,
     )
+    display_title_zh, summary_zh = _candidate_projection_zh(
+        resource_id=candidate_id,
+        goal=goal,
+        universe=universe,
+    )
     return {
         "kind": "factor_candidate",
         "resource_id": candidate_id,
         "display_title": display_title,
         "summary": summary,
+        "display_title_zh": display_title_zh,
+        "summary_zh": summary_zh,
         "status": (
             "legacy_unbound"
             if approval_binding == "legacy_unbound"
@@ -755,6 +833,7 @@ def _run_item(
         ),
         "source": "platform_runs",
         "authority": "platform_run_artifact",
+        **_result_data_provenance(metadata),
         "freshness": "not_applicable",
         "read_status": "available" if status != "unknown" else "degraded",
         "detail_href": f"/api/hermes/results/{kind}/{resource_id}",
@@ -1431,6 +1510,11 @@ class HermesResultsCatalog:
                         item["status"],
                         item["display_title"],
                         item["summary"],
+                        item.get("display_title_zh"),
+                        item.get("summary_zh"),
+                        _RESULT_SEARCH_LABELS_ZH.get(item["kind"]),
+                        "横截面 Top-N" if item["kind"] == "backtest"
+                        and item["display_title"].startswith("cross_sectional_top_n") else None,
                     )
                     if isinstance(part, str)
                 ).casefold()

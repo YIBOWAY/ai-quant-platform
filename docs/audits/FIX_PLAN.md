@@ -1,5 +1,9 @@
 # Fix Plan — Phase 9 联调修复路线（待确认）
 
+> **历史冻结（2026-08-26）：**这是 Phase 9 时点的未授权修复建议，不是当前计划或
+> 待办队列。正文保持当时判断；不得从优先级、未完成建议或已退役源码路径推断 NEXT。
+> 当前文档入口见 [`../INDEX.md`](../INDEX.md)。
+
 > 本文是 [FRONTEND_BACKEND_AUDIT.md](FRONTEND_BACKEND_AUDIT.md) / [UI_FUNCTION_MATRIX.md](UI_FUNCTION_MATRIX.md) / [API_AUDIT.md](API_AUDIT.md) / [MARKET_DATA_SOURCE_AUDIT.md](MARKET_DATA_SOURCE_AUDIT.md) 的修复方案合集。**本文未动任何代码，仅请求授权。**
 
 ## 总体策略
@@ -51,9 +55,9 @@
 
 **涉及文件**：
 
-- [components/SafetyStrip.tsx](../../src/frontend/components/SafetyStrip.tsx) — 改成 server component 调 `getHealth()` 显示真值
+- `src/frontend/components/SafetyStrip.tsx`（历史路径，已退役）— 当时建议改成 server component 调 `getHealth()` 显示真值
 - [app/page.tsx](../../src/frontend/app/page.tsx) — 删除 System Log 假行 / Experiment progress / CPU·RAM 假占用条
-- [app/data-explorer/page.tsx](../../src/frontend/app/data-explorer/page.tsx) — 删除 5 个硬编码 bar、删除 Y 轴硬编码刻度、删除 Coverage / Missing Days / Spike 三块假卡（先删再后续接真）
+- `src/frontend/app/data-explorer/page.tsx`（历史路径，已退役）— 当时建议删除 5 个硬编码 bar、Y 轴刻度和三块假卡
 
 **修复**：删除装饰节，留 `<EmptyState>` 占位 + "TODO: connect to /api/data/quality" 注释。
 
@@ -135,7 +139,7 @@ curl "http://127.0.0.1:8765/api/ohlcv?symbol=SPY&start=2024-01-02&end=2024-01-12
 
 ### P0-5 LLM 配置进 Settings + 安全暴露
 
-**问题**：[.env](../../.env) 里 `LLM_*` 全部被 `extra="ignore"` 丢弃。
+**问题**：[.env：本地私有配置未公开](../publication-20261004.md) 里 `LLM_*` 全部被 `extra="ignore"` 丢弃。
 
 **影响**：用户以为 Agent 会用 xai 路由，实际仍是 stub。是诚实性问题。
 
@@ -207,7 +211,7 @@ curl http://127.0.0.1:8765/api/settings | grep -i api_key
 
 ### P1-3 文档与代码一致性
 
-**问题**：[design_brief.md](frontend/design_brief.md) 列了 9 页，实际代码曾有 `/settings` 缺失和 paper trading 命名漂移。
+**问题**：[design_brief.md](../frontend/design_brief.md) 列了 9 页，实际代码曾有 `/settings` 缺失和 paper trading 命名漂移。
 
 **修复**：随 P0-1 一起修；修完后旧命名应为 0 命中。
 
@@ -247,7 +251,7 @@ Kill Switch toggle、agent approve 按钮、prediction-market 红 banner 都加 
 
 ### P2-6 Prediction Market 完整 UI
 
-按 [design_brief §4.8](frontend/design_brief.md) 实现完整页（当前未做的）。
+按 [design_brief §4.8](../frontend/design_brief.md) 实现完整页（当时未做）。
 
 ---
 

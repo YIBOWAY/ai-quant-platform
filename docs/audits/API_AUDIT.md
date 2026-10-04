@@ -86,7 +86,7 @@
 - 前端运行在 `127.0.0.1:3001`，但 [Settings.api_cors_origins](../../src/quant_system/config/settings.py#L113) 默认只允许 `127.0.0.1:3000` 和 `localhost:3000`。
 - 因为前端是 **Server Component fetch**（在 Node 进程里直接 fetch backend），所以浏览器其实不参与 CORS——目前能跑是绕过的。
 - 一旦改成 client component（必须改，否则按钮永远死的），浏览器会发起 OPTIONS，**会被 CORS 拒绝**。
-- **建议**：把默认 CORS 改成 `["http://127.0.0.1:3000", "http://127.0.0.1:3001", "http://localhost:3000", "http://localhost:3001"]`，或在 [.env](../../.env) 里加 `QS_API_CORS_ORIGINS='["http://127.0.0.1:3001"]'`。
+- **建议**：把默认 CORS 改成 `["http://127.0.0.1:3000", "http://127.0.0.1:3001", "http://localhost:3000", "http://localhost:3001"]`，或在 [.env：本地私有配置未公开](../publication-20261004.md) 里加 `QS_API_CORS_ORIGINS='["http://127.0.0.1:3001"]'`。
 
 ## 6. LLM 配置审计（用户重点）
 

@@ -1,29 +1,56 @@
 # 文档索引
 
+> **公开快照（2026-10-04）**：本索引中的历史状态保留原时点含义；会话、账户明细和未公开原件不随源码发布。详见[公开范围说明](publication-20261004.md)。
+
 这是整个仓库的主地图。先用下面的“当前工作”确定执行入口，再按需查架构、操作
 指南和历史交付。不要从旧 phase、audit 或未勾选 checkbox 推断当前进度。
 
-## 当前工作（2026-08-13）
+## 当前工作（2026-09-26）
+
+当前执行入口仍是HQA的[唯一现行计划](https://github.com/YIBOWAY/Hermes-quant-agent/blob/main/docs/plans/2026-09-14-alpha-research-reset.md)及[最新进度](https://github.com/YIBOWAY/Hermes-quant-agent/blob/main/docs/handoffs/2026-09-23-research-continuation/PROGRESS.md)。Phase2与Phase3按实现、隔离验证、发布和自然运行分别验收；未找到可靠alpha或未满足资金条件时保留阻断。09-28审查续修覆盖准入断链/撤销边界、统计口径、SEC历史披露小样与组合净订单成本预检，结果与发布层见[最新收据](https://github.com/YIBOWAY/Hermes-quant-agent/blob/main/docs/receipts/2026-09-28-review-followthrough-and-sec-pit.md)。09-26的组合、统计内核和单窗口阶段结果仍见[前批收据](https://github.com/YIBOWAY/Hermes-quant-agent/blob/main/docs/receipts/2026-09-26-phase3-portfolio-and-window-stage.md)；原三个ETF假设保持归档，数据小样、工程资格和费用预检均不等于策略准入。
+
+> **09-20 后续授权**：现行研发计划为HQA[alpha-research-reset v3.2](https://github.com/YIBOWAY/Hermes-quant-agent/blob/main/docs/plans/2026-09-14-alpha-research-reset.md) §12，主人已批准继续完整Phase2。当前实施、真实数据与部署状态看[实施收据](https://github.com/YIBOWAY/Hermes-quant-agent/blob/main/docs/receipts/2026-09-20-phase2-implementation.md)。前一轮[审查修复](receipts/2026-09-20-phase2-audit-repairs.md)及下方09-15段保留为各自历史，不将Phase1/2预先标全完。
+
+[本地网站发布与实站验收](receipts/2026-09-15-local-web-deployment.md)是09-15历史运行记录，当时HQA接班点为§13.55。主人已确认该批发布，Platform a4fc35bf/HQA 1ed2d48当时已部署；真实页面和所选账户经济字段已核对。原导航取消在实站仍可复现，首页部分策略名称仍通用，不声明整站全绿。
+
+[全站功能修复与完整复测](receipts/2026-09-15-functional-repairs-and-retest.md)保留发布前HQA §13.54的结果。后端4104项、前端822项、数据库238项与5项派发及备份恢复通过；浏览器213通过/1失败/24场景跳过。该轮结束时未发布，后续发布见上方收据。原失败、跳过、图像审核与最终结果均分列保存，以下9/13记录为历史首跑。
+
+[全站功能与浏览器E2E验收](receipts/2026-09-13-full-functional-e2e.md)保留HQA §13.52时的首跑。前端781项单元测试通过，既有E2E首跑214项为85过/114失败/15跳过，补测分列；当时发现真实产品缺陷及旧fixture/测试路径失配，验收未通过。该轮只修测试隔离和确定的测试前提，不把当时未验证的停止/审批/组合启用链路写成通过。
+
+[Longbridge备用数据与公司研究](receipts/2026-09-12-longbridge-company-research.md)记录HQA §13.51。Futu保持默认，新增公司研究、财务质量检查、真实能力状态和Hermes同源资料工具；长桥历史与期权报价权限仍部分受限，冻结策略不自动换源。入口与用法见[公司研究指南](guides/company-research.md)。下面日期段保留各自历史，不作为当前运行状态。
+
+[Grok接入、成对评价与模拟观察修复](https://github.com/YIBOWAY/Hermes-quant-agent/blob/main/docs/receipts/2026-09-11-intake-paper-repair.md)记录HQA §13.50。本批保留各策略的规则，冻结基线/增强共用输入并要求预声明增量目标；修复恢复身份、入金收益和日历，复用已有Grok公式。已部署，正式新协议自然投递与后续成交仍须真实记录。
+
+[策略研究、收益复核与多因子工作流](receipts/2026-09-09-strategy-research-workflow.md)记录TopN/收益归属修复、近期Grok探索、固定策略库、真实Qlib执行和Ridge对照。当前接班点为HQA §13.46；研究与验证可用，新定义最终模拟日程仍有明确未完成边界，不能从验证通过推断已启用。操作见[我的策略指南](guides/strategy-library.md)。下面日期条目保留历史。
+
+[真实参考回测、Qlib 滚动研究与模拟复盘](receipts/2026-09-07-qlib-research-evaluation.md)已完成实际数据计算、相关测试与源码生产构建，代码提交为 `b7d54777`。现行接班点为 HQA §13.44，部署与未完成的浏览器验收见收据；下面 §13.43 保留前一轮记录。
+
+[策略与因子、历史对照与 Grok 502 修复](receipts/2026-09-06-collection-and-market-history.md)记录最新页面与正式数据核验：13 项源码介绍、两份真实双引擎记录、去除组合指标误分配，以及流式 Grok 修复。最新接班点为 HQA §13.43。[RD-Agent / Qlib 扩展报告](audits/2026-09-06-rdagent-qlib-opportunities.md)区分当前接线与尚未实施的建议。
+
+[Grok 4.6、自动市场检查与真实证券目录](receipts/2026-09-05-grok46-market-assistant.md)保留上一轮模型参数、宏观指标、每日更新、FinanceDatabase 搜索和无样本替代修复；对应 HQA §13.42。下方 §13.41 为更早记录。
+
+[市场研判、浮窗与日报措辞修订](receipts/2026-09-05-market-outlook-and-brief-copy.md)记录本轮页面、数据来源、Grok 与历史日报修订；现行计划接班点为 HQA §13.41。[个人助手实际使用评估与修复](audits/2026-09-05-personal-quant-usability.md)保留前一轮证据。新 same-chat 日线公式复现通过双引擎与既有准入后自动启用模拟运行；以下旧日期条目只代表当时行为。
 
 | 层级 | 权威入口 | 状态 |
 |---|---|---|
-| 唯一现行计划 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/plans/2026-08-13-personal-quant-assistant.md` | 一台个人量化助手。D-31…D-34 不是产品线。 |
-| 跨仓导航 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/README.md` | 先读这个再读下面的历史表。 |
-| 跨仓产品路线（历史） | `/Users/sunyibo/programs/Hermes-quant-agent/docs/design/2026-07-01-roadmap-phases-0b-4.md` | Hermes 是编排层；本仓库是领域后端。D-xx 台账已停写。 |
-| 已交付跨仓计划 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-10-phase-1a-4-v2.md` | Slice 9A-9G + mini 9H 已完成。 |
-| 已交付完整 9H | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-12-full-9h-automation-notifications.md` | 调度、对账、周报、freshness 与通知已完成；平台只负责只读消费。 |
-| 已交付候选完整性 / Gate 3 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-13-candidate-integrity-and-gate3.md` | 统一 repo-anchored candidate root、immutable manifest、HQA Scene-B Gate 1 精确源绑定、Gate 2 digest CAS、迁移工具、隔离且可恢复的 Gate 3 worktree 已交付并完成对抗性加固。Scene-B 已完成 final receipt → prepare → 人工 diff/commit → reviewed → cleanup，并以 `524e791` 合入当前分支（见下）。 |
-| 已交付专业前端 / 只读壳 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-13-hermes-professional-frontend-shell.md` | F0 direction-a + F1 书面批准后，F2 Hermes 壳与可回滚默认首页已交付。Approvals 保持证据只读（`approvalMutations=false`）；official Hermes API 会话读取已接入（`sessionRead=true`）。3E-A 又交付只读 Unified Results 目录/详情，但完整切流仍关闭。设计记录见 [design/hermes-workbench/README.md](design/hermes-workbench/README.md)。 |
+| 唯一现行计划 | [docs/plans/2026-09-14-alpha-research-reset.md](https://github.com/YIBOWAY/Hermes-quant-agent/blob/main/docs/plans/2026-09-14-alpha-research-reset.md) | v3.2 §12；Phase2实施与真实验收逐项记录。源码与日常运行版本分开，不能从镜像ff推断常驻服务已重载。D-31…D-34不是产品线。 |
+| 期权推荐当前现场 | [期权推荐指南](guides/options-recommendations.md) | 2026-08-28 11:39 +08 浏览器触发的 2026-08-27 快照为 30/34 成功、4 失败、20 候选；这是 dated partial snapshot，不是永久运行状态。 |
+| 跨仓导航 | [docs/README.md](https://github.com/YIBOWAY/Hermes-quant-agent/blob/main/docs/README.md) | 先读这个再读下面的历史表。 |
+| 跨仓产品路线（历史） | [docs/design/2026-07-01-roadmap-phases-0b-4.md](https://github.com/YIBOWAY/Hermes-quant-agent/blob/main/docs/design/2026-07-01-roadmap-phases-0b-4.md) | Hermes 是编排层；本仓库是领域后端。D-xx 台账已停写。 |
+| 已交付跨仓计划 | [docs/superpowers/plans/2026-07-10-phase-1a-4-v2.md](https://github.com/YIBOWAY/Hermes-quant-agent/blob/main/docs/superpowers/plans/2026-07-10-phase-1a-4-v2.md) | Slice 9A-9G + mini 9H 已完成。 |
+| 已交付完整 9H | [docs/superpowers/plans/2026-07-12-full-9h-automation-notifications.md](https://github.com/YIBOWAY/Hermes-quant-agent/blob/main/docs/superpowers/plans/2026-07-12-full-9h-automation-notifications.md) | 调度、对账、周报、freshness 与通知已完成；平台只负责只读消费。 |
+| 已交付候选完整性 / Gate 3 | [docs/superpowers/plans/2026-07-13-candidate-integrity-and-gate3.md](https://github.com/YIBOWAY/Hermes-quant-agent/blob/main/docs/superpowers/plans/2026-07-13-candidate-integrity-and-gate3.md) | 统一 repo-anchored candidate root、immutable manifest、HQA Scene-B Gate 1 精确源绑定、Gate 2 digest CAS、迁移工具、隔离且可恢复的 Gate 3 worktree 已交付并完成对抗性加固。Scene-B 已完成 final receipt → prepare → 人工 diff/commit → reviewed → cleanup，并以 `524e791` 合入当前分支（见下）。 |
+| 已交付专业前端 / 只读壳 | [docs/superpowers/plans/2026-07-13-hermes-professional-frontend-shell.md](https://github.com/YIBOWAY/Hermes-quant-agent/blob/main/docs/superpowers/plans/2026-07-13-hermes-professional-frontend-shell.md) | F0 direction-a + F1 书面批准后，F2 Hermes 壳与可回滚默认首页已交付。Approvals 保持证据只读（`approvalMutations=false`）；official Hermes API 会话读取已接入（`sessionRead=true`）。3E-A 又交付只读 Unified Results 目录/详情，但完整切流仍关闭。设计记录见 [design/hermes-workbench/README.md](design/hermes-workbench/README.md)。 |
 | 唯一运维权威 | [Agent v0.2 local-stack](runbooks/agent-v0-2-local-stack.md) | 唯一维护 migration、backup、isolated replay、readiness、restart、candidate E2E 与 pre-028 restore 的文档；其他 runbook 只解释组件。 |
 | Platform 单一 main | [2026-08-10 Git 分支合并审计](audits/2026-08-10-platform-git-branch-consolidation.md) | 两个 Platform checkout 与 GitHub 已统一到受保护 `main`；旧分支先按 exact tip 建 archive tag 后删除，bundle/dirty snapshot 可恢复。此拓扑收口不授权 live、因子晋级或 migration 029。 |
 | 论文入队机（旧称 D-33） | HQA `docs/plans/2026-08-10-full-automation-paper-path.md` | 历史实现。研究账的一个来源，不是默认入口。 |
-| 双引擎研究作业（旧称 D-34） | [架构](architecture/d34-autonomous-paper.md) · [指南](guides/d34-workbench.md) · [运维](runbooks/d34-autonomous-paper.md) | 历史实现。代码化石可留，产品身份已取消。 |
+| 双引擎研究作业（旧称 D-34） | [历史架构](architecture/d34-autonomous-paper.md) | 内部实现记录。工作台控件、owner API 与操作指南已于 2026-08-23 随 `417be6d` 退役并删除；当前链只看 HQA 现行计划。 |
 | 029 operator window | 2026-08-10 现场执行 | backup + isolated restore rehearsal 后一次 apply；append-only promote/demote/daily quota authority。禁止重放；启动永不自动迁移。 |
 | 应用前历史快照 | source/change set 016–028；live 现场只读核对 2026-07-31 | inspected 016–027 markers 存在；当时 028 marker 不存在，运行后端尚无 `/api/safety/effective`。这是保留的 pre-apply 快照，不描述当前 live 状态。 |
 | 028 operator window | 2026-08-01 现场观察；详见 [Agent v0.2 local-stack](runbooks/agent-v0-2-local-stack.md) | 028 marker=1/version=1，exact two binding triggers 均为 `ENABLE ALWAYS`，schema fingerprint `e3f713ac05a1a990cfa9be45157e880e06709c425a4883736544d8f2b626f33a`；一次性 apply 后的正常重启、readiness 与 `/api/safety/effective` 通过。该快照不证明论文研究语义，也不授权重放 028。 |
-| AlphaZeroBeta 重测 | `/Users/sunyibo/programs/Hermes-quant-agent/data/_runtime/agent-v02-work/Hermes-quant-agent/docs/audits/2026-07-31-alphazerobeta-paper-research-web-e2e.md` | Web/UI、Session、dispatch、provider、approval、durable Run、直接 PDF/全文读取与数据库持久化等机械生命周期通过，zero orders；但论文研究 verdict 为 **UNVERIFIED / NOT ACCEPTED**。Skill-only 约束没有形成 runtime-enforced、digest-bound `hqa.paper_intake/v1` receipt/verifier，因此 factor/backtest/Gate/result 为 **NOT EVALUATED**，不能写成正确跳过。正式候选套件 `5632 passed / 272 skipped / 0 failed`，manifest SHA-256=`eba8099bf3801927f3d93b40d1e133546d7cbcc4eece4c58b416bf52bd29a136`；candidate 已 revoke，connector=`reconcile_only`，local/public write 均关闭。 |
-| 当前实现选择 | Agent v0.2 local-private managed-session write | owner session/CSRF + encrypted payload + durable connector + transcript/follow/approval/stop/result。CLI 默认 `reconcile_only`；`supervised_dispatch` 只在 exact candidate/release window。历史/外部 session 只读，继续上下文需显式 fork。local `chat_write_ready` ≠ public；public standing OFF，交易 kill switch true。 |
-| 本机 Hermes 连接决策 | `/Users/sunyibo/programs/Hermes-quant-agent/docs/design/2026-07-15-local-hermes-integration-decision.md` | 采用 PostgreSQL durable command/event/outbox + deterministic worker；`LISTEN/NOTIFY` 唤醒、periodic scan 兜底，不让 Hermes/LLM cron 空轮询。 |
+| AlphaZeroBeta 重测 | `$HOME/programs/Hermes-quant-agent/data/_runtime/agent-v02-work/Hermes-quant-agent/docs/audits/2026-07-31-alphazerobeta-paper-research-web-e2e.md` | Web/UI、Session、dispatch、provider、approval、durable Run、直接 PDF/全文读取与数据库持久化等机械生命周期通过，zero orders；但论文研究 verdict 为 **UNVERIFIED / NOT ACCEPTED**。Skill-only 约束没有形成 runtime-enforced、digest-bound `hqa.paper_intake/v1` receipt/verifier，因此 factor/backtest/Gate/result 为 **NOT EVALUATED**，不能写成正确跳过。正式候选套件 `5632 passed / 272 skipped / 0 failed`，manifest SHA-256=`eba8099bf3801927f3d93b40d1e133546d7cbcc4eece4c58b416bf52bd29a136`；candidate 已 revoke，connector=`reconcile_only`，local/public write 均关闭。 |
+| 当前实现选择 | Agent v0.2 local-private managed-session write | owner session/CSRF + encrypted payload + durable connector + transcript/follow/approval/stop/result。安装默认仍 fail-closed；当前 `local_trust` owner 模式使用 `supervised_dispatch`，但 public/release 仍 OFF。历史/外部 session 只读，继续上下文需显式 fork。local `chat_write_ready` ≠ public，交易 kill switch true。 |
+| 本机 Hermes 连接决策 | [docs/design/2026-07-15-local-hermes-integration-decision.md](https://github.com/YIBOWAY/Hermes-quant-agent/blob/main/docs/design/2026-07-15-local-hermes-integration-decision.md) | 采用 PostgreSQL durable command/event/outbox + deterministic worker；`LISTEN/NOTIFY` 唤醒、periodic scan 兜底，不让 Hermes/LLM cron 空轮询。 |
 | 前序实现记录 | [前端渐进改造与 Hermes 集成](superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md) | Slice 0-8 与后续前端 backlog 的事实记录；不是当前可直接续写的 task list。 |
 | 被替代计划 | HQA `2026-07-07-phase-1a-4-research-employees.md` | 目标保留，旧 implementation 模板不得原样执行。 |
 | 历史路线 | [Phase 15 素材档案](phases/phase_15_iteration_roadmap.md) | 仅作素材，不是独立 roadmap。 |
@@ -182,16 +209,16 @@ rows；操作只看 [local-stack runbook](runbooks/agent-v0-2-local-stack.md)。
 | [guides/strategy-catalog.md](guides/strategy-catalog.md) | 策略目录 `/strategies` |
 | [guides/experiments.md](guides/experiments.md) | 实验管理 `/experiments` |
 | [guides/paper-trading.md](guides/paper-trading.md) | 模拟交易 `/paper-trading` |
-| [guides/position-map.md](guides/position-map.md) | 持仓地图 `/position-map` |
-| [guides/asia-radar.md](guides/asia-radar.md) | 亚洲雷达 `/asia-radar`（12 只 Futu 真实日线 ETF 代理；失败不回退 sample） |
-| [guides/market-cross-section.md](guides/market-cross-section.md) | 市场横截面 `/market-cross-section`（预设篮子热力图 + 排序表；严格 Futu，失败不回退 sample） |
+| [guides/position-map.md](guides/position-map.md) | 持仓地图 `/paper-trading?view=map`（旧 `/position-map` 为 alias） |
+| [guides/asia-radar.md](guides/asia-radar.md) | 亚洲雷达 `/watch?pane=radar`（旧 `/asia-radar` 为 alias；12 只 Futu 真实日线 ETF 代理） |
+| [guides/market-cross-section.md](guides/market-cross-section.md) | 市场横截面 `/watch?pane=cross`（旧 `/market-cross-section` 为 alias；严格 Futu） |
 | [guides/ai-news.md](guides/ai-news.md) | AI 新闻研究流 `/ai-news`（双源 Facade：AI HOT 主源 + Horizon 热备；auto failover） |
-| [guides/hermes-sessions.md](guides/hermes-sessions.md) | Hermes official API 会话读取、密钥边界、故障排查与下一阶段连接架构 |
-| [guides/d34-workbench.md](guides/d34-workbench.md) | D-34 Mandate、研究 job、双引擎 Artifact、paper canary 与异常操作 |
+| [guides/hermes-sessions.md](guides/hermes-sessions.md) | Hermes `/hermes`、saved-session 深链、本地写路径和 034/local-trust 边界 |
+| [guides/options-recommendations.md](guides/options-recommendations.md) | 期权推荐 `/options-radar`、六态、立即更新、物理 EV、IVR warming 与已知边界 |
 | [design/paper_trading_position_map_redesign.md](design/paper_trading_position_map_redesign.md) | 模拟交易 + 持仓地图**重设计**（设计文档 + 分阶段实现计划） |
 | [design/paper_strategy_sleeves_plan.md](design/paper_strategy_sleeves_plan.md) | Paper Strategy Sleeves **MVP-1**（策略资金段/信号观察/allocated 分账设计，非历史 Phase 1） |
 | [design/paper_strategy_sleeves_mvp2_plan.md](design/paper_strategy_sleeves_mvp2_plan.md) | Paper Strategy Sleeves **MVP-2**（pending execution / next-open 纸面执行计划） |
-| [execution/paper_strategy_sleeves.md](execution/paper_strategy_sleeves.md) | Paper Strategy Sleeves 执行说明（手工 sleeve 保持 one-shot；D-33 为 `automation_managed` sleeve 增加独立常驻信号/计划/paper fill 周期） |
+| [execution/paper_strategy_sleeves.md](execution/paper_strategy_sleeves.md) | Paper Strategy Sleeves 执行说明（手工 sleeve 保持 one-shot；已启用模拟运行的正式观察只由 `com.aiquant.d34-paper-cycle` 在 06:15/22:25 两个日历时段触发） |
 | [design/ai_news_integration_plan.md](design/ai_news_integration_plan.md) | AI News Integration **MVP-1 / MVP-2**（AI HOT 只读接入 + 可选 PG 缓存；决策日志指向 Horizon Bridge） |
 | [superpowers/specs/2026-07-23-ai-news-horizon-bridge-design.md](superpowers/specs/2026-07-23-ai-news-horizon-bridge-design.md) | AI News × Horizon Bridge **Phase A 设计**（热备 failover；合同可升 Phase B；**已实现**） |
 | [superpowers/plans/2026-07-23-ai-news-horizon-bridge.md](superpowers/plans/2026-07-23-ai-news-horizon-bridge.md) | AI News × Horizon Bridge **实现计划**（Tasks 1–10） |
@@ -202,11 +229,10 @@ rows；操作只看 [local-stack runbook](runbooks/agent-v0-2-local-stack.md)。
 | 文档 | 用途 |
 |---|---|
 | [../README.md](../README.md) | 快速项目入口与运行命令。 |
-| [runbooks/agent-v0-2-local-stack.md](runbooks/agent-v0-2-local-stack.md) | **唯一 Agent v0.2 stack 运维权威**：016–029、backup/replay/apply/readiness/restart/E2E/restore；D-33 语义看 HQA 自动 paper runbook。 |
-| [runbooks/d34-autonomous-paper.md](runbooks/d34-autonomous-paper.md) | D-34 固定镜像、真实 smoke、030–032 独立授权、worker flag、日志和 hold 型回滚。 |
+| [runbooks/agent-v0-2-local-stack.md](runbooks/agent-v0-2-local-stack.md) | **唯一 Agent v0.2 stack 运维权威**：migration、backup/replay/apply/readiness/restart/E2E/restore；当前研究语义看 HQA 现行计划。 |
 | [architecture/d34-autonomous-paper.md](architecture/d34-autonomous-paper.md) | D-34 数据流、双引擎边界、030–032 数据模型、job 状态机、API 与回退。 |
-| `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-10-phase-1a-4-v2.md` | **已交付记录**：Slice 9A-9G + mini 9H。 |
-| `/Users/sunyibo/programs/Hermes-quant-agent/docs/superpowers/plans/2026-07-12-full-9h-automation-notifications.md` | **已交付记录**：完整 9H 自动化与通知。 |
+| [docs/superpowers/plans/2026-07-10-phase-1a-4-v2.md](https://github.com/YIBOWAY/Hermes-quant-agent/blob/main/docs/superpowers/plans/2026-07-10-phase-1a-4-v2.md) | **已交付记录**：Slice 9A-9G + mini 9H。 |
+| [docs/superpowers/plans/2026-07-12-full-9h-automation-notifications.md](https://github.com/YIBOWAY/Hermes-quant-agent/blob/main/docs/superpowers/plans/2026-07-12-full-9h-automation-notifications.md) | **已交付记录**：完整 9H 自动化与通知。 |
 | [superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md](superpowers/plans/2026-07-08-frontend-redesign-hermes-integration.md) | Slice 0-8 实现记录与未来前端 backlog。 |
 | [architecture/database_cache_plan.md](architecture/database_cache_plan.md) | 当前本地存储与 PostgreSQL 业务事实架构。 |
 | [guides/hermes-sessions.md](guides/hermes-sessions.md) | official Hermes API 会话读取 BFF 的启用、威胁模型、验证与下一阶段写端边界。 |
@@ -265,7 +291,13 @@ rows；操作只看 [local-stack runbook](runbooks/agent-v0-2-local-stack.md)。
 | Paper Strategy Sleeves MVP-2 计划 | `docs/design/paper_strategy_sleeves_mvp2_plan.md` |
 | 期权卖方筛选器 | `src/quant_system/options/screener.py` |
 | 期权雷达 | `src/quant_system/options/radar.py` |
+| 期权日任务与进度状态 | `src/quant_system/options/daily_task.py` |
+| 期权 v3 generation 快照 | `src/quant_system/options/radar_storage.py` |
+| ATM30 IV history / IVR warming | `src/quant_system/options/iv_history.py` |
+| 物理 EV 与推荐硬条件 | `src/quant_system/options/seller_score.py` |
+| 除息事件证据 | `src/quant_system/options/dividend_events.py` |
 | 期权雷达刷新辅助 | `src/quant_system/options/data_refresh.py` |
+| 期权推荐 API / 202/409 后台入口 | `src/quant_system/api/routes/options_radar.py` |
 | 本地 AlphaGBM 风格期权工具 | `src/quant_system/options/local_tools.py` |
 | 本地期权研究辅助 | `src/quant_system/options/local_research.py` |
 | Futu 期权 DuckDB 缓存 | `src/quant_system/storage/options_cache.py` |
@@ -294,7 +326,8 @@ rows；操作只看 [local-stack runbook](runbooks/agent-v0-2-local-stack.md)。
 
 | 文档 | 用途 |
 |---|---|
-| [futu/futu_integration_design.md](futu/futu_integration_design.md) | Futu 集成设计。 |
+| [guides/options-recommendations.md](guides/options-recommendations.md) | 现役期权推荐页面、后台任务、状态、模型与故障边界。 |
+| [futu/futu_integration_design.md](futu/futu_integration_design.md) | 2026-05 冻结的 Futu 集成设计，不是现役运行合同。 |
 | [futu/futu_environment_setup.md](futu/futu_environment_setup.md) | OpenD 与 SDK 设置。 |
 | [futu/futu_market_data_provider.md](futu/futu_market_data_provider.md) | Futu 股票数据提供方。 |
 | [futu/futu_options_data_provider.md](futu/futu_options_data_provider.md) | Futu 期权提供方、字段、速率限制与安全失败。 |
@@ -304,9 +337,9 @@ rows；操作只看 [local-stack runbook](runbooks/agent-v0-2-local-stack.md)。
 | [options/buyside_strategy_learning.md](options/buyside_strategy_learning.md) | 买方助手指南、场景实验室与风险披露。 |
 | [options/local_alphagbm_tools.md](options/local_alphagbm_tools.md) | 本地 AlphaGBM 风格期权工具与端点。 |
 | [delivery/phase_14_delivery.md](delivery/phase_14_delivery.md) | Phase 14 交付与验证记录。 |
-| [audits/README.md](audits/README.md) | 历史审计笔记与现行状态指引。 |
-| [audits/FRONTEND_REAL_DATA_REVIEW_2026-05-31.md](audits/FRONTEND_REAL_DATA_REVIEW_2026-05-31.md) | 现行前端真实数据与 sample 标注审查。 |
-| [audits/project_assessment_2026-06-11.html](audits/project_assessment_2026-06-11.html) | 2026-06-11 全项目多智能体评估报告（现行权威，HTML）。 |
+| [audits/README.md](audits/README.md) | 历史审计索引；当前状态只看本页顶部入口。 |
+| [audits/FRONTEND_REAL_DATA_REVIEW_2026-05-31.md](audits/FRONTEND_REAL_DATA_REVIEW_2026-05-31.md) | 2026-05-31 前端真实数据与 sample 标注历史快照。 |
+| [audits/project_assessment_2026-06-11.html](audits/project_assessment_2026-06-11.html) | 2026-06-11 全项目多智能体历史评估（HTML）。 |
 
 ## 5. 研究复现文档
 
@@ -330,10 +363,17 @@ rows；操作只看 [local-stack runbook](runbooks/agent-v0-2-local-stack.md)。
 
 | 页面 | 用途 |
 |---|---|
-| `/data-explorer` | 股票数据查看器。 |
+| `/` | Hermes shell 启用时进入助手首页；关闭时显示旧 dashboard。 |
+| `/watch` | 盯盘主面：quotes/cross/radar 三 pane。 |
 | `/brief` | 当日动态晨报预览；归档入口读取 PostgreSQL 中不可变 brief snapshot。 |
 | `/brief/[publicId]` | 已归档晨报的只读快照页。 |
-| `/hermes` | 默认研究工作台：Today + managed-session conversation + shared follow spine + Tasks/Approvals/Results，并提供已部署 D-34 的 Mandate/job/Artifact/paper canary 控制面。Composer 只在 exact local candidate/release window 且全部本地门禁通过时开放；external/history session 只读，public standing OFF，不提交真实交易。 |
+| `/brief/rollup/[publicId]` | 不可变周/月 brief rollup 与同类前后导航。 |
+| `/hermes` | Hermes 助手：今日/研究/模拟三本账、唯一 managed-session composer、可拖拽侧栏、对话内 lifecycle progress、recent sessions 与明确标源的 Platform result。缺材料同聊追问且 0 job，充分材料 1 job 并只到 verified candidate。 |
+| `/hermes/sessions/[sessionId]` | GET-only 已保存会话详情与显式 fork 深链。 |
+| `/hermes/results` | 平台/HQA 统一结果目录与详情。 |
+| `/hermes/results/[kind]/[resourceId]` | 一个 exact 统一结果 identity 的只读详情。 |
+| `/collection` | 策略目录与因子注册表的只读翻转卡片集；指标绑定完成的 backtest receipt。 |
+| `/library` | candidate-only 研究验证库；页面与轮询只读 remote book。只有 unbound + 64hex source digest 且 DSR/相关性/成本门通过的候选显示 owner/CSRF、digest-bound「启用模拟运行」动作；其他候选保留研究复核原因。 |
 | `/factor-lab` | 现有只读因子健康度与单标的择时仪表盘；HQA 工作台落地后应从一级入口降级为 run/detail 分析面。 |
 | `/factor-lab/[runId]` | 因子运行详情。 |
 | `/backtest` | 策略、universe 与因子权重回测运行。 |
@@ -342,20 +382,30 @@ rows；操作只看 [local-stack runbook](runbooks/agent-v0-2-local-stack.md)。
 | `/strategies/[runId]` | 已落盘的反转/动量研报复现运行详情。 |
 | `/docs/reversal-momentum` | 前端可读的复现文档。 |
 | `/experiments` | 实验扫描、可选滚动验证折、固定因子组合摘要、数据源标注与最佳运行回顾。 |
-| `/paper-trading` | 持久模拟账户（手动下单 + 策略一键再平衡）＋历史回放（研究）。 |
+| `/paper-trading` | 持久模拟账户、`view=map` 持仓/暴露账、策略仓与历史回放。 |
 | `/paper-trading/[runId]` | 历史回放运行详情。 |
-| `/position-map` | 模拟账户实时持仓地图（净值/现金/暴露/来源归因），另含回测暴露对比块。 |
 | `/options-screener` | 单标的卖方期权筛选，含质量过滤、`Avoid` 审计开关与备注列。 |
-| `/options-radar` | 每日卖方期权雷达快照。 |
+| `/options-radar` | 每日卖方期权推荐；22:00 自动更新，也可立即启动后台更新并查看进度。 |
 | `/options-radar/[symbol]` | 已保存的雷达候选，以及可选的实时期权链加载。 |
 | `/options-tools` | 本地 AlphaGBM 风格期权工具箱。 |
 | `/options-buyside` | 买方期权策略助手。 |
-| `/asia-radar` | 亚洲雷达：12 只美国上市国家 ETF 的只读跨市场热力图/排名/动态 K 型。专用 API 强制 `provider=futu`，失败不回退 sample；详情「指数」页签接入恒指/日经真实本地指数（其余市场显式待接入）；不展示 PE/PB/ERP/拥挤度/个股风险名单。 |
-| `/market-cross-section` | 市场横截面：预设篮子（AI/半导体关注、美股板块 ETF，或 ≤16 只显式 symbol）的只读 YTD 热力图 + 排序表。与亚洲雷达同一 fail-closed Futu 契约与同口径指标；不共享宇宙。 |
-| `/ai-news` | AI 新闻研究流（AI HOT 主源 + Horizon 热备 Facade），含精选动态、关键词/分类/时间窗筛选、日报、原文链接与实际 provider/served_from。 |
+| `/ai-news` | AI 新闻研究流深页，保留在 Settings 实验室；晨报承载默认 AI News 产品入口。 |
 | `/polymarket` | 只读预测市场研究。 |
 | `/agent-studio` | 过渡期只读候选池检查；展示源码与审计证据，不再提供平台 LLM task 或批准/拒绝控件，并引导返回 Hermes。 |
 | `/settings` | 脱敏后的本地设置。 |
+
+兼容跳转另列如下；`/en` 与 `/zh` 前缀同样适用。合并入口显式返回 301，
+`replications`/`order-book` 改名入口使用 Next.js permanent redirect（当前响应为 308）：
+
+| 旧路径 | 现役目的地 |
+|---|---|
+| `/data-explorer` | `/watch?pane=quotes` |
+| `/market-cross-section` | `/watch?pane=cross` |
+| `/asia-radar` | `/watch?pane=radar` |
+| `/position-map` | `/paper-trading?view=map` |
+| `/hermes/sessions` | `/hermes` |
+| `/replications` / `/replications/[runId]` | `/strategies` / `/strategies/[runId]` |
+| `/order-book` | `/polymarket` |
 
 前端文档：
 
@@ -394,19 +444,16 @@ quant-system doctor
 并输出安全开关、默认数据源、Futu/OpenD 端点、数据库索引配置和
 `data/_runtime/logs/backend.jsonl` 路径。
 
-期权雷达 sample 规模的真实运行：
+期权推荐正式 exact-34 任务：
 
-```powershell
-conda activate ai-quant
-quant-system options daily-scan --top 10
+```bash
+./ai-quant/bin/quant-system options daily-task \
+  --provider futu --top 34 --universe-source existing \
+  --earnings-source public --dividend-source public --vix-source public
 ```
 
-期权雷达调度任务（刷新标的池、财报、VIX 后再扫描）：
-
-```powershell
-conda activate ai-quant
-quant-system options daily-task --top 100 --universe-source public --earnings-source public --vix-source public
-```
+`daily-scan` 只可写隔离的非正式输出目录；sample 的所有输入、输出和 IV history 也必须
+完全隔离。完整命令见[期权推荐执行指南](execution/phase_13_execution.md)。
 
 买方助手调试运行：
 
@@ -457,34 +504,18 @@ quant-system options buyside-screen --ticker AAPL --view long_term_aggressive_bu
 
 - [architecture/database_cache_plan.md](architecture/database_cache_plan.md)
 
-当前状态与后续决策：
+现役存储速查：
 
-- DuckDB 现用于本地 Futu 期权报价窗口。
-- PostgreSQL 现（可选）用于 backtest/factor/paper/replication 运行索引。
-- PostgreSQL 现（可选）也用于 AI HOT 只读新闻条目缓存。
-- 四份 migration 的 14 张表（其中 003/004 为 11 张业务表）、brief archive 与 paper repository 已在代码、
-  throwaway DB 和重启后的 live 库验证。
-- paper account 的通用代码默认是 `file`；Agent v0.2 candidate local stack 则显式
-  要求 canonical。默认值和旧快照都不证明 live 模式；现场事实以顶部 dated check
-  与 local-stack readiness 为准。
-- `quant-system data prices` 现为只读 Futu/QFQ/1d JSON seam；不读取 local cache，也不
-  回退到 sample、Tiingo 或 Longbridge。
-- HQA 9A-9G、mini/full 9H 与 D-31 第一批三份计划（Wave 1）均已交付到各自明确边界。
-- Agent v0.2 source 当前含 016–028。2026-07-31 “live 有 016–027、没有 028”只是
-  pre-apply 历史快照；2026-08-01 窗口已完成一次 028 apply，随后 AlphaZeroBeta 重测仅
-  证明 private candidate 的机械生命周期。论文 intake verdict 未被运行时合同验证或接受，
-  factor/backtest/Gate/result 均未评价；P1 仍需 digest-bound `hqa.paper_intake/v1`
-  receipt/verifier。当前保持 candidate revoked、connector `reconcile_only`、public OFF，
-  禁止重放 028；未来只能用全新 candidate 补齐剩余 DoD，不能从历史 D-31 状态推导执行顺序。
-- 写端使用 PostgreSQL durable command/outbox/event ledger + deterministic connector；
-  `LISTEN/NOTIFY` 只作唤醒、periodic scan 补偿。`reconcile_only` 是默认安装姿态；
-  `supervised_dispatch` 只在 exact local candidate/release window 内运行。空队列零
-  provider/Hermes mutation，不采用 LLM cron 空轮询。
-- Agent v0.2 candidate safety 需要 canonical root-owner 唯一 `default` account，
-  materialized/raw `account_id` 与 JSON boolean `kill_switch=true` 一致。
-  `GET /api/safety/effective` 仅观察；candidate `status|open|revoke` 由操作者控制；
-  HQA Keychain 先做 non-creating `probe`，只有操作者可执行 `initialize-key`。
-- 剩余的 PostgreSQL 目标：雷达运行、请求日志，以及更丰富的
-  API 可见快照。
-- 对大型 OHLCV 与分析型时间序列数据集采用 Parquet / DuckDB。
-- 若 PostgreSQL 后续成为主要时间序列存储，可选引入 TimescaleDB。
+- 本机 Agent 栈使用 PostgreSQL canonical `default` 模拟账户；数据库不可用时不回退
+  文件账户。普通开发配置仍可显式选择 `file|mirror|canonical`，但默认值不能证明 live。
+- 正式 migration 已到 034，startup 固定不自动迁移；任何已应用 migration 都不得重放。
+- PostgreSQL 还承载运行索引、brief/news 缓存和 Agent durable ledger；DuckDB/Parquet
+  承载本地期权报价窗口与大型分析型时间序列。
+- `quant-system data prices` 是只读 Futu/QFQ/1d JSON seam，不从 local cache 或 sample
+  静默补位。
+- 当前本机聊天姿态是 `local_trust + supervised_dispatch`；public/release/live 仍关闭。
+  运行态以顶部 current 入口和 local-stack readiness 现场重查，不从旧 candidate 审计推断。
+
+016–028 apply、AlphaZeroBeta candidate、`reconcile_only` 和早期 PostgreSQL 待办只属于
+2026-07/08 的历史演进，详见 [database_cache_plan.md](architecture/database_cache_plan.md)
+与 `docs/audits/`；它们不是当前 NEXT、migration 队列或 connector 姿态。

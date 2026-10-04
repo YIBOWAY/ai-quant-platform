@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-HERMES_BIN="${QS_HERMES_OAUTH_PROXY_BIN:-/Users/sunyibo/.local/bin/hermes}"
+# Pin the model-access process to an immutable official installation. Updating
+# either chat runtime must not silently change a running proxy's import path.
+PROXY_RUNTIME_FILE="$HOME/.local/state/hermes-official/oauth-proxy-runtime"
+HERMES_BIN="${QS_HERMES_OAUTH_PROXY_BIN:-}"
+if [[ -z "$HERMES_BIN" && -f "$PROXY_RUNTIME_FILE" ]]; then
+  IFS= read -r HERMES_BIN < "$PROXY_RUNTIME_FILE"
+fi
+HERMES_BIN="${HERMES_BIN:-/Users/sunyibo/.local/bin/hermes}"
 
 fail() {
   echo "hermes_oauth_proxy_error=$1" >&2

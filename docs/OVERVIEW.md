@@ -7,10 +7,11 @@ Phase、Wave 与 Workbench 文档是历史交付证据，不是当前开发或�
 会话仍只读，继续上下文必须显式 fork。`chat_write_ready` 是本地状态，public standing
 继续 OFF。
 
-当前本地 `main` 含 D-34 与 migration source 016–032；030–032 已在本机正式库一次性
-apply，D-34 worker 已常驻，当前 soak 为 `1/10` 周期与 `1/5` 观察日。默认研究入口仍为
-D-33；D-34 需 `10/5` 时间门和最终零重复/no-live receipt 后才显式 cutover。旧现场
-migration 快照是历史证据，不应覆盖当前 source/runtime 的分别状态。当前进度先看
+物理 EV/除息代码的稳定锚点是 `a307b77`；可变 source、deployment mirror HEAD 与
+`chat_write_ready` 必须现场重查，public/release/live 仍关闭。当前研发与验收看 HQA
+研究重置计划v3.2 §12及09-20实施收据；历史浏览器工作流代码锚点为 Platform `9d0efee`/`b0615fd` 与 HQA
+`d51e376`。运行数字只保留在 dated 收据。旧 D-33/D-34 worker、Mandate、soak 与 migration
+030–032 的现场描述仅是历史证据。当前进度先看
 [INDEX.md](INDEX.md)，运维只看
 [Agent v0.2 local-stack runbook](runbooks/agent-v0-2-local-stack.md)，不要从旧
 phase 标题或 checkbox 推断。
@@ -21,8 +22,8 @@ phase 标题或 checkbox 推断。
 
 - 读取真实的美股与 ETF 历史数据。
 - 在因子实验室查看横截面与择时诊断（2026-06-11 起默认 `futu` 真实数据，数据源/股票池/择时标的/基准可在侧栏调整），并可保存因子研究运行。
-- 运行策略、universe、因子权重与基准回测；长回测可通过 opt-in 本地 async jobs 轮询与取消。
-- 从 API 读取已注册的策略目录与股票 universe 目录。
+- 运行策略、标的池、因子权重与基准回测；长回测可通过 opt-in 本地 async jobs 轮询与取消。
+- 从 API 读取已注册的策略目录与股票标的池目录。
 - 运行可选数据源（`sample` / `futu` / `tiingo`）的实验扫描并存储结果；结果页会只读展示被扫描的固定因子组合。
 - 在持久模拟账户（初始 100 万美元）里手动买卖美股，或让策略一键再平衡，并在持仓地图查看。
 - 运行历史回放式模拟交易仿真。
@@ -31,8 +32,10 @@ phase 标题或 checkbox 推断。
 
 - 读取 Futu 美股期权链与报价快照。
 - 运行单标的期权卖方收益筛选器（Options Income Screener），并通过质量过滤、`Avoid` 审计开关和备注列查看评级原因。
-- 在本地 universe 上运行每日期权雷达（Options Radar）扫描。
-- 从雷达 UI 刷新本地的雷达 universe、财报与 VIX 缓存；默认使用公开数据源，sample 数据仅作为明确的测试源。
+- 在 34 个策展标的上运行只读期权推荐扫描；周一至周六 22:00 自动更新，页面也可立即启动同一后台任务并查看进度。
+- IV Rank 未满 30 个正式交易日样本时显示积累进度，不阻断由真实报价、事件、正物理 EV 与流动性形成的推荐。
+- 从推荐页高级区单独刷新公开财报与 VIX；正式 34 标的策展名单不会被页面替换。
+- 周六由 HQA 调度在正式 34 标的之后另写隔离 top-100 宽池；sample 的输入、输出与 IV history 全部隔离。
 - 查看单标的雷达候选，并可选地加载实时期权链。
 - 使用 VIX/VIX3M 历史对市场状态（regime）进行分类。
 - 运行买方期权助手（Buy-Side Options Assistant），用于看涨的多头权利金结构。
@@ -47,21 +50,29 @@ phase 标题或 checkbox 推断。
 
 Hermes 与 AI 研究工作流：
 
-- Hermes 会话负责生成研究源码/产物；平台负责确定性摄入、候选池、人工审批、
-  一次性研究回测和 promote diff。
+- Hermes 同聊在 note、可执行 formula 与 ordered universe 完整时只创建一个
+  research-only job；Platform 负责固定资源双引擎执行、证据校验和 verified candidate
+  投影回原会话。缺材料时只追问且零入队。
+- 研究成功默认停在 verified。`/library` 是用户选择“启用模拟运行”的唯一产品动作面，
+  绑定 candidate digest、固定 `$10,000`，并区分研究验证与实际可启用资格；页面 GET/轮询
+  不写账，也没有自动挂仓。
 - `/brief` 提供动态晨报和不可变归档；`/hermes` 展示风险、预测、推演、周报、机会与
-  自动化状态，并通过本地 owner/CSRF 门提供 D-34 Mandate 与 paper-canary 操作面。
-- `/hermes/sessions` 通过平台 API/BFF 读取 official Hermes API Server 上已保存的
-  本机会话；session list/detail/messages 均为 server-side GET-only。Hermes Bearer key
+  自动化状态。
+- `/hermes` 合并最近会话列表；`/hermes/sessions/[sessionId]` 通过平台 API/BFF 读取
+  official Hermes API Server 上已保存的本机会话。旧 `/hermes/sessions` 是 301 alias；
+  session list/detail/messages 均为 server-side GET-only。Hermes Bearer key
   留在 owner-only 文件中，不进入浏览器。health、capabilities 和 session reads 不执行
   prompt、不调用 provider，也不消耗 Hermes 配置的 provider 额度。
+- `/hermes` 对当前 managed Session 显示排队、处理、分析、工具、回复和终态；连接
+  只在 SSE 收到 `ready` 后标为实时。工具名、参数、输出与推理正文不进入浏览器，
+  历史终态或关闭的移动侧栏不轮询活动接口。
 - `GET /api/safety/effective` 是 provider-free safety observation：canonical
   PostgreSQL 必须恰好一个 root-owner `default` 账户，materialized/raw
   `account_id` 与 JSON boolean `kill_switch=true` 一致，并绑定 current paper epoch。
   `effective=true` 也不等于 release。
-- 私有 candidate 由操作者用 `quant-system hermes candidate status|open|revoke`
-  管理。HQA Keychain 先做非创建式 `probe`；只有操作者可对 exact runtime 单独执行
-  `initialize-key`，普通 encrypt/put/bind 与 worker 不得创建 key。
+- HQA Keychain 先做非创建式 `probe`；只有操作者可对 exact runtime 单独执行
+  `initialize-key`，普通 encrypt/put/bind 与 worker 不得创建 key。旧 private-candidate
+  `status|open|revoke` 只保留为资格验证工具，不是本机聊天的日常开关。
 - 平台兼容 schema 1.0 的精确三来源合同与 schema 1.1 的精确六来源合同；whole-feed
   freshness budget 是 10800 秒。
 - 9G 由 HQA 本地 JSONL opportunity ledger 负责；平台只提供 CLI-only、file-backed 的
@@ -74,14 +85,15 @@ Hermes 与 AI 研究工作流：
   主读取链路。
 - 平台不复活 LLM runner；普通 chat prompt 只经 HQA encrypted Intent Payload
   authority，不进入 PostgreSQL 或 `/act`。
-- 论文入队机和双引擎研究作业（代码里仍叫 D-33/D-34）是研究账的两个来源，不是两套产品。
-  现行计划：HQA `docs/plans/2026-08-13-personal-quant-assistant.md`。新研究按需入队；
-  已挂上的策略才每天在模拟盘跑。`paper_only` 进不了 live registry。
-- 新 managed Session 的 composer 只有在 local flags、owner/CSRF、migration 028
-  readiness、effective paper safety、Keychain、candidate/release 与 connector
-  liveness 全通过时打开。External/history session 不原地写入。
+- 当前自然语言产品链只有 HQA same-chat；平台内部 `d34` namespace 只是固定资源
+  双引擎 worker/Registry 的实现名，不是第二套产品。新研究按需入队并停 verified；
+  已启用模拟运行的策略才每天跑。`paper_only` 进不了 live registry。
+- 新 managed Session 的 composer 只有在 local mutation flags、owner/CSRF、正式 034
+  schema/effective paper safety、Keychain、connector liveness 与一个有效 admission 全通过
+  时打开。当前 admission 是 owner-only `local_trust`；它在 local-trust/release 交叉状态中
+  优先，但绝不投影 public/release 授权。External/history session 不原地写入。
 - `public_chat_write_ready`、`public_write_authorized`、
-  `release_authorized` 继续 OFF；旧研究页 redirect/retirement 仍需独立批准。
+  `release_authorized` 继续 OFF；旧研究页、Mandate/canary 控件与 owner API 已退役删除。
 - 手工 Scene-B 和任何 live 资格仍必须人工评审。研究账和模拟账都只能进 paper，没有
   live 升级接口。常驻路径从不加载未绑定 candidate 文件。
 
@@ -95,8 +107,8 @@ AI 行业资讯：
 
 跨市场观察：
 
-- `/asia-radar` 用 12 只美国上市国家 ETF 做只读跨市场热力图、排名与动态 K 型分化。
-- `/market-cross-section` 用预设标的篮子（AI/半导体关注、美股板块 ETF 或显式 symbol 白名单）做只读 YTD 热力图与排序表；与亚洲雷达共享数据通路，不共享宇宙。
+- `/watch?pane=radar` 用 12 只美国上市国家 ETF 做只读跨市场热力图、排名与动态 K 型分化；旧 `/asia-radar` 为 301 alias。
+- `/watch?pane=cross` 用预设标的篮子（AI/半导体关注、美股板块 ETF 或显式 symbol 白名单）做只读 YTD 热力图与排序表；旧 `/market-cross-section` 为 301 alias。它与亚洲雷达共享数据通路，不共享标的池。
 - 数据严格来自 Futu 1d QFQ 日线，专用 API 失败即报 400/503，不回退 sample。
 - Phase 1 不提供 PE/PB、ERP、行业拥挤度或个股风险名单。
 
@@ -125,21 +137,16 @@ AI 行业资讯：
 
 ## 如何启动
 
-后端：
+正常本机启动只使用 deployment mirror 的常驻栈脚本：
 
-```powershell
-conda activate ai-quant
-quant-system serve --host 127.0.0.1 --port 8765
+```bash
+cd $HOME/programs/Hermes-quant-agent/data/_runtime/agent-v02-work/ai-quant-platform
+bash scripts/local_mac_stack.sh start
+bash scripts/local_mac_stack.sh status
 ```
 
-前端：
-
-```powershell
-cd src/frontend
-npm run dev -- --hostname 127.0.0.1 --port 3001
-```
-
-打开：
+服务由 LaunchAgent 持续运行，不依赖当前终端。开发态后端/前端命令见根 README；不要
+用开发命令替代 live stack。打开：
 
 ```text
 http://127.0.0.1:3001
@@ -156,16 +163,21 @@ http://127.0.0.1:3001
 - [模拟交易 Paper Trading](guides/paper-trading.md)
 - [持仓地图 Position Map](guides/position-map.md)
 - [AI 新闻研究流 AI News](guides/ai-news.md)
-- [Hermes 会话读取、密钥边界与故障排查](guides/hermes-sessions.md)
-- [D-34 Mandate 与 Paper Canary](guides/d34-workbench.md)
-- [D-34 架构](architecture/d34-autonomous-paper.md)
-- [D-34 本机运维](runbooks/d34-autonomous-paper.md)
+- [Hermes 会话、本地写路径与读取边界](guides/hermes-sessions.md)
+- [期权推荐：立即更新、六态和模型边界](guides/options-recommendations.md)
+- [D-34 内部历史架构](architecture/d34-autonomous-paper.md)
 
-模拟交易与持仓地图的设计与实现记录（单一 100 万模拟账户、策略一键再平衡 + 手动美股下单、统一持仓地图，**阶段 1-5 已实现**）：
+随旧 Mandate/canary 工作台、owner API 一同退役的操作指南已物理删除；不得从历史架构
+记录重建旧产品入口（口径见 [INDEX.md](INDEX.md)）。
+
+模拟交易与持仓地图的历史设计/实现记录（其中固定初始金额与阶段编号只代表当时设计，
+当前账户以 canonical PostgreSQL 事实为准）：
 
 - [模拟交易 + 持仓地图 重设计](design/paper_trading_position_map_redesign.md)
 
-前端于 2026-06-11 完成全页面重构（统一设计令牌、固定视口外壳、模拟交易双标签页、账户驱动持仓地图、E2E 38/38），详见 [delivery/frontend_refactor_2026-06-11_delivery.md](delivery/frontend_refactor_2026-06-11_delivery.md)。
+2026-06-11 前端重构的 dated 验收记录见
+[delivery/frontend_refactor_2026-06-11_delivery.md](delivery/frontend_refactor_2026-06-11_delivery.md)；
+它不是当前路由、测试数量或运行态证明。
 
 ## 新贡献者阅读顺序
 
@@ -183,6 +195,7 @@ http://127.0.0.1:3001
 
 期权方向，另读：
 
+- [guides/options-recommendations.md](guides/options-recommendations.md)
 - [futu/futu_options_data_provider.md](futu/futu_options_data_provider.md)
 - [options/options_screener_learning.md](options/options_screener_learning.md)
 - [options/buyside_strategy_learning.md](options/buyside_strategy_learning.md)
@@ -193,8 +206,9 @@ http://127.0.0.1:3001
 
 ## 当前交接
 
-当前阻断点不是补旧 UI 清单，而是把 source/live/runtime 事实闭合：source 有
-016–028；2026-07-31 的 live 核对有 016–027、没有 028。只按 local-stack 闭合
-完整 operator window，再做非创建式 Keychain probe、短时 private candidate、fresh
-connector 与真实 E2E。失败或漂移就 CAS revoke candidate，并按该 runbook 恢复。
-整个过程中 trading kill switch 为 true，public standing 为 OFF。
+当前入口是 [INDEX.md](INDEX.md) 与HQA研究重置计划v3.2 §12，主人已授权完整Phase2；
+实现、真实计算与部署状态看[实施收据](https://github.com/YIBOWAY/Hermes-quant-agent/blob/main/docs/receipts/2026-09-20-phase2-implementation.md)。可变HEAD
+和运行态必须现场重查，不沿用旧OP的接班点或完成标签。Public/release/live继续关闭；安全开关以现场API为准。收据中的
+dated 快照只在收据中解释。d489 历史分配台账缺口已按 HQA 计划 §13.38
+在备份后追加唯一 correction，经济状态与现金未改；
+今后其他正式修账仍需另行授权。

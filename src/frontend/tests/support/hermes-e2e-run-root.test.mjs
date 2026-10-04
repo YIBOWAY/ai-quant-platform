@@ -224,7 +224,7 @@ describe("Hermes Playwright run-root ownership", () => {
     const baseRoot = makeBaseRoot();
     const payload = Buffer.from(
       JSON.stringify({
-        args: ["-e", 'process.stdout.write("fixture-child-ready\\n")'],
+        args: ["-e", 'process.stdout.write(`fixture-child-ready\\nchild-cwd=${process.cwd()}\\n`)'],
         backendPort: 41_003,
         baseRoot,
         command: process.execPath,
@@ -241,6 +241,7 @@ describe("Hermes Playwright run-root ownership", () => {
       });
       assert.equal(result.status, 0, result.stderr);
       assert.match(result.stdout, /fixture-child-ready/);
+      assert.ok(result.stdout.includes(`child-cwd=${path.join(baseRoot, "supervised-run-003")}`));
       assert.match(result.stdout, /"run_id":"supervised-run-003"/);
       assert.equal(
         fs.existsSync(path.join(baseRoot, "supervised-run-003")),

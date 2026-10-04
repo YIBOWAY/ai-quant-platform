@@ -15,6 +15,7 @@ from quant_system.data.price_history import (
     HistoricalPriceReadError,
     HistoricalPriceSnapshot,
 )
+from quant_system.data.providers.longbridge import LongbridgeProviderError
 from quant_system.data.providers.tiingo import TiingoProviderError
 from quant_system.data.providers.twelvedata import TwelveDataProviderError
 from quant_system.data.schema import normalize_ohlcv_dataframe
@@ -30,7 +31,14 @@ def _frame(
     *,
     adjustment: str,
     close: float = 100.0,
+    days: tuple[str, ...] | None = None,
 ) -> pd.DataFrame:
+    if days is None:
+        days = (
+            tuple(day.date().isoformat() for day in pd.bdate_range(START, END))
+            if provider == "longbridge"
+            else ("2026-08-03", "2026-08-10")
+        )
     rows = [
         {
             "symbol": symbol,
@@ -45,7 +53,7 @@ def _frame(
             "knowledge_ts": f"{day}T22:00:00Z",
         }
         for symbol in symbols
-        for day in ("2026-08-03", "2026-08-10")
+        for day in days
     ]
     return normalize_ohlcv_dataframe(pd.DataFrame(rows), provider=provider, interval="1d")
 
@@ -113,6 +121,158 @@ def _settings() -> Settings:
     settings.api_keys.twelvedata_api_key = None
     settings.api_keys.tiingo_api_token = None
     return settings
+
+
+def test_longbridge_chain_is_not_touched_when_futu_succeeds() -> None:
+    def forbidden(*_args):
+        pytest.fail("a successful primary must not create or call any backup")
+
+    result = read_daily_bars_with_backup(
+        settings=_settings(),
+        symbols=SYMBOLS,
+        start=START,
+        end=END,
+        backup_providers=("longbridge",),
+        provider_builder=forbidden,
+        primary_reader=lambda **_: _futu_snapshot(),
+    )
+    assert result.served_by == "futu"
+    assert result.fallbacks == []
+
+
+def test_longbridge_backup_has_forward_provenance() -> None:
+    backup = _FakeBackupProvider("longbridge", frame=_frame("longbridge", adjustment="forward"))
+    result = read_daily_bars_with_backup(
+        settings=_settings(),
+        symbols=SYMBOLS,
+        start=START,
+        end=END,
+        backup_providers=("longbridge",),
+        provider_builder=lambda *_: backup,
+        primary_reader=_futu_failure,
+    )
+    assert backup.calls == 1
+    assert result.served_by == "longbridge"
+    assert result.snapshot.adjustment == "forward"
+    assert result.snapshot.source == "longbridge"
+    assert result.fallbacks[0]["provider"] == "futu"
+    assert result.fallbacks[0]["code"] == "opend_unavailable"
+
+
+def test_longbridge_permission_error_is_recorded_before_next_backup() -> None:
+    backups = {
+        "longbridge": _FakeBackupProvider(
+            "longbridge", error=LongbridgeProviderError("permission_denied")
+        ),
+        "tiingo": _FakeBackupProvider("tiingo", frame=_frame("tiingo", adjustment="adjusted")),
+    }
+    result = read_daily_bars_with_backup(
+        settings=_settings(),
+        symbols=SYMBOLS,
+        start=START,
+        end=END,
+        backup_providers=("longbridge", "tiingo"),
+        provider_builder=lambda _, name: backups[name],
+        primary_reader=_futu_failure,
+    )
+    assert result.served_by == "tiingo"
+    assert result.fallbacks[1]["code"] == "permission_denied"
+
+
+@pytest.mark.parametrize("origin", ["futu", "sample"])
+def test_longbridge_backup_rejects_mixed_or_sample_source(origin) -> None:
+    frame = _frame("longbridge", adjustment="forward")
+    frame.loc[0, "provider"] = origin
+    backup = _FakeBackupProvider("longbridge", frame=frame)
+    with pytest.raises(HistoricalPriceReadError) as error:
+        read_daily_bars_with_backup(
+            settings=_settings(),
+            symbols=SYMBOLS,
+            start=START,
+            end=END,
+            backup_providers=("longbridge",),
+            provider_builder=lambda *_: backup,
+            primary_reader=_futu_failure,
+        )
+    assert error.value.code == "historical_prices_backup_chain_exhausted"
+
+
+def test_longbridge_cache_refreshes_when_a_new_requested_session_has_closed(tmp_path) -> None:
+    cache = EquityBarCache(tmp_path / "longbridge-bars.duckdb")
+    days = ("2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05")
+    before_close = pd.Timestamp("2024-01-05T15:00:00Z")
+    after_close = pd.Timestamp("2024-01-05T22:00:00Z")
+    cache.write(
+        _frame("longbridge", ["AAPL"], adjustment="forward", days=days[:-1]),
+        provider="longbridge", symbols=["AAPL"], interval="1d", adjustment="forward",
+        start=days[0], end=days[-1], fetched_at=before_close,
+    )
+    backup = _FakeBackupProvider(
+        "longbridge", frame=_frame("longbridge", ["AAPL"], adjustment="forward", days=days),
+    )
+    request = dict(
+        settings=_settings(), symbols=["AAPL"], start=days[0], end=days[-1],
+        backup_providers=("longbridge",), provider_builder=lambda *_: backup,
+        cache=cache, primary_reader=_futu_failure,
+    )
+    before = read_daily_bars_with_backup(**request, as_of=before_close)
+    assert before.snapshot.source == "longbridge_cache"
+    assert before.snapshot.series[0]["last_date"] == "2024-01-04"
+    assert backup.calls == 0
+
+    after = read_daily_bars_with_backup(**request, as_of=after_close)
+    assert after.snapshot.source == "longbridge"
+    assert after.snapshot.series[0]["row_count"] == 4
+    assert after.snapshot.series[0]["last_date"] == "2024-01-05"
+    assert backup.calls == 1
+    assert after.fallbacks[1]["code"] == "contract_invalid"
+    assert "cached longbridge rows failed validation" in after.fallbacks[1]["message"]
+
+    refreshed = read_daily_bars_with_backup(
+        **request, as_of=after_close + pd.Timedelta(minutes=1),
+    )
+    assert refreshed.snapshot.source == "longbridge_cache"
+    assert refreshed.snapshot.series[0]["last_date"] == "2024-01-05"
+    assert backup.calls == 1
+
+
+def test_longbridge_cache_with_matching_edges_but_missing_middle_sessions_is_miss(tmp_path) -> None:
+    cache = EquityBarCache(tmp_path / "longbridge-bars.duckdb")
+    days = ("2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05")
+    as_of = pd.Timestamp("2024-01-06T06:00:00+08:00")
+    cache.write(
+        _frame("longbridge", ["AAPL"], adjustment="forward", days=(days[0], days[-1])),
+        provider="longbridge", symbols=["AAPL"], interval="1d", adjustment="forward",
+        start=days[0], end=days[-1], fetched_at=as_of,
+    )
+    backup = _FakeBackupProvider(
+        "longbridge", frame=_frame("longbridge", ["AAPL"], adjustment="forward", days=days),
+    )
+    result = read_daily_bars_with_backup(
+        settings=_settings(), symbols=["AAPL"], start=days[0], end=days[-1],
+        backup_providers=("longbridge",), provider_builder=lambda *_: backup,
+        cache=cache, primary_reader=_futu_failure, as_of=as_of,
+    )
+    assert result.snapshot.source == "longbridge"
+    assert result.snapshot.series[0]["row_count"] == 4
+    assert backup.calls == 1
+    assert result.fallbacks[1]["code"] == "contract_invalid"
+
+
+def test_longbridge_live_backup_cannot_serve_an_incomplete_session_window() -> None:
+    backup = _FakeBackupProvider(
+        "longbridge", frame=_frame(
+            "longbridge", ["AAPL"], adjustment="forward", days=("2024-01-02", "2024-01-05"),
+        ),
+    )
+    with pytest.raises(HistoricalPriceReadError) as error:
+        read_daily_bars_with_backup(
+            settings=_settings(), symbols=["AAPL"], start="2024-01-02", end="2024-01-05",
+            backup_providers=("longbridge",), provider_builder=lambda *_: backup,
+            primary_reader=_futu_failure, as_of=pd.Timestamp("2024-01-05T22:00:00Z"),
+        )
+    assert error.value.code == "historical_prices_backup_chain_exhausted"
+    assert backup.calls == 1
 
 
 def test_chain_requires_explicit_opt_in() -> None:

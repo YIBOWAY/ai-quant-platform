@@ -4,6 +4,24 @@
 
 ---
 
+## 当前状态 — 导航与期权推荐可用性（2026-08-26）
+
+- 当前前端路由以 `src/frontend/app` 为准：`/watch` 合并 quotes/cross/radar，
+  `/paper-trading?view=map` 合并持仓地图，`/hermes` 合并会话列表；旧路径由
+  `next.config.ts` 保留兼容跳转（合并入口 301、改名入口 permanent/308）。新增 `/collection` 只读策略/因子卡片集与
+  `/library` 已验证候选库。
+- `/options-radar` 现在提供“立即更新今日推荐”，POST 返回 202 后后台继续，重复或
+  与定时任务重叠返回 409；页面呈现待更新、运行、有推荐、真实零结果、partial 和
+  failure/unavailable，并把长表压缩为紧凑行 + 展开详情。
+- IVR warming 不再阻断推荐；页面展示 `n/30`。正式任务固定 34 标的，页面高级区只
+  刷新财报/VIX，不刷新正式 universe。22:00 调度由 HQA Hermes cron 拥有。
+- 物理 EV/除息代码的稳定锚点为 `a307b77`；可变 source/deployment HEAD 必须现场
+  重查。代码闭合不等于 runtime 完整：2026-08-26 收据记录正式 generation 1/34、
+  0 候选，隔离 34/34 Top 20 不能替代它，新 22:00 自然触发当时也尚未观察。
+- **退役说明：** 下文 2026-06 历史条目中的
+  `QS_OPTIONS_RADAR_STARTUP_CATCHUP_ENABLED` 与 API startup catch-up 已从现役代码
+  删除；这些段落只记录当时方案，不可再作为当前操作指引。
+
 ## 后续更新 — 回测基准、订单约束与复现持久化（2026-06-15）
 
 - 回测表单和 `/api/backtests/run` 现在暴露 `min_order_value` 与 `whole_share_orders`。默认仍是 `0 / false`，保持历史研究结果兼容；启用后，订单生成和现金不足部分成交都会向下取整到整股，并跳过低于最小金额的订单。

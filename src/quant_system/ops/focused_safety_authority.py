@@ -15,17 +15,14 @@ from typing import Any, Literal
 
 CONTRACT = "agent-v0.2-focused-safety-evidence/v1"
 EXPECTED_COLLECTION_COUNT = 178
-EXPECTED_COLLECTION_SHA256 = (
-    "9552b35a38c2a22081cc2dc5e48397ee88b6c470b66033dc22828a84b8633a1e"
-)
+EXPECTED_COLLECTION_SHA256 = "9552b35a38c2a22081cc2dc5e48397ee88b6c470b66033dc22828a84b8633a1e"
 EVIDENCE_ENVIRONMENT_VARIABLE = "QS_AGENT_V02_FOCUSED_SAFETY_EVIDENCE_DIR"
 JUNIT_FILE_NAME = "focused-safety.junit.xml"
 RECEIPT_FILE_NAME = "focused-safety.receipt.json"
 AUTHORITY_EXIT_STATUS = 78
 
 _FUTU_SKIP_NODE_IDS = (
-    "tests/test_api_safety.py::"
-    "test_futu_skill_mutating_trade_entrypoints_are_disabled",
+    "tests/test_api_safety.py::test_futu_skill_mutating_trade_entrypoints_are_disabled",
 )
 _RELEASE_DATABASE_SKIP_NODE_IDS = (
     "tests/test_hermes_release_authority.py::"
@@ -65,63 +62,6 @@ _RELEASE_DATABASE_SKIP_NODE_IDS = (
     "tests/test_release_authority_hardening.py::"
     "test_runtime_cannot_forge_release_rows_and_legitimate_path_survives",
 )
-_PAPER_GATE_DATABASE_SKIP_NODE_IDS = (
-    "tests/test_paper_gate_authority.py::"
-    "test_action_digest_conflict_and_expired_lease_recover_as_unknown",
-    "tests/test_paper_gate_authority.py::"
-    "test_completion_contract_accepts_canonical_revision_promotion_id",
-    "tests/test_paper_gate_authority.py::"
-    "test_completion_contract_accepts_exact_research_claim_lineage_v2",
-    "tests/test_paper_gate_authority.py::"
-    "test_completion_contract_rejects_partial_research_claim_lineage_v2",
-    "tests/test_paper_gate_authority.py::"
-    "test_definitive_port_outcome_unknown_is_durable",
-    "tests/test_paper_gate_authority.py::"
-    "test_durable_gate_chain_calls_exact_hqa_ports_and_replays_after_restart",
-    "tests/test_paper_gate_authority.py::"
-    "test_gate1_source_evidence_is_exact_workspace_bound_and_rehashed",
-    "tests/test_paper_gate_authority.py::"
-    "test_gate2_rejection_preserves_continuation_identity_for_restart_show",
-    "tests/test_paper_gate_authority.py::"
-    "test_hqa_receipt_cannot_substitute_hermes_session_id",
-    "tests/test_paper_gate_authority.py::"
-    "test_malformed_post_mutation_receipt_is_unknown_and_never_retried",
-    "tests/test_paper_gate_authority.py::"
-    "test_post_hqa_success_finalize_failure_is_durable_unknown_on_restart",
-    "tests/test_paper_gate_authority.py::"
-    "test_registration_requires_exact_ready_platform_managed_session",
-    "tests/test_paper_gate_authority.py::"
-    "test_runtime_security_rejects_admin_or_migrator_connection",
-    "tests/test_paper_gate_authority.py::"
-    "test_schema_readiness_fails_closed_on_security_drift"
-    "[ALTER POLICY v4r_root_scope ON quant_system.agent_v02_paper_gate_actions "
-    "USING (true) WITH CHECK (true)]",
-    "tests/test_paper_gate_authority.py::"
-    "test_schema_readiness_fails_closed_on_security_drift"
-    "[ALTER TABLE quant_system.agent_v02_paper_gate_actions DROP CONSTRAINT "
-    "agent_v02_paper_gate_actions_action_state_check]",
-    "tests/test_paper_gate_authority.py::"
-    "test_schema_readiness_fails_closed_on_security_drift"
-    "[ALTER TABLE quant_system.agent_v02_paper_gate_actions DROP CONSTRAINT "
-    "agent_v02_paper_gate_actions_pkey]",
-    "tests/test_paper_gate_authority.py::"
-    "test_schema_readiness_fails_closed_on_security_drift"
-    "[ALTER TABLE quant_system.agent_v02_paper_gate_challenges ALTER COLUMN "
-    "platform_session_id DROP NOT NULL]",
-    "tests/test_paper_gate_authority.py::"
-    "test_schema_readiness_fails_closed_on_security_drift"
-    "[CREATE OR REPLACE FUNCTION "
-    "quant_system.require_agent_v02_paper_gate_ready_session() RETURNS trigger "
-    "LANGUAGE plpgsql STABLE SECURITY INVOKER AS 'BEGIN RETURN NEW; END;']",
-    "tests/test_paper_gate_authority.py::"
-    "test_schema_readiness_fails_closed_on_security_drift"
-    "[DROP INDEX quant_system.ux_agent_v02_paper_gate_single_action]",
-    "tests/test_paper_gate_authority.py::"
-    "test_schema_readiness_fails_closed_on_security_drift"
-    "[DROP TRIGGER trg_agent_v02_paper_gate_ready_session ON "
-    "quant_system.agent_v02_paper_gate_challenges]",
-)
-
 AUTHORIZED_SKIP_REASONS: Mapping[str, str] = MappingProxyType(
     {
         **dict.fromkeys(
@@ -131,10 +71,6 @@ AUTHORIZED_SKIP_REASONS: Mapping[str, str] = MappingProxyType(
         **dict.fromkeys(
             _RELEASE_DATABASE_SKIP_NODE_IDS,
             "set QS_TEST_DATABASE_URL to run PostgreSQL integration tests",
-        ),
-        **dict.fromkeys(
-            _PAPER_GATE_DATABASE_SKIP_NODE_IDS,
-            "set a PostgreSQL test admin URL for paper Gate tests",
         ),
     }
 )
@@ -257,9 +193,7 @@ def _validated_collection(
         not node_ids
         or len(set(node_ids)) != len(node_ids)
         or any(
-            not isinstance(node_id, str)
-            or not node_id.startswith("tests/")
-            or "::" not in node_id
+            not isinstance(node_id, str) or not node_id.startswith("tests/") or "::" not in node_id
             for node_id in node_ids
         )
     ):
@@ -318,20 +252,14 @@ def _validate_non_pass_authority(
         invalid_code="focused_safety_xfail_expectation_invalid",
     )
     observed_skips = {
-        result.node_id: result.reason
-        for result in results
-        if result.outcome == "skipped"
+        result.node_id: result.reason for result in results if result.outcome == "skipped"
     }
     observed_xfails = {
-        result.node_id: result.reason
-        for result in results
-        if result.outcome == "xfailed"
+        result.node_id: result.reason for result in results if result.outcome == "xfailed"
     }
     if observed_skips != expected_skips:
         raise FocusedSafetyAuthorityError("focused_safety_skip_authority_mismatch")
-    if observed_xfails != expected_xfails or any(
-        result.outcome == "xpassed" for result in results
-    ):
+    if observed_xfails != expected_xfails or any(result.outcome == "xpassed" for result in results):
         raise FocusedSafetyAuthorityError("focused_safety_xfail_authority_mismatch")
 
 
@@ -499,31 +427,19 @@ _PYTEST_STATE: _PytestRunState | None = None
 
 def _require_repository_module_binding() -> None:
     installed = Path(__file__).resolve()
-    repository = (
-        Path.cwd()
-        / "src"
-        / "quant_system"
-        / "ops"
-        / "focused_safety_authority.py"
-    )
+    repository = Path.cwd() / "src" / "quant_system" / "ops" / "focused_safety_authority.py"
     for path in (installed, repository):
         if path.is_symlink() or not path.is_file():
-            raise FocusedSafetyAuthorityError(
-                "focused_safety_authority_module_unsafe"
-            )
+            raise FocusedSafetyAuthorityError("focused_safety_authority_module_unsafe")
         info = path.stat()
         if (
             not stat.S_ISREG(info.st_mode)
             or info.st_uid != os.getuid()
             or stat.S_IMODE(info.st_mode) & 0o022
         ):
-            raise FocusedSafetyAuthorityError(
-                "focused_safety_authority_module_unsafe"
-            )
+            raise FocusedSafetyAuthorityError("focused_safety_authority_module_unsafe")
     if _sha256_file(installed) != _sha256_file(repository):
-        raise FocusedSafetyAuthorityError(
-            "focused_safety_authority_module_mismatch"
-        )
+        raise FocusedSafetyAuthorityError("focused_safety_authority_module_mismatch")
 
 
 def _require_evidence_directory(config: Any) -> Path:
@@ -713,8 +629,7 @@ def pytest_sessionfinish(session: Any, exitstatus: int) -> None:
     authority_error = state.authority_error
     if authority_error is None:
         results = tuple(
-            _classify_report(node_id, state.reports.get(node_id, {}))
-            for node_id in state.collected
+            _classify_report(node_id, state.reports.get(node_id, {})) for node_id in state.collected
         )
         try:
             evidence = build_focused_safety_evidence(

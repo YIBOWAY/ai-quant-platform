@@ -16,6 +16,11 @@ import type {
 } from "@/lib/api";
 import { buildFactorLabBacktestHref } from "@/lib/factorLabHandoff";
 import { localizePath, type Locale } from "@/lib/locale";
+import {
+  localizedFactorDescription,
+  localizedFactorName,
+  localizedUniverseName,
+} from "@/lib/catalogPresentation";
 
 type FactorLabDashboardProps = {
   dashboard: FactorLabResponse;
@@ -24,6 +29,7 @@ type FactorLabDashboardProps = {
   universes: UniverseDefinition[];
   controlsInitial: FactorLabControlsInitial;
   locale: Locale;
+  selectedFactorId?: string;
 };
 
 const copy = {
@@ -67,7 +73,7 @@ const copy = {
     crossTab: "Cross-Sectional Health",
     timingTab: "Single-Ticker Timing",
     crossTitle: "Cross-Sectional Factor Health",
-    crossDesc: "Per-factor predictive quality across the selected universe. Hover headers for definitions; values are 0-1 fractions.",
+    crossDesc: "Per-factor predictive quality across the selected universe. Hover headers for definitions. No usable samples means unknown metrics, not a zero IC.",
     timingTitle: (symbol: string) => `${symbol} Timing Diagnostics`,
     timingDesc: "Long-when-z-score-positive sanity test per factor on the timing symbol. '--' = never evaluated (no data).",
     emptyTitle: "No diagnostics",
@@ -127,7 +133,7 @@ const copy = {
     crossTab: "横截面体检",
     timingTab: "单标的择时",
     crossTitle: "横截面因子体检",
-    crossDesc: "各因子在所选股票池内的预测质量。悬停列头看定义；数值为 0-1 小数。",
+    crossDesc: "各因子在所选股票池内的预测质量。悬停列头看定义；没有有效样本时指标留空，不代表 IC 为零。",
     timingTitle: (symbol: string) => `${symbol} 择时诊断`,
     timingDesc: "每个因子在择时标的上的「z 分数为正则做多」抽检。“--” = 没有可评估数据。",
     emptyTitle: "暂无诊断",
@@ -159,13 +165,14 @@ export function FactorLabDashboard({
   universes,
   controlsInitial,
   locale,
+  selectedFactorId,
 }: FactorLabDashboardProps) {
   const text = copy[locale];
   const timingSymbol = dashboard.timing.symbol || "QQQ";
   const backtestHref = buildFactorLabBacktestHref({
     benchmarkSymbol: controlsInitial.benchmarkSymbol,
     end: controlsInitial.end,
-    factorIds: dashboard.factors.map((factor) => factor.factor_id),
+    factorIds: selectedFactorId ? [selectedFactorId] : dashboard.factors.map((factor) => factor.factor_id),
     locale,
     lookback: controlsInitial.lookback,
     provider: controlsInitial.provider,
@@ -190,19 +197,33 @@ export function FactorLabDashboard({
     win_rate: GLOSSARY.winRate[locale],
     direction: locale === "zh" ? "因子值越高越好还是越低越好（决定 IC 正负怎么读）。" : "Whether higher or lower factor values are better (how to read the IC sign).",
   };
+  const factorById = new Map(
+    dashboard.factors.map((factor) => [factor.factor_id, factor]),
+  );
+  const displayFactorName = (row: PreviewRecord) => {
+    const factorId = String(row.factor_id ?? "");
+    const factor = factorById.get(factorId);
+    if (factor) return localizedFactorName(factor, locale);
+    return locale === "zh" ? "未命名因子" : String((row.factor_name ?? factorId) || "--");
+  };
 
-  const crossRows = (dashboard.cross_sectional.rows as PreviewRecord[]).map((row) => ({
+  const crossRows = (dashboard.cross_sectional.rows as PreviewRecord[]).filter(row => !selectedFactorId || row.factor_id === selectedFactorId).map((row) => ({
     ...row,
+    ...(Number(row.sample_count ?? 0) > 0 ? {} : {
+      ic_mean: null, ic_decay: null, quantile_spread: null, turnover: null,
+    }),
+    factor_name: displayFactorName(row),
     direction:
       String(row.direction ?? "") === "lower_is_better" ? text.directionDown :
       String(row.direction ?? "") === "higher_is_better" ? text.directionUp :
       String(row.direction ?? "--"),
   }));
-  const timingRows = (dashboard.timing.rows as PreviewRecord[]).map((row) => {
+  const timingRows = (dashboard.timing.rows as PreviewRecord[]).filter(row => !selectedFactorId || row.factor_id === selectedFactorId).map((row) => {
     const noData = Number(row.trade_count ?? 0) === 0 && Number(row.coverage ?? 0) === 0;
-    if (!noData) return row;
+    const displayedRow = { ...row, factor_name: displayFactorName(row) };
+    if (!noData) return displayedRow;
     return {
-      ...row,
+      ...displayedRow,
       sharpe: "--",
       max_drawdown: "--",
       win_rate: "--",
@@ -217,18 +238,9 @@ export function FactorLabDashboard({
       label: text.crossTab,
       content: (
         <DataPreviewTable
-          columns={[
-            "factor_id",
-            "factor_name",
-            "direction",
-            "ic_mean",
-            "ic_decay",
-            "quantile_spread",
-            "turnover",
-            "coverage",
-            "sample_count",
-          ]}
+          columns={["factor_id", "factor_name", "direction", "ic_mean", "ic_decay", "quantile_spread", "turnover", "coverage", "sample_count"]}
           columnLabels={text.columns}
+          columnFormats={{ quantile_spread: "percent", turnover: "percent", coverage: "percent", sample_count: "integer" }}
           columnTips={columnTips}
           description={text.crossDesc}
           emptyDescription={text.emptyDesc}
@@ -245,16 +257,9 @@ export function FactorLabDashboard({
       label: text.timingTab,
       content: (
         <DataPreviewTable
-          columns={[
-            "factor_id",
-            "factor_name",
-            "sharpe",
-            "max_drawdown",
-            "win_rate",
-            "trade_count",
-            "coverage",
-          ]}
+          columns={["factor_id", "factor_name", "sharpe", "max_drawdown", "win_rate", "trade_count", "coverage"]}
           columnLabels={text.columns}
+          columnFormats={{ max_drawdown: "percent", win_rate: "percent", coverage: "percent", trade_count: "integer" }}
           columnTips={columnTips}
           description={text.timingDesc}
           emptyDescription={text.emptyDesc}
@@ -298,7 +303,7 @@ export function FactorLabDashboard({
             <MetricStat
               size="inline"
               label={text.universe}
-              value={`${dashboard.universe.name} · ${dashboard.universe.symbols.length || "--"}`}
+              value={`${localizedUniverseName(dashboard.universe, locale)} · ${dashboard.universe.symbols.length || "--"}`}
               hint={dashboard.universe.symbols.join(", ")}
             />
             <MetricStat size="inline" label={text.benchmark} value={dashboard.benchmark_symbol} />
@@ -378,14 +383,16 @@ export function FactorLabDashboard({
                 {dashboard.factors.map((factor) => (
                   <li key={factor.factor_id}>
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-data-mono text-xs text-text-primary">{factor.factor_name}</span>
+                      <span className="font-data-mono text-xs text-text-primary">
+                        {localizedFactorName(factor, locale)}
+                      </span>
                       <span className="font-label-caps text-[10px] text-text-secondary">
                         {factor.direction === "lower_is_better" ? text.directionDown : text.directionUp}
                       </span>
                     </div>
-                    {factor.description ? (
-                      <p className="mt-0.5 font-body-sm text-text-secondary">{factor.description}</p>
-                    ) : null}
+                    <p className="mt-0.5 font-body-sm text-text-secondary">
+                      {localizedFactorDescription(factor, locale)}
+                    </p>
                   </li>
                 ))}
               </ul>

@@ -803,7 +803,7 @@ def _driver_basket_overlay_base() -> dict[str, Any]:
     return {
         "status": "unavailable",
         "label_en": "DRIVER BASKET — not an index substitute",
-        "label_zh": "龙头篮子——非指数替代",
+        "label_zh": "相关龙头股票",
         "basket_note": "unweighted display; no point-in-time index weights",
         "leaders": [],
         "reason_code": None,

@@ -42,7 +42,7 @@ import {
 import { selectDisplayRun } from "@/lib/runSource";
 import { getServerLocale } from "@/lib/serverLocale";
 import { getCachedHealth } from "@/lib/serverApi";
-import { localizePath } from "@/lib/locale";
+import { localizePath, type Locale } from "@/lib/locale";
 
 const copy = {
   en: {
@@ -81,7 +81,7 @@ const copy = {
     startBacktest: "Start New Backtest",
     runFactor: "Run Factor Analysis",
     openHermes: "Open Hermes Workbench",
-    newAgent: "New Agent Task",
+    viewAgents: "View Agent Candidates",
     openSettings: "Open Settings",
     envState: "ENVIRONMENT STATE",
     api: "API",
@@ -128,8 +128,8 @@ const copy = {
     quickActions: "快捷操作",
     startBacktest: "新建回测",
     runFactor: "运行因子分析",
-    openHermes: "打开 Hermes 工作台",
-    newAgent: "新建智能体任务",
+    openHermes: "打开 Hermes 助手",
+    viewAgents: "查看智能体候选",
     openSettings: "打开设置",
     envState: "环境状态",
     api: "接口",
@@ -145,7 +145,7 @@ const copy = {
 
 type DashboardCopy = (typeof copy)["en"] | (typeof copy)["zh"];
 
-function formatRunTimestamp(value?: string | null) {
+function formatRunTimestamp(value: string | null | undefined, locale: Locale) {
   if (!value) {
     return "--";
   }
@@ -153,7 +153,7 @@ function formatRunTimestamp(value?: string | null) {
   if (Number.isNaN(date.getTime())) {
     return value;
   }
-  return new Intl.DateTimeFormat("en-US", {
+  return new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-US", {
     month: "short",
     day: "2-digit",
     hour: "2-digit",
@@ -372,7 +372,7 @@ export async function LegacyDashboard() {
                     {dashboardRunSummary(run)}
                   </td>
                   <td className="whitespace-nowrap px-3 py-3 text-right font-data-mono text-xs text-text-secondary">
-                    {formatRunTimestamp(run.created_at)}
+                    {formatRunTimestamp(run.created_at, locale)}
                   </td>
                 </tr>
               ))}
@@ -412,7 +412,7 @@ export async function LegacyDashboard() {
               href={localizePath("/agent-studio", locale)}
               className="flex w-full items-center gap-3 rounded-lg border border-border-subtle bg-bg-surface-muted px-3 py-2 text-left font-body-sm text-text-primary transition-colors hover:border-info"
             >
-              <Bot size={14} className="text-info" /> {text.newAgent}
+              <Bot size={14} className="text-info" /> {text.viewAgents}
             </Link>
             <Link
               href={localizePath("/settings", locale)}

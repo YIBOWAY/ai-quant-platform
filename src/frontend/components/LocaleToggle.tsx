@@ -19,7 +19,7 @@ export function LocaleToggle() {
         aria-label={target === "zh" ? "切换到中文" : "切换到英文"}
         className={`app-touch-target inline-flex items-center justify-center whitespace-nowrap rounded-md px-2.5 leading-none transition-colors ${
           active
-            ? "bg-info/15 text-text-primary ring-1 ring-inset ring-info/45 shadow-[inset_0_-1px_0_rgba(94,162,255,0.45)]"
+            ? "text-text-primary underline decoration-[var(--color-hermes)] decoration-2 underline-offset-8"
             : "text-text-secondary hover:bg-bg-surface hover:text-text-primary"
         }`}
         href={href}
@@ -36,7 +36,7 @@ export function LocaleToggle() {
   }
 
   return (
-    <div className="inline-flex min-w-max shrink-0 gap-0.5 rounded-lg border border-border-subtle bg-bg-base p-0.5 font-data-mono text-xs shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+    <div aria-label={locale === "zh" ? "语言" : "Language"} className="inline-flex min-w-max shrink-0 font-data-mono text-[11px]">
       {item("en", "EN")}
       {item("zh", "中文")}
     </div>
@@ -48,7 +48,7 @@ export function LocaleToggleFallback() {
   return (
     <div
       aria-hidden="true"
-      className="inline-flex min-w-max shrink-0 gap-0.5 rounded-lg border border-border-subtle bg-bg-base p-0.5 font-data-mono text-xs shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
+      className="inline-flex min-w-max shrink-0 font-data-mono text-[11px]"
     >
       <span className="app-touch-target inline-flex items-center justify-center whitespace-nowrap rounded-md px-2.5 leading-none text-text-secondary opacity-50">
         EN

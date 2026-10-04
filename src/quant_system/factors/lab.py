@@ -12,6 +12,7 @@ from quant_system.data.provider_factory import DataProviderUnavailableError, bui
 from quant_system.experiments.models import WalkForwardConfig
 from quant_system.experiments.walk_forward import build_walk_forward_splits
 from quant_system.factors.evaluation import (
+    METHODOLOGY_VERSION,
     calculate_information_coefficients,
     calculate_quantile_returns,
     make_forward_returns,
@@ -43,6 +44,9 @@ def build_factor_lab_dashboard(
         "start": start,
         "end": end,
         "lookback": lookback,
+        # Label methodology member: caches written under the close-to-close convention
+        # compare unequal and are recomputed instead of being served as current.
+        "methodology": METHODOLOGY_VERSION,
     }
     if not force_refresh and cache_path.exists():
         cached = json.loads(cache_path.read_text(encoding="utf-8"))
@@ -111,12 +115,56 @@ def build_factor_lab_dashboard(
             ),
         },
     }
+    _persist_factor_lab_tombstone(
+        settings=settings,
+        cache_key=cache_key,
+        symbols=symbols,
+        start=start,
+        end=end,
+        source=source,
+    )
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     cache_path.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True, allow_nan=False),
         encoding="utf-8",
     )
     return payload
+
+
+def _persist_factor_lab_tombstone(
+    *,
+    settings,
+    cache_key: dict[str, Any],
+    symbols: list[str],
+    start: str,
+    end: str,
+    source: str,
+) -> None:
+    import hashlib
+    import uuid
+
+    from quant_system.research.trials import ResearchTrial, TrialsLedger
+
+    attempt_key_digest = hashlib.sha256(
+        json.dumps(cache_key, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()[:16]
+    run_id = f"factor-lab-{uuid.uuid4().hex}"
+    TrialsLedger(Path(settings.data.data_dir) / "trials").append(
+        ResearchTrial.skipped(
+            kind="factor_lab",
+            subject="factor_lab_dashboard",
+            universe=symbols,
+            reason="exploratory_dashboard_not_dsr_family",
+            window_start=start,
+            window_end=end,
+            source=source,
+            metadata={
+                "run_id": run_id,
+                "attempt_key_digest": attempt_key_digest,
+                "cache_key": cache_key,
+            },
+        )
+    )
 
 
 def _cross_sectional_rows(

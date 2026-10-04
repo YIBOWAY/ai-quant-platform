@@ -3,15 +3,18 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
-import { useForm, type UseFormRegisterReturn } from "react-hook-form";
+import { useForm, useWatch, type UseFormRegisterReturn } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 import type { OptionsScreenerResult } from "@/lib/api";
-import { ApiClientError, apiPost } from "@/lib/apiClient";
-import { DataSourceBadge } from "@/components/DataSourceBadge";
-import { InfoTip, type GlossaryKey } from "@/components/InfoTip";
+import { apiPost } from "@/lib/apiClient";
 import { useIsHydrated } from "@/lib/hydration";
 import { localizePath } from "@/lib/locale";
+import { optionsErrorMessage } from "@/lib/optionsErrorPresentation";
+import {
+  OptionsScreenerResults,
+  partitionScreenerCandidates,
+} from "@/components/forms/OptionsScreenerResults";
 import {
   TerminalSplitShell,
   TerminalToolbarButton,
@@ -21,14 +24,6 @@ import {
 
 const selectClass = terminalInputClass;
 
-// Maps screener column index to a glossary term so headers can show a hint.
-const headingTips: Record<number, GlossaryKey> = {
-  7: "apr",
-  8: "spread",
-  9: "ivRank",
-  10: "delta",
-  11: "openInterest",
-};
 // Phase 12 fix (2026-05): every preset now sets every numeric field so that
 // switching presets cannot leave stale values from a previous selection.
 const presets = {
@@ -95,11 +90,14 @@ const copy = {
     conservative: "Conservative",
     balanced: "Balanced",
     aggressive: "Aggressive",
+    groupBasics: "Window & yield",
+    groupVolatility: "Volatility & liquidity",
     maxDelta: "Max Delta",
-    minApr: "Min APR (%)",
+    minApr: "Min gross premium APR (%)",
+    fees: "Estimated round-trip fees / contract (USD, blank = unknown)",
+    feeHelp: "Bid is a conservative quoted premium, not a fill. Fees exclude buyback cost, assignment and stock gains/losses.",
     minDte: "Min DTE",
     maxDte: "Max DTE",
-    dteWindow: "DTE Window",
     maxSpread: "Max Spread (%)",
     minOi: "Min Open Interest",
     maxHvIv: "Max HV/IV",
@@ -110,35 +108,14 @@ const copy = {
     minMarketCap: "Min Market Cap (0=off)",
     trendFilter: "Trend filter",
     hvIvFilter: "HV / IV timing filter",
-    showRejected: "Show Avoid contracts",
+    showRejected: "Show rejected contracts",
+    showRejectedHelp:
+      "Contracts rejected by quality, personal filters or market regime appear below the eligible table when this is selected for the run.",
     run: "Run Screener",
     running: "Running...",
     warning: "Research-only output. These rows are not trade instructions and cannot place orders.",
     emptyTitle: "No screener run yet",
     emptyBody: "Set the DTE window and filters. The backend will scan all Futu expirations inside that window automatically.",
-    underlying: "Underlying",
-    scannedExpirations: "Scanned Expirations",
-    candidates: "Candidates",
-    assumptions: "Assumptions",
-    strong: "Strong",
-    watch: "Watch",
-    avoid: "Avoid",
-    regime: "Market regime",
-    regimeUnknown: "Unknown - run `quant-system options refresh-vix` then re-run the screener.",
-    regimeNormal: "Normal - no market-regime score penalty.",
-    regimeElevated:
-      "Elevated - market volatility is higher than usual. Short-premium margin and drawdown pressure can rise; control position size.",
-    regimePanic:
-      "Panic - market volatility is high. Selling options can require more margin and absorb sharper drawdowns; reduce size or wait.",
-    ema21: "EMA21",
-    sma50: "SMA50",
-    hvIvStatus: "HV/IV Status",
-    trendPassed: "Trend passed",
-    trendWeak: "Trend warning",
-    hvIvUnavailable: "No IV data",
-    notes: "Notes",
-    noNotes: "Clear",
-    headings: ["Symbol", "Type", "Expiry", "Strike", "Bid", "Ask", "Mid", "APR", "Spread", "IV", "Delta", "OI", "Rating", "Notes"],
     parameterHelp: [
       ["DTE Window", "The screener scans every available Futu expiration inside this range and ranks the contracts."],
       ["Max Delta", "Lower absolute delta is more conservative for short premium screening."],
@@ -160,11 +137,14 @@ const copy = {
     conservative: "保守",
     balanced: "平衡",
     aggressive: "激进",
+    groupBasics: "窗口与收益",
+    groupVolatility: "波动与流动性",
     maxDelta: "最大 Delta",
-    minApr: "最低年化 (%)",
+    minApr: "最低权利金年化 (%)",
+    fees: "每张开平仓费用估计 (美元，留空=未知)",
+    feeHelp: "买一价表示保守报价，不保证成交。费用估计不含买回成本、指派和持股盈亏。",
     minDte: "最小 DTE",
     maxDte: "最大 DTE",
-    dteWindow: "DTE 窗口",
     maxSpread: "最大价差 (%)",
     minOi: "最低未平仓量",
     maxHvIv: "最大 HV/IV",
@@ -175,37 +155,18 @@ const copy = {
     minMarketCap: "最低市值 (0=关闭)",
     trendFilter: "趋势过滤",
     hvIvFilter: "HV / IV 择时过滤",
-    showRejected: "显示避开合约",
+    showRejected: "显示未入选合约",
+    showRejectedHelp:
+      "勾选后重新运行，会在合格候选下方展示未满足基础质量、个人条件或市场状态要求的合约，便于核对排除原因。",
     run: "开始分析",
     running: "分析中...",
     warning: "仅用于研究筛选。这些结果不是交易指令，也不能发出真实订单。",
     emptyTitle: "还没有运行筛选",
     emptyBody: "设置 DTE 窗口和筛选条件后，后端会自动扫描这个范围内的全部 Futu 到期日。",
-    underlying: "正股价格",
-    scannedExpirations: "扫描到期日",
-    candidates: "候选合约",
-    assumptions: "假设说明",
-    strong: "强烈",
-    watch: "观察",
-    avoid: "避开",
-    regime: "市场状态",
-    regimeUnknown: "未知 - 请先运行 `quant-system options refresh-vix` 刷新 VIX 历史后再筛选。",
-    regimeNormal: "Normal - 不施加市场状态扣分。",
-    regimeElevated: "Elevated - 市场波动偏大，卖权保证金和回撤压力可能上升，注意控制仓位。",
-    regimePanic: "Panic - 市场波动很大，卖权保证金和回撤压力会更高，建议降低仓位或等待。",
-    ema21: "EMA21",
-    sma50: "SMA50",
-    hvIvStatus: "HV/IV 状态",
-    trendPassed: "趋势通过",
-    trendWeak: "趋势提醒",
-    hvIvUnavailable: "缺少 IV 数据",
-    notes: "提示",
-    noNotes: "通过",
-    headings: ["代码", "类型", "到期日", "行权价", "买价", "卖价", "中间价", "年化", "价差", "IV", "Delta", "未平仓", "评级", "提示"],
     parameterHelp: [
       ["DTE 窗口", "筛选器会扫描这个范围内的全部 Futu 到期日，并把合约统一排序。"],
       ["Max Delta", "绝对 Delta 越低越保守，适合卖方期权筛选。"],
-      ["Min APR", "最低年化权利金估算。它只是筛选条件，不代表确定收益。"],
+      ["Min APR", "按中间价估算的毛权利金年化，低于门槛不会进入合格候选。它不是策略实际收益率。"],
       ["Max Spread", "买卖价差上限。越低通常流动性越好。"],
       ["Min OI", "未平仓量下限。更高通常代表市场深度更好。"],
       ["Max HV/IV", "历史波动率除以隐含波动率。越低说明 IV 相对近期波动更充足。"],
@@ -232,139 +193,10 @@ const screenerSchema = z.object({
   hv_iv_filter: z.boolean(),
   include_rejected: z.boolean(),
   provider: z.literal("futu"),
+  estimated_round_trip_fee_per_contract: z.number().nonnegative().nullable().optional(),
 });
 
 type ScreenerValues = z.infer<typeof screenerSchema>;
-
-function formatNumber(value?: number | null, digits = 2) {
-  return typeof value === "number" && Number.isFinite(value) ? value.toFixed(digits) : "--";
-}
-
-function formatPercent(value?: number | null) {
-  return typeof value === "number" && Number.isFinite(value)
-    ? `${(value * 100).toFixed(2)}%`
-    : "--";
-}
-
-function formatRatio(value?: number | null) {
-  return typeof value === "number" && Number.isFinite(value) ? value.toFixed(2) : "--";
-}
-
-function trendHelp(
-  result: OptionsScreenerResult,
-  locale: "en" | "zh",
-  text: (typeof copy)["en"] | (typeof copy)["zh"],
-) {
-  const price = result.underlying_price;
-  const ema21 = result.ema_21;
-  const sma50 = result.sma_50;
-  if (
-    typeof ema21 !== "number"
-    || !Number.isFinite(ema21)
-    || typeof sma50 !== "number"
-    || !Number.isFinite(sma50)
-  ) {
-    return locale === "zh" ? "均线数据不足，趋势只作参考。" : "Moving-average data is incomplete; trend is reference-only.";
-  }
-  const warnings = [];
-  if (price < ema21) {
-    warnings.push(locale === "zh" ? "低于 EMA21" : "below EMA21");
-  }
-  if (price < sma50) {
-    warnings.push(locale === "zh" ? "低于 SMA50" : "below SMA50");
-  }
-  if (!warnings.length) {
-    return text.trendPassed;
-  }
-  return `${text.trendWeak}: ${warnings.join(locale === "zh" ? "、" : " / ")}`;
-}
-
-function hvIvStatus(
-  result: OptionsScreenerResult,
-  locale: "en" | "zh",
-  text: (typeof copy)["en"] | (typeof copy)["zh"],
-) {
-  const total = result.hv_iv_contract_count ?? 0;
-  if (total <= 0) {
-    return text.hvIvUnavailable;
-  }
-  const passed = result.hv_iv_pass_count ?? 0;
-  return locale === "zh" ? `${passed}/${total} 通过` : `${passed}/${total} pass`;
-}
-
-function hvIvHelp(result: OptionsScreenerResult, locale: "en" | "zh") {
-  const total = result.hv_iv_contract_count ?? 0;
-  if (total <= 0) {
-    return locale === "zh" ? "没有可用的 IV，无法判断 HV/IV。" : "No usable IV, so HV/IV cannot be judged.";
-  }
-  const threshold = formatRatio(result.hv_iv_threshold);
-  const low = formatRatio(result.hv_iv_min);
-  const high = formatRatio(result.hv_iv_max);
-  return locale === "zh"
-    ? `上限 ${threshold}；范围 ${low}-${high}`
-    : `Limit ${threshold}; range ${low}-${high}`;
-}
-
-function ratingLabel(rating: string, locale: "en" | "zh") {
-  if (locale === "en") {
-    return rating;
-  }
-  if (rating === "Strong") {
-    return copy.zh.strong;
-  }
-  if (rating === "Watch") {
-    return copy.zh.watch;
-  }
-  return copy.zh.avoid;
-}
-
-const assumptionZh: Record<string, string> = {
-  "Read-only data mode; no order placement is available.": "只读数据模式；不会下单。",
-  "When expiration is omitted, the screener scans all Futu expirations inside the configured DTE window.":
-    "未指定到期日时，后端会扫描 DTE 范围内所有 Futu 到期日。",
-  "Avoid-rated contracts are hidden by default; set include_rejected=true to audit rejected rows.":
-    "默认隐藏 Avoid 合约；需要排查时可启用 include_rejected 查看被过滤行。",
-  "Premium uses mid price when bid and ask are available.": "买卖价可用时，权利金按中间价估算。",
-  "Yield estimates are simplified and ignore assignment, taxes, and commissions.":
-    "收益率是简化估算，未计入行权、税费和佣金。",
-  "Missing IV/Greeks fields reduce confidence; they are not invented.": "缺少 IV 或希腊值会降低可信度，系统不会编造这些数据。",
-  "VIX market regime is read from the offline Yahoo cache and discounts seller ratings under Elevated / Panic conditions.":
-    "VIX 市场状态来自本地缓存；市场偏紧张时会下调卖方候选评级。",
-};
-
-const rejectionReasonZh: Record<string, string> = {
-  "missing or non-positive bid/ask": "缺少有效买卖价",
-  "premium below minimum": "权利金低于最低要求",
-  "mid below absolute floor": "中间价低于最低要求",
-  "spread too wide": "买卖价差过宽",
-  "APR below minimum": "年化收益低于最低要求",
-  "DTE missing": "缺少到期天数",
-  "DTE outside range": "到期天数不在范围内",
-  "open interest missing": "缺少未平仓量",
-  "open interest below minimum": "未平仓量低于要求",
-  "IV missing": "缺少 IV",
-  "IV below minimum": "IV 低于最低要求",
-  "delta missing": "缺少 Delta",
-  "delta above limit": "Delta 超过上限",
-  "sell put strike is above spot": "卖出看跌行权价高于现价",
-  "covered call strike is below spot": "covered call 行权价低于现价",
-  "trend filter failed": "趋势过滤未通过",
-  "price below EMA21": "价格低于 EMA21",
-  "price below SMA50": "价格低于 SMA50",
-  "IV/HV filter failed": "IV/HV 过滤未通过",
-  "underlying ADV missing": "缺少正股成交量",
-  "underlying ADV below minimum": "正股成交量低于要求",
-  "market cap missing": "缺少市值",
-  "market cap below minimum": "市值低于要求",
-};
-
-function translateAssumption(value: string, locale: "en" | "zh") {
-  return locale === "zh" ? assumptionZh[value] ?? value : value;
-}
-
-function translateRejectionReason(value: string, locale: "en" | "zh") {
-  return locale === "zh" ? rejectionReasonZh[value] ?? value : value;
-}
 
 export function OptionsScreenerForm({ locale = "en" }: { locale?: "en" | "zh" }) {
   const isHydrated = useIsHydrated();
@@ -390,6 +222,7 @@ export function OptionsScreenerForm({ locale = "en" }: { locale?: "en" | "zh" })
       hv_iv_filter: true,
       include_rejected: false,
       provider: "futu",
+      estimated_round_trip_fee_per_contract: null,
     },
   });
 
@@ -405,16 +238,18 @@ export function OptionsScreenerForm({ locale = "en" }: { locale?: "en" | "zh" })
         min_market_cap: values.min_market_cap,
       }),
     onSuccess: (payload) => {
+      const { eligible } = partitionScreenerCandidates(payload.candidates);
       toast.success(
         locale === "zh"
-          ? `期权筛选返回 ${payload.candidates.length} 个候选合约`
-          : `Options screener returned ${payload.candidates.length} candidates`,
+          ? `筛选完成：${payload.eligible_count ?? eligible.length} 个合约满足全部条件，展示 ${eligible.length} 个`
+          : `Done: ${payload.eligible_count ?? eligible.length} contracts meet all filters, showing ${eligible.length}`,
       );
     },
   });
-  const error = mutation.error instanceof ApiClientError ? mutation.error.message : undefined;
+  const error = mutation.error ? optionsErrorMessage(mutation.error, locale) : undefined;
   const run = form.handleSubmit((values) => mutation.mutate(values));
   const result = mutation.data;
+  const showRejected = useWatch({ control: form.control, name: "include_rejected" });
 
   const [preset, setPreset] = useState<keyof typeof presets | "">("");
   function applyPreset(name: keyof typeof presets) {
@@ -487,15 +322,23 @@ export function OptionsScreenerForm({ locale = "en" }: { locale?: "en" | "zh" })
               </option>
             </select>
           </label>
-          <div className="grid grid-cols-2 gap-2">
-            <NumberField label={text.maxDelta} registration={form.register("max_delta", { valueAsNumber: true })} step={0.01} />
-            <NumberField label={text.minApr} registration={form.register("min_apr", { valueAsNumber: true })} step={1} />
-            <NumberField label={text.minDte} registration={form.register("min_dte", { valueAsNumber: true })} step={1} />
-            <NumberField label={text.maxDte} registration={form.register("max_dte", { valueAsNumber: true })} step={1} />
-            <NumberField label={text.maxSpread} registration={form.register("max_spread_pct_input", { valueAsNumber: true })} step={0.5} />
-            <NumberField label={text.minOi} registration={form.register("min_open_interest", { valueAsNumber: true })} step={10} />
-            <NumberField label={text.maxHvIv} registration={form.register("max_hv_iv", { valueAsNumber: true })} step={0.1} />
-            <NumberField label={text.minIv} registration={form.register("min_iv_input", { valueAsNumber: true })} step={1} />
+          <div>
+            <div className="mb-2 font-label-caps text-text-secondary">{text.groupBasics}</div>
+            <div className="grid grid-cols-2 gap-2">
+              <NumberField label={text.minDte} registration={form.register("min_dte", { valueAsNumber: true })} step={1} />
+              <NumberField label={text.maxDte} registration={form.register("max_dte", { valueAsNumber: true })} step={1} />
+              <NumberField label={text.maxDelta} registration={form.register("max_delta", { valueAsNumber: true })} step={0.01} />
+              <NumberField label={text.minApr} registration={form.register("min_apr", { valueAsNumber: true })} step={1} />
+            </div>
+          </div>
+          <div>
+            <div className="mb-2 font-label-caps text-text-secondary">{text.groupVolatility}</div>
+            <div className="grid grid-cols-2 gap-2">
+              <NumberField label={text.minIv} registration={form.register("min_iv_input", { valueAsNumber: true })} step={1} />
+              <NumberField label={text.maxHvIv} registration={form.register("max_hv_iv", { valueAsNumber: true })} step={0.1} />
+              <NumberField label={text.maxSpread} registration={form.register("max_spread_pct_input", { valueAsNumber: true })} step={0.5} />
+              <NumberField label={text.minOi} registration={form.register("min_open_interest", { valueAsNumber: true })} step={10} />
+            </div>
           </div>
           <div className="rounded-lg border border-border-subtle bg-bg-surface-muted p-3">
             <div className="mb-2 font-label-caps text-text-secondary">{text.qualityFilters}</div>
@@ -515,9 +358,17 @@ export function OptionsScreenerForm({ locale = "en" }: { locale?: "en" | "zh" })
             <input type="checkbox" {...form.register("hv_iv_filter")} />
             {text.hvIvFilter}
           </label>
-          <label className="flex items-center gap-2 font-body-sm text-text-primary">
+          <label className="flex items-center gap-2 font-body-sm text-text-primary" title={text.showRejectedHelp}>
             <input type="checkbox" {...form.register("include_rejected")} />
             {text.showRejected}
+          </label>
+          <label className="flex flex-col gap-1 font-body-sm text-text-primary">
+            {text.fees}
+            <input className={terminalInputCompactClass} type="number" min="0" step="0.01"
+              {...form.register("estimated_round_trip_fee_per_contract", {
+                setValueAs: (value: string) => value === "" ? null : Number(value),
+              })} />
+            <span className="text-text-secondary">{text.feeHelp}</span>
           </label>
           {error ? <p className="font-body-sm text-danger">{error}</p> : null}
           <TerminalToolbarButton
@@ -553,103 +404,7 @@ export function OptionsScreenerForm({ locale = "en" }: { locale?: "en" | "zh" })
             </div>
           </div>
         ) : (
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center gap-2">
-              <DataSourceBadge source={result.provider} />
-            </div>
-            <RegimeStatusBar result={result} text={text} locale={locale} />
-            <CompactMetrics result={result} text={text} locale={locale} />
-            {result.candidates.length === 0 ? (
-              <div className="rounded-lg border border-warning/40 bg-warning/10 p-4 font-body-sm text-warning">
-                {locale === "zh" ? (
-                  <>
-                    <p className="font-semibold">
-                      已扫描 {result.expiration_count ?? result.scanned_expirations?.length ?? 0} 个到期日、过滤掉
-                      {" "}
-                      {result.rejected_count ?? 0} 个合约，当前过滤条件下没有合格候选。
-                    </p>
-                    <p className="mt-2 text-text-secondary">
-                      这通常说明筛选条件相对该标的过严，而不是程序出错。像 LMT 这类低波动标的，权利金年化往往达不到较高的 Min APR。可以尝试：
-                    </p>
-                    <RejectionSummary locale={locale} summary={result.rejection_summary} />
-                    <ul className="mt-1 list-disc space-y-1 pl-5 text-text-secondary">
-                      <li>调低「最低年化 (%)」（当前 IV 越低，能达到的年化越低）。</li>
-                      <li>放宽「最大 Delta」或「最大价差 (%)」。</li>
-                      <li>关闭「趋势过滤」或「HV / IV 择时过滤」。</li>
-                    </ul>
-                  </>
-                ) : (
-                  <>
-                    <p className="font-semibold">
-                      Scanned {result.expiration_count ?? result.scanned_expirations?.length ?? 0} expirations and
-                      filtered out {result.rejected_count ?? 0} contracts — none passed the current filters.
-                    </p>
-                    <p className="mt-2 text-text-secondary">
-                      This usually means the filters are too strict for this ticker, not a malfunction. Low-volatility
-                      names like LMT rarely reach a high Min APR. Try:
-                    </p>
-                    <RejectionSummary locale={locale} summary={result.rejection_summary} />
-                    <ul className="mt-1 list-disc space-y-1 pl-5 text-text-secondary">
-                      <li>Lowering Min APR (low IV caps the achievable annualized yield).</li>
-                      <li>Relaxing Max Delta or Max Spread.</li>
-                      <li>Turning off the trend filter or HV/IV timing filter.</li>
-                    </ul>
-                  </>
-                )}
-              </div>
-            ) : (
-              <div className="overflow-x-auto rounded-lg border border-border-subtle bg-bg-surface">
-                <table className="w-full border-collapse text-left">
-                  <thead>
-                    <tr className="border-b border-border-subtle">
-                      {text.headings.map((heading, index) => (
-                        <th className="px-3 py-2 font-label-caps text-text-secondary" key={heading}>
-                          <span className="inline-flex items-center gap-1">
-                            {heading}
-                            {headingTips[index] ? (
-                              <InfoTip term={headingTips[index]} locale={locale} />
-                            ) : null}
-                          </span>
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="font-data-mono text-data-mono text-text-primary">
-                    {result.candidates.map((candidate) => (
-                      <tr className="border-b border-border-subtle/50" key={candidate.symbol}>
-                        <td className="px-3 py-2">{candidate.symbol}</td>
-                        <td className="px-3 py-2">{candidate.option_type}</td>
-                        <td className="px-3 py-2">{candidate.expiry}</td>
-                        <td className="px-3 py-2">{formatNumber(candidate.strike)}</td>
-                        <td className="px-3 py-2">{formatNumber(candidate.bid)}</td>
-                        <td className="px-3 py-2">{formatNumber(candidate.ask)}</td>
-                        <td className="px-3 py-2">{formatNumber(candidate.mid)}</td>
-                        <td className="px-3 py-2">{formatPercent(candidate.annualized_yield)}</td>
-                        <td className="px-3 py-2">{formatPercent(candidate.spread_pct)}</td>
-                        <td className="px-3 py-2">{formatPercent(candidate.implied_volatility)}</td>
-                        <td className="px-3 py-2">{formatNumber(candidate.delta, 3)}</td>
-                        <td className="px-3 py-2">{formatNumber(candidate.open_interest, 0)}</td>
-                        <td className="px-3 py-2">{ratingLabel(candidate.rating, locale)}</td>
-                        <td className="max-w-[360px] px-3 py-2 font-body-sm text-text-secondary">
-                          {candidate.notes.length
-                            ? candidate.notes.map((note) => translateRejectionReason(note, locale)).join(" | ")
-                            : text.noNotes}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            <div className="rounded-lg border border-border-subtle bg-bg-surface p-4">
-              <h3 className="font-label-caps text-text-secondary">{text.assumptions}</h3>
-              <ul className="mt-2 list-disc space-y-1 pl-5 font-body-sm text-text-secondary">
-                {result.assumptions.map((assumption) => (
-                  <li key={assumption}>{translateAssumption(assumption, locale)}</li>
-                ))}
-              </ul>
-            </div>
-          </div>
+          <OptionsScreenerResults locale={locale} result={result} showRejected={showRejected} />
         )}
     </TerminalSplitShell>
   );
@@ -674,165 +429,5 @@ function NumberField({
         {...registration}
       />
     </label>
-  );
-}
-
-// Compact single-line metric: label on top, value below, optional tooltip on
-// hover. Keeps the whole summary strip short instead of growing with help text.
-function MetricInline({
-  label,
-  value,
-  help,
-  tone = "primary",
-}: {
-  label: string;
-  value: string;
-  help?: string;
-  tone?: "primary" | "success" | "warning" | "danger";
-}) {
-  const toneClass =
-    tone === "success"
-      ? "text-accent-success"
-      : tone === "warning"
-        ? "text-warning"
-        : tone === "danger"
-          ? "text-danger"
-          : "text-text-primary";
-  return (
-    <div
-      className="flex min-w-0 flex-col gap-0.5 px-3 py-2"
-      title={help}
-    >
-      <span className="truncate font-label-caps text-[10px] uppercase text-text-secondary">
-        {label}
-      </span>
-      <span className={`truncate font-data-mono text-sm font-bold ${toneClass}`}>{value}</span>
-    </div>
-  );
-}
-
-// One compact row of core metrics, divided by hairlines. Replaces the tall
-// 8-card grid so the candidate table is visible above the fold.
-function CompactMetrics({
-  result,
-  text,
-  locale,
-}: {
-  result: OptionsScreenerResult;
-  text: (typeof copy)["en"] | (typeof copy)["zh"];
-  locale: "en" | "zh";
-}) {
-  const expirationCount = result.expiration_count ?? result.scanned_expirations?.length ?? 0;
-  return (
-    <div className="flex flex-wrap items-stretch divide-x divide-border-subtle rounded-lg border border-border-subtle bg-bg-surface">
-      <MetricInline
-        label={text.underlying}
-        value={formatNumber(result.underlying_price)}
-        help={trendHelp(result, locale, text)}
-      />
-      <MetricInline label={text.scannedExpirations} value={String(expirationCount)} />
-      <MetricInline label="HV" value={formatPercent(result.historical_volatility)} />
-      <MetricInline
-        label={text.hvIvStatus}
-        value={hvIvStatus(result, locale, text)}
-        help={hvIvHelp(result, locale)}
-      />
-      <MetricInline
-        label={text.candidates}
-        value={String(result.candidates.length)}
-        tone={result.candidates.length > 0 ? "success" : "warning"}
-      />
-      <MetricInline
-        label={locale === "zh" ? "已过滤" : "Filtered out"}
-        value={String(result.rejected_count ?? 0)}
-        tone={(result.rejected_count ?? 0) > 0 ? "warning" : "primary"}
-        help={
-          locale === "zh"
-            ? "被过滤的 Avoid 合约，例如深度价内、零 OI、价差过宽、趋势或 HV/IV 过滤失败。"
-            : "Avoid-rated contracts filtered out, such as deep ITM, zero OI, wide spread, or failed trend/HV-IV filters."
-        }
-      />
-      <MetricInline
-        label="EMA21 / SMA50"
-        value={`${formatNumber(result.ema_21)} / ${formatNumber(result.sma_50)}`}
-        help={trendHelp(result, locale, text)}
-      />
-    </div>
-  );
-}
-
-function RejectionSummary({
-  locale,
-  summary,
-}: {
-  locale: "en" | "zh";
-  summary?: Record<string, number>;
-}) {
-  const rows = Object.entries(summary ?? {}).slice(0, 5);
-  if (!rows.length) {
-    return null;
-  }
-  return (
-    <div className="mt-3 rounded-lg border border-border-subtle bg-bg-surface/70 p-3">
-      <div className="font-label-caps text-text-secondary">
-        {locale === "zh" ? "主要过滤原因" : "Main filter reasons"}
-      </div>
-      <ul className="mt-2 space-y-1 font-body-sm text-text-secondary">
-        {rows.map(([reason, count]) => (
-          <li className="flex justify-between gap-4" key={reason}>
-            <span>{translateRejectionReason(reason, locale)}</span>
-            <span className="font-data-mono text-text-primary">{count}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-type RegimeLabel = "Normal" | "Elevated" | "Panic" | "Unknown";
-
-function RegimeStatusBar({
-  result,
-  text,
-  locale,
-}: {
-  result: OptionsScreenerResult;
-  text: (typeof copy)["en"] | (typeof copy)["zh"];
-  locale: "en" | "zh";
-}) {
-  const label: RegimeLabel = (result.market_regime ?? "Unknown") as RegimeLabel;
-  const palette: Record<RegimeLabel, string> = {
-    Normal: "border-accent-success/40 bg-accent-success/10 text-accent-success",
-    Elevated: "border-warning/40 bg-warning/10 text-warning",
-    Panic: "border-danger/40 bg-danger/10 text-danger",
-    Unknown: "border-border-subtle bg-bg-surface text-text-secondary",
-  };
-  const detail =
-    label === "Normal"
-      ? text.regimeNormal
-      : label === "Elevated"
-        ? text.regimeElevated
-        : label === "Panic"
-          ? text.regimePanic
-          : text.regimeUnknown;
-  const penalty = result.market_regime_penalty;
-  const penaltyText =
-    typeof penalty === "number" && Number.isFinite(penalty) && penalty !== 0
-      ? ` (${penalty > 0 ? "+" : ""}${penalty.toFixed(0)})`
-      : "";
-  return (
-    <div
-      className={`flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border px-3 py-1.5 ${palette[label]}`}
-    >
-      <span className="font-label-caps text-[10px] uppercase">{text.regime}</span>
-      <span className="font-data-mono text-sm font-bold">
-        {label}
-        {penaltyText}
-      </span>
-      {/* Full explanation stays accessible but no longer eats a whole banner. */}
-      <span className="min-w-0 flex-1 truncate font-body-sm opacity-80" title={detail}>
-        {detail}
-      </span>
-    </div>
   );
 }

@@ -119,7 +119,7 @@ def test_snapshot_carries_typed_results_not_gates() -> None:
     assert public["results"][0]["result_id"] == "res-snap"
     assert public["results"][0]["ticker"] == "MSFT"
     assert public["results"][0]["sample_or_real"] == "sample"
-    assert public["gates"] == []
+    assert "gates" not in public
     assert public["approvals"] == []
     assert public["tasks"] == []
     assert public["authority_health"]["result"] == "hermetic"

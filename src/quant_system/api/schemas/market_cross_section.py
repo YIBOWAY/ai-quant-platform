@@ -42,6 +42,26 @@ class MarketCrossSectionBasketLabelResponse(BaseModel):
     zh: str
 
 
+class MarketRiskObservationResponse(BaseModel):
+    key: Literal["trend_200d", "drawdown_252d", "vix_level", "vix_change", "vix_term"]
+    symbol: str
+    source: Literal["futu", "futu_cache", "public_cache"]
+    as_of: str | None
+    value: float | None
+    threshold: float
+    status: Literal["normal", "attention", "unavailable"]
+    reason: str
+
+
+class MarketRiskResponse(BaseModel):
+    status: Literal["normal", "attention", "unavailable"]
+    expected_session: str
+    trend_extension_pct: float
+    attention_count: int
+    unavailable_count: int
+    observations: list[MarketRiskObservationResponse]
+
+
 class MarketCrossSectionResponse(BaseModel):
     """Read-only cross-section over a preset/custom symbol universe.
 
@@ -59,3 +79,4 @@ class MarketCrossSectionResponse(BaseModel):
     basket_label: MarketCrossSectionBasketLabelResponse | None
     methodology: dict[str, str]
     rows: list[MarketCrossSectionRowResponse]
+    risk_observations: MarketRiskResponse | None = None

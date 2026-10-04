@@ -14,15 +14,20 @@ type DataPreviewTableProps = {
   columnLabels?: Record<string, string>;
   /** Optional hover explanations per raw column key. */
   columnTips?: Record<string, string>;
+  /** Presentation only; raw values retain numeric alignment and remain unchanged. */
+  columnFormats?: Record<string, "percent" | "integer">;
   /** Localizes table chrome ("showing N/M"). Defaults to en. */
   locale?: "en" | "zh";
 };
 
-function formatValue(value: unknown) {
+function formatValue(value: unknown, format?: "percent" | "integer") {
   if (value === null || value === undefined || value === "") {
     return "--";
   }
   if (typeof value === "number") {
+    if (!Number.isFinite(value)) return "--";
+    if (format === "percent") return `${(value * 100).toFixed(2)}%`;
+    if (format === "integer") return value.toLocaleString("en-US", { maximumFractionDigits: 0 });
     if (value === 0) {
       return "0";
     }
@@ -44,6 +49,7 @@ export function DataPreviewTable({
   columns,
   columnLabels,
   columnTips,
+  columnFormats,
   locale = "en",
 }: DataPreviewTableProps) {
   if (!rows.length) {
@@ -95,9 +101,9 @@ export function DataPreviewTable({
               >
                 <span
                   className={`block max-w-56 truncate ${numericColumns.has(column) ? "tabular-nums" : ""}`}
-                  title={formatValue(row[column])}
+                  title={formatValue(row[column], columnFormats?.[column])}
                 >
-                  {formatValue(row[column])}
+                  {formatValue(row[column], columnFormats?.[column])}
                 </span>
               </td>
             ))}

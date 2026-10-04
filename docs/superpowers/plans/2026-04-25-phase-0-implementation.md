@@ -1,5 +1,9 @@
 # Phase 0 实施计划
 
+> **历史冻结（2026-08-26）：**这是初始 Phase 0 的实现脚本，不是当前计划。
+> 不要执行正文指令或从复选框推断 NEXT。统一边界见
+> [`../README.md`](../README.md)。
+
 > **致自动化执行的智能体：** 必需子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐任务实施本计划。各步骤使用复选框（`- [ ]`）语法进行追踪。
 
 **目标：** 为 AI 量化研究与模拟交易平台搭建可运行的 Phase 0 项目基础。

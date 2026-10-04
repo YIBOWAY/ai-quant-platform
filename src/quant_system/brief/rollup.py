@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from datetime import date, datetime, timedelta
 from typing import Any, Protocol
@@ -132,6 +133,13 @@ def build_facts(
     aggregated_warnings: list[str] = []
     for public_id, issue_date, payload in issues:
         account = payload.get("account") if isinstance(payload.get("account"), dict) else {}
+        account = _account_for_rollup(account)
+        if account.get("valuation_status") == "incomplete":
+            symbols = ", ".join(account.get("unpriced_symbols") or []) or "部分持仓"
+            aggregated_warnings.append(
+                f"{issue_date.isoformat()}：{symbols} 缺少市场报价，账户市值、盈亏和投资比例未知；"
+                "含成本价的参考总额不参与期间变化计算。"
+            )
         ai_news = payload.get("ai_news") if isinstance(payload.get("ai_news"), list) else []
         hermes_log = (
             payload.get("hermes_log") if isinstance(payload.get("hermes_log"), list) else []
@@ -173,10 +181,7 @@ def build_facts(
                     for market in payload.get("markets") or []
                     if isinstance(market, dict)
                 ],
-                "account": {
-                    key: _json_scalar(account.get(key))
-                    for key in ("equity", "cash", "pnl_abs", "pnl_pct", "invested_pct")
-                },
+                "account": account,
                 "ai_news": day_items,
                 "hermes_log_count": len(hermes_log),
                 "hermes_log_warn_count": sum(
@@ -365,7 +370,35 @@ def _json_scalar(value: Any) -> Any:
 
 def _account_number(account: dict[str, Any], key: str) -> float | None:
     value = account.get(key)
-    return float(value) if isinstance(value, (int, float)) else None
+    return (float(value) if isinstance(value, (int, float)) and not isinstance(value, bool)
+            and math.isfinite(value) else None)
+
+
+def _account_for_rollup(account: dict[str, Any]) -> dict[str, Any]:
+    """Snapshot projection only; cost references cannot become market returns."""
+    result = {key: _account_number(account, key)
+              for key in ("equity", "cash", "pnl_abs", "pnl_pct", "invested_pct")}
+    symbols = account.get("unpriced_symbols")
+    unpriced = {str(symbol) for symbol in (symbols if isinstance(symbols, list) else [])
+                if isinstance(symbol, str) and symbol}
+    for position in account.get("positions") or []:
+        if isinstance(position, dict) and position.get("price_kind") == "avg_cost_fallback":
+            unpriced.add(str(position.get("symbol") or "未知持仓"))
+    explicit_incomplete = account.get("valuation_status") not in (None, "complete")
+    missing_market_value = (account.get("valuation_status") == "complete"
+                            and "market_equity" in account
+                            and _account_number(account, "market_equity") is None)
+    if unpriced or explicit_incomplete or missing_market_value:
+        result.update(valuation_status="incomplete", cost_reference_equity=result["equity"],
+                      unpriced_symbols=sorted(unpriced))
+        for key in ("equity", "pnl_abs", "pnl_pct", "invested_pct"):
+            result[key] = None
+    else:
+        if account.get("valuation_status") == "complete":
+            result["valuation_status"] = "complete"
+        if _account_number(account, "market_equity") is not None:
+            result["equity"] = _account_number(account, "market_equity")
+    return result
 
 
 def _account_snapshot(day: dict[str, Any]) -> dict[str, Any]:
@@ -377,6 +410,9 @@ def _account_snapshot(day: dict[str, Any]) -> dict[str, Any]:
         "pnl_abs": _account_number(account, "pnl_abs"),
         "pnl_pct": _account_number(account, "pnl_pct"),
         "invested_pct": _account_number(account, "invested_pct"),
+        **{key: account[key] for key in (
+            "valuation_status", "cost_reference_equity", "unpriced_symbols"
+        ) if key in account},
     }
 
 

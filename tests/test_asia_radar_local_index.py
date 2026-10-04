@@ -329,7 +329,9 @@ def test_overlay_unexpected_exception_is_contained_as_provider_error() -> None:
 
 
 def test_overlay_cache_marks_provenance_and_keys_never_mix_with_us_etfs(tmp_path) -> None:
-    cache = EquityBarCache(tmp_path / "futu_equity_bars.duckdb")
+    # Huge TTL: these tests pin 2026-08 bars and assert cache-key isolation,
+    # never TTL expiry — a 1-day default would time-bomb them on real clocks.
+    cache = EquityBarCache(tmp_path / "futu_equity_bars.duckdb", ttl_seconds=10**9)
     frames = {
         "HK.800000": _index_frame("HK.800000"),
         "JP..N225": _index_frame("JP..N225"),
@@ -619,7 +621,9 @@ def test_summary_route_path_never_touches_the_index_lane(monkeypatch) -> None:
 
 
 def test_etf_and_index_bars_share_cache_file_without_cross_reads(tmp_path) -> None:
-    cache = EquityBarCache(tmp_path / "futu_equity_bars.duckdb")
+    # Huge TTL: these tests pin 2026-08 bars and assert cache-key isolation,
+    # never TTL expiry — a 1-day default would time-bomb them on real clocks.
+    cache = EquityBarCache(tmp_path / "futu_equity_bars.duckdb", ttl_seconds=10**9)
     index_frames = {
         "HK.800000": _index_frame("HK.800000"),
         "JP..N225": _index_frame("JP..N225"),
@@ -716,7 +720,9 @@ def test_etf_overview_deterministic_across_index_lane_cache_states(
     # lane's overlay fetch was a cache miss (first run) or a cache hit
     # (second run). Pollution isolation itself is pinned by the shared-file
     # test above and the composed on/off A/B test below.
-    cache = EquityBarCache(tmp_path / "futu_equity_bars.duckdb")
+    # Huge TTL: these tests pin 2026-08 bars and assert cache-key isolation,
+    # never TTL expiry — a 1-day default would time-bomb them on real clocks.
+    cache = EquityBarCache(tmp_path / "futu_equity_bars.duckdb", ttl_seconds=10**9)
     monkeypatch.setattr(
         "quant_system.factors.asia_radar._resolve_cache",
         lambda **kwargs: cache,

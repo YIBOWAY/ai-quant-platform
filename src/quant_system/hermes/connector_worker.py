@@ -47,10 +47,6 @@ from quant_system.hermes.dispatch_adapter import (
     RunLifecyclePort,
     evidence_digest_for,
 )
-from quant_system.hermes.paper_intake_port import (
-    PaperIntakePortError,
-    PaperIntakeVerificationPort,
-)
 from quant_system.hermes.session_registry import HermesSessionRegistryUnavailable
 from quant_system.storage.database import DatabaseUnavailable
 
@@ -327,7 +323,6 @@ class HermesConnectorWorker:
         lease_duration: timedelta = timedelta(seconds=30),
         dispatch_adapter: HermesDispatchPort | None = None,
         run_lifecycle_port: RunLifecyclePort | None = None,
-        paper_intake_verifier: PaperIntakeVerificationPort | None = None,
         dispatch_gate: Callable[[HermesCommand], DispatchGateDecision] | None = None,
         managed_session_resolver: Callable[[HermesCommand], str | None] | None = None,
         claims_per_cycle: int = 1,
@@ -351,7 +346,6 @@ class HermesConnectorWorker:
         self._worker_id = worker_id
         self._lease_duration = lease_duration
         self._dispatch_adapter = dispatch_adapter
-        self._paper_intake_verifier = paper_intake_verifier
         self._run_lifecycle_port = run_lifecycle_port
         self._dispatch_gate = dispatch_gate or (lambda _cmd: DispatchGateDecision(allow=True))
         self._managed_session_resolver = managed_session_resolver or (lambda _cmd: None)
@@ -637,7 +631,10 @@ class HermesConnectorWorker:
     ) -> bool:
         if (
             not observation.is_terminal
-            or not observation.replay_complete
+            or not (
+                observation.replay_complete
+                or observation.terminal_evidence_source == "native_status"
+            )
             or not observation.evidence_digest
             or observation.conversation_hermes_session_id != command.hermes_session_id
             or observation.hermes_session_id != command.resolved_hermes_session_id
@@ -655,44 +652,6 @@ class HermesConnectorWorker:
         }
         try:
             if observation.status == "succeeded":
-                verifier = self._paper_intake_verifier
-                if verifier is not None:
-                    try:
-                        intake = verifier.verify(command, observation)
-                    except PaperIntakePortError as exc:
-                        if exc.retryable:
-                            return False
-                        ledger.mark_failed(
-                            **common,
-                            error_code=_safe_error_code(exc.code),
-                        )
-                        return True
-                    if intake.disposition == "accepted":
-                        receipt_digest = intake.receipt_digest
-                        if (
-                            type(receipt_digest) is not str
-                            or len(receipt_digest) != 64
-                            or any(char not in "0123456789abcdef" for char in receipt_digest)
-                        ):
-                            ledger.mark_failed(
-                                **common,
-                                error_code="paper_intake_cli_invalid_receipt",
-                            )
-                            return True
-                        common["evidence_digest"] = hashlib.sha256(
-                            (
-                                "paper-intake-success/v1\x00"
-                                + str(observation.evidence_digest)
-                                + "\x00"
-                                + receipt_digest
-                            ).encode("ascii")
-                        ).hexdigest()
-                    elif intake.disposition != "not_required":
-                        ledger.mark_failed(
-                            **common,
-                            error_code="paper_intake_cli_invalid_receipt",
-                        )
-                        return True
                 ledger.mark_succeeded(**common)
             elif observation.status == "failed":
                 ledger.mark_failed(

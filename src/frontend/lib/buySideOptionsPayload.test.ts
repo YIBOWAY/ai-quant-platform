@@ -16,7 +16,7 @@ const baseValues: BuySideOptionsFormValues = {
   volatility_view: "expect_iv_crush",
   event_risk: "earnings",
   expected_iv_change_vol_points: -5,
-  scenario_spot_changes: "-10, 0, 15, nope",
+  scenario_spot_changes: "-10, 0, 15",
   scenario_iv_changes: "-5, 0, 3",
   scenario_horizon_date: "2026-07-01",
   bull_probability: 0.35,
@@ -70,17 +70,14 @@ describe("buildBuySideOptionsPayload", () => {
     ]);
   });
 
-  it("falls back to zero scenario lists and 30-day horizon for invalid inputs", () => {
-    const payload = buildBuySideOptionsPayload({
-      ...baseValues,
-      scenario_spot_changes: "n/a",
-      scenario_iv_changes: "",
-      scenario_horizon_date: "not-a-date",
-    });
-
-    expect(payload.scenario_spot_changes).toEqual([0]);
-    expect(payload.scenario_iv_changes).toEqual([0]);
-    expect(payload.scenario_days_passed).toEqual([0, 15, 30]);
-    expect(payload.user_scenarios.every((scenario) => scenario.days_passed === 30)).toBe(true);
+  it("rejects empty scenario lists and invalid horizon instead of inventing values", () => {
+    expect(() =>
+      buildBuySideOptionsPayload({
+        ...baseValues,
+        scenario_spot_changes: "n/a",
+        scenario_iv_changes: "",
+        scenario_horizon_date: "not-a-date",
+      }),
+    ).toThrow("invalid buy-side scenario input");
   });
 });

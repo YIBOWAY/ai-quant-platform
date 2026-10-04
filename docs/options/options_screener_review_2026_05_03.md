@@ -1,6 +1,11 @@
 # 卖方期权筛选器 Review — 2026-05-03
 
-本文档记录了 2026-05-03 对 [src/quant_system/options/screener.py](../src/quant_system/options/screener.py)、[src/quant_system/options/models.py](../src/quant_system/options/models.py)、[src/frontend/components/forms/OptionsScreenerForm.tsx](../src/frontend/components/forms/OptionsScreenerForm.tsx)、[src/quant_system/data/providers/futu.py](../src/quant_system/data/providers/futu.py) 的整体 review、发现的 BUG、卖方策略预设参数评估，以及"每日全市场期权卖方扫描器"功能的可行性结论。
+> **历史 review 快照。** 本文只保留 2026-05-03 当时的代码、判断和待办，不代表
+> 当前期权推荐合同。现役行为见
+> [期权推荐指南](../guides/options-recommendations.md)和
+> [Phase 13 当前架构](../architecture/phase_13_architecture.md)。
+
+本文档记录了 2026-05-03 对 [src/quant_system/options/screener.py](../../src/quant_system/options/screener.py)、[src/quant_system/options/models.py](../../src/quant_system/options/models.py)、[src/frontend/components/forms/OptionsScreenerForm.tsx](../../src/frontend/components/forms/OptionsScreenerForm.tsx)、[src/quant_system/data/providers/futu.py](../../src/quant_system/data/providers/futu.py) 的整体 review、发现的 BUG、卖方策略预设参数评估，以及"每日全市场期权卖方扫描器"功能的可行性结论。
 
 基准对比点：commit `77575bf`（Phase 11 末尾）→ HEAD `23f703e`。
 
@@ -54,7 +59,7 @@
 - **新增**（所有预设默认开 `trend_filter`，激进档关 `hv_iv_filter`）
 
 ### 新预设落地
-见 [src/frontend/components/forms/OptionsScreenerForm.tsx](../src/frontend/components/forms/OptionsScreenerForm.tsx#L11-L60) 中的 `presets`。
+见 [src/frontend/components/forms/OptionsScreenerForm.tsx](../../src/frontend/components/forms/OptionsScreenerForm.tsx#L11-L60) 中的 `presets`。
 
 | 字段 | conservative | balanced | aggressive |
 |---|---|---|---|
@@ -85,7 +90,7 @@
 | 失败处理 | 趋势失败 → `note="trend filter failed"` → 评级 `Avoid`（在 `HARD_FAILURES` 内） |
 | 数据缺失 | OHLCV 不足或 MA 为 NaN → `trend_pass=None`，跳过该过滤（不视为失败） |
 
-代码：[screener.py L380-L420](../src/quant_system/options/screener.py)。
+代码：[screener.py L380-L420](../../src/quant_system/options/screener.py)。
 
 ---
 
@@ -102,10 +107,10 @@
 | `avoid_earnings_within_days` | 财报日历 | ❌ Futu OpenAPI 不提供财报日历 | **配置字段已加，Phase 13 通过 yfinance 等外部源补齐** |
 
 落地点：
-- 后端：[src/quant_system/options/models.py](../src/quant_system/options/models.py) 新增 `top_n / min_mid_price / min_avg_daily_volume / min_market_cap / min_iv_rank / avoid_earnings_within_days / history_lookback_days`，候选模型新增 `avg_daily_volume / market_cap / iv_rank / earnings_date`。
-- 后端：[src/quant_system/options/screener.py](../src/quant_system/options/screener.py) 在 `_candidate_notes` 中实施硬约束；`_resolve_history_window` 处理动态历史窗；`_average_volume` 计算 ADV。
-- Provider：[src/quant_system/data/providers/futu.py](../src/quant_system/data/providers/futu.py#L382-L412) `_normalize_snapshots` 映射 `total_market_val → market_val`、新增 `turnover`。
-- 前端：[src/frontend/components/forms/OptionsScreenerForm.tsx](../src/frontend/components/forms/OptionsScreenerForm.tsx) 三档预设、zod schema、payload 全部覆盖新字段。
+- 后端：[src/quant_system/options/models.py](../../src/quant_system/options/models.py) 新增 `top_n / min_mid_price / min_avg_daily_volume / min_market_cap / min_iv_rank / avoid_earnings_within_days / history_lookback_days`，候选模型新增 `avg_daily_volume / market_cap / iv_rank / earnings_date`。
+- 后端：[src/quant_system/options/screener.py](../../src/quant_system/options/screener.py) 在 `_candidate_notes` 中实施硬约束；`_resolve_history_window` 处理动态历史窗；`_average_volume` 计算 ADV。
+- Provider：[src/quant_system/data/providers/futu.py](../../src/quant_system/data/providers/futu.py#L382-L412) `_normalize_snapshots` 映射 `total_market_val → market_val`、新增 `turnover`。
+- 前端：[src/frontend/components/forms/OptionsScreenerForm.tsx](../../src/frontend/components/forms/OptionsScreenerForm.tsx) 三档预设、zod schema、payload 全部覆盖新字段。
 
 ---
 
@@ -119,7 +124,7 @@
 
 ## 六、Phase 13 — 每日定时全市场期权卖方扫描器
 
-详细设计与实现 prompt 见 [phase_13_options_radar_codex_prompt.md](phase_13_options_radar_codex_prompt.md)。
+本节是2026-05历史方案。旧执行prompt已于2026-09-20清理，可从Git `072795a2:docs/options/phase_13_options_radar_codex_prompt.md`恢复；现行实现以[期权推荐指南](../guides/options-recommendations.md)为准，不执行下面的旧Windows/top100安排。
 
 要点：
 - **Universe**：S&P 500 ∪ Nasdaq 100，去重后 ≈ 530 标的；首版精选 100（按 ADV/市值排序）。
@@ -134,8 +139,10 @@
 
 ---
 
-## 七、未提交内容提醒
+## 七、2026-05-03 当时的未提交提醒
 
-- [docs/INDEX.md](INDEX.md) 仍未提交（R5 创建）。
+以下条目只保留当时工作区状态，不描述当前 Git 或文件状态：
+
+- [docs/INDEX.md](../INDEX.md) 仍未提交（R5 创建）。
 - 仓库根 `src/quantum-core-algorithmic-trading-platform.zip` 仍未追踪。
 - 本次 Phase 12 修复（screener bug + 预设 + 新约束 + Futu market_val）尚未 commit；建议作为单独 commit `fix(options): screener bugs, expanded constraints, preset rebaseline`。

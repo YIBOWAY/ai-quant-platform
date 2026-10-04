@@ -102,7 +102,26 @@ def test_spread_capped_upside_approximation() -> None:
     )
 
     row = result.results[0]
-    assert row.estimated_pnl == pytest.approx(1050.0)
+    assert row.estimated_value == pytest.approx(1000.0)
+    assert row.estimated_pnl == pytest.approx(700.0)
+    assert row.approximation_reliability == "low"
+
+
+def test_spread_capped_downside_approximation() -> None:
+    result = run_buy_side_scenario_lab(
+        BuySideScenarioLabInput(
+            current_spot=100.0,
+            current_date="2026-05-20",
+            legs=[_long_call(), _short_call()],
+            spot_change_pct=[-100],
+            iv_change_vol_points=[0],
+            days_passed=[0],
+        )
+    )
+
+    row = result.results[0]
+    assert row.estimated_value == pytest.approx(0.0)
+    assert row.estimated_pnl == pytest.approx(-300.0)
     assert row.approximation_reliability == "low"
 
 

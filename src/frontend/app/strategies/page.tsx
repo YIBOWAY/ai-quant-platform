@@ -4,7 +4,8 @@ import { getFactors, getStrategies, getUniverses } from "@/lib/api";
 import { getCachedHealth } from "@/lib/serverApi";
 import { getServerLocale } from "@/lib/serverLocale";
 
-export default async function StrategiesPage() {
+export default async function StrategiesPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
+  const params = (await searchParams) ?? {};
   const locale = await getServerLocale();
   const [strategies, universes, factors, health] = await Promise.all([
     getStrategies(),
@@ -18,6 +19,7 @@ export default async function StrategiesPage() {
     <div className="flex h-full min-h-0 flex-col bg-bg-base">
       <ErrorBanner messages={[strategies.apiError, universes.apiError, factors.apiError]} />
       <StrategyCatalogWorkbench
+        initialStrategyId={typeof params.strategy === "string" ? params.strategy : undefined}
         factors={factors.factors}
         locale={locale}
         strategies={strategies.strategies}

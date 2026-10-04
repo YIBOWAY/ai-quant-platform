@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from datetime import UTC, date, datetime, timedelta
 from functools import wraps
 from typing import Annotated, Literal
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -19,8 +20,10 @@ from quant_system.api.schemas.common import (
 from quant_system.api.schemas.paper import (
     AccountRebalanceRequest,
     AccountResetRequest,
+    HungSleeveEffectResponse,
     KillSwitchRequest,
     ManualOrderRequest,
+    ObservationCalendarResponse,
     PaperAccountActivityResponse,
     PaperAccountEquityCurveResponse,
     PaperAccountOrderResponse,
@@ -50,7 +53,12 @@ from quant_system.api.schemas.paper import (
     StrategySleevesResponse,
     StrategySleeveStopRequest,
 )
-from quant_system.data.provider_factory import DataProviderUnavailableError
+from quant_system.d34.hung_sleeve_effect import build_effect_from_storage
+from quant_system.d34.observation_calendar import build_observation_calendar
+from quant_system.data.provider_factory import (
+    DataProviderUnavailableError,
+    build_ohlcv_provider,
+)
 from quant_system.execution.account import (
     DEFAULT_INITIAL_CASH,
     AccountPosition,
@@ -78,10 +86,10 @@ from quant_system.execution.account_snapshot import (
     materialize_account_view,
     resolve_account_quotes,
 )
-from quant_system.execution.d34_execution_context import (
-    resolve_d34_execution_policy_context,
-)
 from quant_system.execution.paper_observation import hung_observation_open_for_sleeve
+from quant_system.execution.paper_observation_safety import (
+    resolve_paper_observation_policy_context,
+)
 from quant_system.execution.paper_strategy_execution_service import (
     PaperStrategyExecutionService,
 )
@@ -173,6 +181,8 @@ def run_paper(
         "final_equity": result.final_equity,
         "execution_status": result.execution_status,
         "execution_note": result.execution_note,
+        "commission_bps": settings.paper_account.commission_bps,
+        "slippage_bps": settings.paper_account.slippage_bps,
         "request": {
             "symbols": request.symbols,
             "start": request.start,
@@ -655,17 +665,24 @@ def _strategy_config_name_conflict(
     name: str,
     *,
     exclude_strategy_config_id: str | None = None,
-) -> StrategyConfig | None:
+) -> str | None:
     normalized_name = _normalized_strategy_config_name(name)
     if not normalized_name:
         return None
-    for config in storage.list_strategy_configs():
-        if config.archived:
+    catalog = storage.read_strategy_config_catalog()
+    if catalog["unavailable_configs"]:
+        raise HTTPException(status_code=409, detail=_error_detail(
+            "strategy_config_catalog_incomplete",
+            "Cannot check configuration names: original configuration files are unavailable.",
+        ))
+    for config in catalog["configs"]:
+        if config["archived"]:
             continue
-        if exclude_strategy_config_id and config.strategy_config_id == exclude_strategy_config_id:
+        if (exclude_strategy_config_id
+                and config["strategy_config_id"] == exclude_strategy_config_id):
             continue
-        if _normalized_strategy_config_name(config.name) == normalized_name:
-            return config
+        if _normalized_strategy_config_name(config["name"]) == normalized_name:
+            return config["name"]
     return None
 
 
@@ -931,9 +948,7 @@ def get_account_performance(
 ) -> dict:
     del granularity
     requested_benchmarks = [
-        symbol.upper().strip()
-        for symbol in benchmarks.split(",")
-        if symbol.strip()
+        symbol.upper().strip() for symbol in benchmarks.split(",") if symbol.strip()
     ]
     try:
         return build_account_performance(
@@ -1244,7 +1259,7 @@ def create_strategy_config(
                 status_code=409,
                 detail=_error_detail(
                     "strategy_config_name_conflict",
-                    f"strategy config name already exists: {existing.name}",
+                    f"strategy config name already exists: {existing}",
                 ),
             )
         config = StrategyConfig.create(**request.model_dump(mode="json"))
@@ -1264,9 +1279,7 @@ def create_strategy_config(
 )
 def list_strategy_configs(api_runs_dir: ApiRunsDirDep) -> dict:
     storage = _strategy_sleeve_storage(api_runs_dir)
-    return {
-        "configs": [config.model_dump(mode="json") for config in storage.list_strategy_configs()]
-    }
+    return storage.read_strategy_config_catalog()
 
 
 @router.post(
@@ -1295,7 +1308,7 @@ def create_strategy_config_version(
                 status_code=409,
                 detail=_error_detail(
                     "strategy_config_name_conflict",
-                    f"strategy config name already exists: {existing.name}",
+                    f"strategy config name already exists: {existing}",
                 ),
             )
         try:
@@ -1439,6 +1452,45 @@ def get_strategy_sleeve_ops_status(
 
 
 @router.get(
+    "/paper/strategy-sleeves/observation-calendar",
+    response_model=ObservationCalendarResponse,
+)
+def get_strategy_sleeve_observation_calendar(
+    api_runs_dir: ApiRunsDirDep,
+) -> dict:
+    sleeve_storage = _strategy_sleeve_storage(api_runs_dir)
+    return build_observation_calendar(
+        sleeve_storage=sleeve_storage,
+        now=datetime.now(ZoneInfo("Asia/Shanghai")),
+    )
+
+
+@router.get(
+    "/paper/strategy-sleeves/hung-effect",
+    response_model=HungSleeveEffectResponse,
+)
+def get_hung_sleeve_effect(
+    api_runs_dir: ApiRunsDirDep,
+    settings: SettingsDep,
+) -> dict:
+    sleeve_storage = _strategy_sleeve_storage(api_runs_dir)
+    try:
+        price_provider, provider_name = build_ohlcv_provider(
+            settings,
+            requested="futu",
+        )
+        price_source = f"{provider_name}:qfq"
+    except DataProviderUnavailableError:
+        price_provider = None
+        price_source = None
+    return build_effect_from_storage(
+        sleeve_storage=sleeve_storage,
+        price_provider=price_provider,
+        price_source=price_source,
+    )
+
+
+@router.get(
     "/paper/strategy-sleeves/{sleeve_id}",
     response_model=StrategySleeveDetailResponse,
 )
@@ -1454,11 +1506,14 @@ def get_strategy_sleeve(
     lots = storage.load_sleeve_lots(sleeve_id)
     signals = storage.load_signals(sleeve_id)
     executions = storage.load_executions(sleeve_id)
+    from quant_system.research.paper_runtime_status import read_paper_runtime_status
+
     return {
         "sleeve": sleeve.model_dump(mode="json"),
         "lots": [lot.model_dump(mode="json") for lot in lots],
         "signals": [signal.model_dump(mode="json") for signal in signals],
         "executions": [execution.model_dump(mode="json") for execution in executions],
+        "runtime_status": read_paper_runtime_status(storage, sleeve),
     }
 
 
@@ -1504,11 +1559,9 @@ def create_strategy_sleeve_execution(
         context: dict[str, object] = {}
         if str(sleeve.metadata.get("automation_source", "d33")) == "d34":
             context = dict(
-                resolve_d34_execution_policy_context(
+                resolve_paper_observation_policy_context(
                     settings,
-                    workspace_id=str(
-                        sleeve.metadata.get("workspace_id", "default")
-                    ),
+                    workspace_id=str(sleeve.metadata.get("workspace_id", "default")),
                 )
             )
         hung_observation = hung_observation_open_for_sleeve(
@@ -1621,11 +1674,9 @@ def generate_strategy_sleeve_signal(
             context: dict[str, object] = {}
             if str(sleeve.metadata.get("automation_source", "d33")) == "d34":
                 context = dict(
-                    resolve_d34_execution_policy_context(
+                    resolve_paper_observation_policy_context(
                         settings,
-                        workspace_id=str(
-                            sleeve.metadata.get("workspace_id", "default")
-                        ),
+                        workspace_id=str(sleeve.metadata.get("workspace_id", "default")),
                     )
                 )
             signal = service.generate_daily_signal(

@@ -15,7 +15,6 @@ from quant_system.hermes.dispatch_adapter import (
 )
 from quant_system.hermes.intent_payload_port import (
     IntentPayloadPortError,
-    ResolvedIntentPayload,
 )
 from quant_system.hermes.run_lifecycle_port import (
     HermesRunCliSettings,
@@ -56,9 +55,7 @@ def _compatible_capability_receipt() -> dict[str, object]:
                 "run_stop": True,
                 "managed_run_sessions": True,
                 "managed_run_history_authority": "hermes_session_db",
-                "managed_session_fork_mode": (
-                    "preserve_source_exact_message_cursor"
-                ),
+                "managed_session_fork_mode": ("preserve_source_exact_message_cursor"),
             },
             "durable": durable,
         },
@@ -78,7 +75,6 @@ def _compatible_capability_receipt() -> dict[str, object]:
                     "input",
                     "session_id",
                     "metadata",
-                    "instructions",
                 ],
                 "platform_must_not_send": [
                     "conversation_history",
@@ -260,9 +256,7 @@ def test_submit_uses_strict_hqa_cli_and_preserves_managed_session(
                     "conversation_session_id": "web_managed_1",
                     "resolved_session_id": "web_managed_1",
                     "created": True,
-                    "idempotency_key": (
-                        "platform-command:00000000-0000-4000-8000-000000000001"
-                    ),
+                    "idempotency_key": ("platform-command:00000000-0000-4000-8000-000000000001"),
                 }
             ).encode(),
             stderr=b"",
@@ -289,9 +283,7 @@ def test_submit_uses_strict_hqa_cli_and_preserves_managed_session(
     assert argv[-2:] == ["hqa.hermes_run_cli", "submit"]
     assert "top-secret" not in " ".join(argv)
     assert "hello managed thread" not in " ".join(argv)
-    assert document["idempotency_key"] == (
-        "platform-command:00000000-0000-4000-8000-000000000001"
-    )
+    assert document["idempotency_key"] == ("platform-command:00000000-0000-4000-8000-000000000001")
     request_body = document["request_body"]
     assert isinstance(request_body, dict)
     assert request_body["session_id"] == "web_managed_1"
@@ -319,9 +311,7 @@ def test_submit_receipt_preserves_conversation_root_and_run_tip(
                     "conversation_session_id": "web_managed_1",
                     "resolved_session_id": "web_tip",
                     "created": False,
-                    "idempotency_key": (
-                        "platform-command:00000000-0000-4000-8000-000000000001"
-                    ),
+                    "idempotency_key": ("platform-command:00000000-0000-4000-8000-000000000001"),
                 }
             ).encode(),
             stderr=b"",
@@ -345,79 +335,6 @@ def test_submit_receipt_preserves_conversation_root_and_run_tip(
     assert result.conversation_hermes_session_id == "web_managed_1"
     assert result.hermes_session_id == "web_tip"
     assert result.hermes_run_id == "run_compressed_1"
-
-
-def test_paper_intake_submit_keeps_platform_context_closed_and_sends_instructions(
-    tmp_path: Path,
-) -> None:
-    python = tmp_path / "python"
-    python.touch(mode=0o700)
-    hqa_root = tmp_path / "hqa"
-    hqa_root.mkdir()
-    captured: dict[str, object] = {}
-    contract = {
-        "schema_version": "hqa.paper_intake/v1",
-        "minimum_full_text_bytes": 4096,
-        "source_file_ref": "/private/paper-intake/factor.py",
-    }
-
-    def runner(argv, **kwargs):
-        captured.update(json.loads(kwargs["input"]))
-        return subprocess.CompletedProcess(
-            argv,
-            0,
-            stdout=json.dumps(
-                {
-                    "ok": True,
-                    "run_id": "run_paper_1",
-                    "session_id": "web_managed_1",
-                    "requested_session_id": "web_managed_1",
-                    "conversation_session_id": "web_managed_1",
-                    "resolved_session_id": "web_managed_1",
-                    "created": True,
-                    "idempotency_key": (
-                        "platform-command:00000000-0000-4000-8000-000000000001"
-                    ),
-                }
-            ).encode(),
-            stderr=b"",
-        )
-
-    port = SubprocessHermesRunLifecyclePort(
-        cli_settings=HermesRunCliSettings(
-            python_executable=python,
-            hqa_root=hqa_root,
-            base_url="http://127.0.0.1:8642",
-            api_key=None,
-            timeout_seconds=5.0,
-        ),
-        input_resolver=lambda _request: ResolvedIntentPayload(
-            prompt="private paper prompt",
-            kind="paper_intake",
-            execution_contract=contract,
-            execution_contract_digest="d" * 64,
-            research_claim_digest="e" * 64,
-            execution_instructions="This run is governed by hqa.paper_intake/v1.",
-        ),
-        runner=runner,
-    )
-
-    result = port.submit_or_recover(_request())
-
-    assert result.kind == "accepted"
-    body = captured["request_body"]
-    assert isinstance(body, dict)
-    assert body["input"] == "private paper prompt"
-    assert body["instructions"] == "This run is governed by hqa.paper_intake/v1."
-    assert body["metadata"] == {
-        "command_id": "00000000-0000-4000-8000-000000000001",
-        "kind": "research_chat",
-        "client_request_id": "client-action-1",
-        "platform_session_id": "wm_registry_only",
-        "canonical_request_digest": "a" * 64,
-        "payload_ref": "hqa-payload:sha256:" + ("b" * 64),
-        "source": "platform.hqa_hermes_run_port",
-    }
 
 
 def test_observe_requires_gapless_replay_and_returns_terminal_evidence(
@@ -500,6 +417,60 @@ def test_observe_requires_gapless_replay_and_returns_terminal_evidence(
     assert observation.replay_complete is True
     assert observation.next_cursor == 2
     assert observation.evidence_digest is not None
+
+
+def test_observe_running_run_does_not_open_live_event_stream(tmp_path: Path) -> None:
+    python = tmp_path / "python"
+    python.touch(mode=0o700)
+    hqa_root = tmp_path / "hqa"
+    hqa_root.mkdir()
+    operations: list[str] = []
+
+    def runner(argv, **_kwargs):
+        operation = argv[-1]
+        operations.append(operation)
+        if operation == "events":
+            raise AssertionError("running observation must not open live events")
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=json.dumps(
+                {
+                    "ok": True,
+                    "run_id": "run_running_1",
+                    "session_id": "web_tip_1",
+                    "conversation_session_id": "web_root_1",
+                    "resolved_session_id": "web_tip_1",
+                    "status": "running",
+                }
+            ).encode(),
+            stderr=b"",
+        )
+
+    port = SubprocessHermesRunLifecyclePort(
+        cli_settings=HermesRunCliSettings(
+            python_executable=python,
+            hqa_root=hqa_root,
+            base_url="http://127.0.0.1:8642",
+            api_key=None,
+            timeout_seconds=5.0,
+        ),
+        input_resolver=fixed_input_resolver("unused"),
+        runner=runner,
+    )
+
+    observation = port.observe(
+        conversation_hermes_session_id="web_root_1",
+        hermes_session_id="web_tip_1",
+        hermes_run_id="run_running_1",
+        after_cursor=7,
+    )
+
+    assert operations == ["status"]
+    assert observation.status == "running"
+    assert observation.next_cursor == 7
+    assert observation.replay_complete is False
+    assert observation.evidence_digest is None
 
 
 def test_factory_normalizes_intent_payload_settings_failure(monkeypatch) -> None:
